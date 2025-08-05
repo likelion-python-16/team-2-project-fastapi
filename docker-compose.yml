@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  # FastAPI 애플리케이션
+  api:
+    build: .
+    container_name: team-api
+    ports:
+      - "8000:8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=team_user
+      - MYSQL_PASSWORD=team_password_123
+      - MYSQL_DATABASE=team_project_db
+      - DEBUG=True
+    volumes:
+      - ./app:/app/app  # 개발 중 코드 변경 시 자동 반영
+    networks:
+      - team-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # MySQL 데이터베이스
+  mysql:
+    image: mysql:8.0
+    container_name: team-mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=root_password_123
+      - MYSQL_DATABASE=team_project_db
+      - MYSQL_USER=team_user
+      - MYSQL_PASSWORD=team_password_123
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - team-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # phpMyAdmin (선택적 - 데이터베이스 관리용)
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: team-phpmyadmin
+    environment:
+      - PMA_HOST=mysql
+      - PMA_PORT=3306
+      - PMA_USER=team_user
+      - PMA_PASSWORD=team_password_123
+    ports:
+      - "8080:80"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - team-network
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+
+networks:
+  team-network:
+    driver: bridge
