@@ -10,3 +10,4 @@ cd team-project
 # 자동 설정 스크립트 실행
 chmod +x setup.sh
 ./setup.sh
+test
