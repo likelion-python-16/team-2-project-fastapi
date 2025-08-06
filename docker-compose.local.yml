@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  # FastAPI 애플리케이션
+  api:
+    build: .
+    container_name: team-api-local
+    ports:
+      - "8001:8000"  # 로컬용 - 포트 변경
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=team_user
+      - MYSQL_PASSWORD=team_password_123
+      - MYSQL_DATABASE=team_project_db
+      - DEBUG=True   # 로컬용 - DEBUG ON
+    volumes:
+      - ./app:/app/app
+    networks:
+      - team-network-local
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # MySQL 데이터베이스
+  mysql:
+    image: mysql:8.0
+    container_name: team-mysql-local
+    environment:
+      - MYSQL_ROOT_PASSWORD=root_password_123
+      - MYSQL_DATABASE=team_project_db
+      - MYSQL_USER=team_user
+      - MYSQL_PASSWORD=team_password_123
+      - DATABASE_URL=mysql+pymysql://team_user:team_password_123@mysql:3306/team_project_db
+    ports:
+      - "3307:3306"  # 로컬용 - 포트 변경
+    volumes:
+      - mysql_data_local:/var/lib/mysql  # 로컬용 - 볼륨 이름 변경
+    networks:
+      - team-network-local
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # phpMyAdmin
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: team-phpmyadmin-local
+    environment:
+      - PMA_HOST=mysql
+      - PMA_PORT=3306
+      - PMA_USER=team_user
+      - PMA_PASSWORD=team_password_123
+    ports:
+      - "8081:80"    # 로컬용 - 포트 변경
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - team-network-local
+    restart: unless-stopped
+
+volumes:
+  mysql_data_local:  # 로컬용 - 볼륨 이름 변경
+
+networks:
+  team-network-local:  # 로컬용 - 네트워크 이름 변경
+    driver: bridge
