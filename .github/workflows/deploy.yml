@@ -43,18 +43,94 @@ jobs:
         host: ${{ secrets.EC2_HOST }}
         username: ${{ secrets.EC2_USER }}
         key: ${{ secrets.EC2_KEY }}
+        port: 22
+        timeout: 30s
+        command_timeout: 15m
         script: |
           cd /home/ec2-user/myapp/team-project
-          
+
+          echo "🚀 Starting deployment..."
+          echo "📍 Current directory: $(pwd)"
+          echo "📂 Directory contents:"
+          ls -la
+
           # Git pull로 최신 코드 받기
+          echo "📥 Pulling latest code..."
           git pull origin main
           
-          # Docker 컨테이너 재시작
-          docker-compose down
-          docker-compose up -d --build
-          
-          # 헬스체크
-          sleep 10
-          curl -f http://localhost:8000/health || exit 1
-          
-          echo "✅ Deployment successful!"
+          # Docker 환경 확인
+          echo "🐳 Docker version:"
+          docker --version
+          docker-compose --version
+
+          # 기존 컨테이너 정리
+          echo "🧹 Cleaning up existing containers..."
+          docker-compose down --remove-orphans || echo "No containers to stop"
+
+          # Docker 이미지 정리
+          echo "🗑️ Cleaning up unused Docker resources..."
+          docker system prune -f
+
+          # 환경 변수 확인 (민감 정보 제외)
+          echo "⚙️ Environment check:"
+          echo "USER: $USER"
+          echo "PWD: $PWD"
+
+          # 새 컨테이너 빌드 및 시작
+          echo "🔨 Building and starting containers..."
+          docker-compose up -d --build --force-recreate
+
+          echo "⏳ Waiting 20 seconds for initial startup..."
+          sleep 20
+
+          # 컨테이너 상태 확인
+          echo "📋 Container status:"
+          docker-compose ps
+
+          # 포트 확인
+          echo "🔌 Port status:"
+          netstat -tlnp | grep :8000 || echo "Port 8000 not found"
+
+          # 로그 확인
+          echo "📝 Recent API logs:"
+          docker-compose logs --tail=30 team-api
+
+          # 기본 연결 테스트
+          echo "🔍 Testing basic connectivity..."
+
+          for attempt in {1..8}; do
+            echo "Health check attempt $attempt/8..."
+
+          # 먼저 포트가 열려있는지 확인
+            if nc -z localhost 8000; then
+              echo "✅ Port 8000 is accessible"
+
+              # 헬스체크 엔드포인트 테스트
+              if curl -f -s --connect-timeout 5 --max-time 10 http://localhost:8000/health; then
+                echo "✅ Health check passed!"
+                echo "🎉 Deployment successful!"
+
+                # 추가 엔드포인트 테스트
+                echo "🧪 Testing additional endpoints:"
+                curl -s http://localhost:8000/ | head -3
+
+                exit 0
+              else
+                echo "❌ Health endpoint failed"
+                curl -v http://localhost:8000/health || true
+              fi
+            else
+              echo "❌ Port 8000 not accessible"
+            fi
+
+            if [ $attempt -eq 8 ]; then
+              echo "💥 All attempts failed!"
+              echo "🔍 Final debugging info:"
+              echo "--- All Container Logs ---"
+              docker-compose logs
+              exit 1
+            else
+              echo "⏳ Waiting 15 seconds before next attempt..."
+              sleep 15
+            fi
+          done
