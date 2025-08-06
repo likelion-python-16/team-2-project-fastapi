@@ -48,8 +48,18 @@ jobs:
         command_timeout: 15m
         script: |
           cd /home/ec2-user/myapp/team-project
-  
-          git pull origin main
+
+          # 현재 배포되는 브랜치에 따라 pull
+          if [ "${{ github.ref }}" == "refs/heads/develop" ]; then
+            echo "🔧 Deploying develop branch..."
+            git pull origin develop
+          else
+            echo "🚀 Deploying main branch..."
+            git pull origin main
+          fi
+
+
+
           docker-compose down
           docker-compose up -d --build
   
