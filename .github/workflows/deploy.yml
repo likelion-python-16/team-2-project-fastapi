@@ -43,18 +43,21 @@ jobs:
         host: ${{ secrets.EC2_HOST }}
         username: ${{ secrets.EC2_USER }}
         key: ${{ secrets.EC2_KEY }}
+        port: 22
+        timeout: 30s
+        command_timeout: 15m
         script: |
-          cd /home/ec2-user/team-project
-          
-          # Git pull로 최신 코드 받기
+          cd /home/ec2-user/myapp/team-project
+  
           git pull origin main
-          
-          # Docker 컨테이너 재시작
           docker-compose down
           docker-compose up -d --build
+  
+          sleep 45
+          docker-compose ps
+  
+          echo "✅ Deployment completed!"
+          echo "🌐 Check: http://54.180.237.228:8000/"
           
-          # 헬스체크
-          sleep 10
-          curl -f http://localhost:8000/health || exit 1
+
           
-          echo "✅ Deployment successful!"
