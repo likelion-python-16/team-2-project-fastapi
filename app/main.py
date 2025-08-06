@@ -129,7 +129,7 @@ async def app_info():
 # app.include_router(comments.router, prefix="/api/v1")
 
 from .routers import users
-app.include_router(users.router,prefix="api/v1")
+app.include_router(users.router,prefix="/api/v1")
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
