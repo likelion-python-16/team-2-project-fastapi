@@ -17,7 +17,7 @@ async def lifespan(app: FastAPI):
     """앱 생명주기 관리 (startup/shutdown 이벤트 대체)"""
     # Startup
     logger.info("🚀 FastAPI 서버가 시작됩니다...")
-    logger.info(f"📊 데이터베이스: {settings.MYSQL_HOST}:{settings.MYSQL_PORT}/{settings.MYSQL_DATABASE}")
+    logger.info(f"📊 데이터베이스: {settings.mysql_host}:{settings.mysql_port}/{settings.mysql_database}")
     
     try:
         init_db()
@@ -33,11 +33,11 @@ async def lifespan(app: FastAPI):
 
 # FastAPI 앱 생성 (lifespan 추가)
 app = FastAPI(
-    title=settings.PROJECT_NAME,
-    description=settings.PROJECT_DESCRIPTION,
-    version=settings.PROJECT_VERSION,
-    debug=settings.DEBUG,
-    lifespan=lifespan  # 새로운 방식
+    title=settings.project_name,
+    description=settings.project_description,
+    version=settings.project_version,
+    debug=settings.debug,
+    lifespan=lifespan
 )
 
 # CORS 미들웨어 설정
@@ -54,8 +54,8 @@ app.add_middleware(
 async def read_root():
     """루트 엔드포인트"""
     return {
-        "message": f"환영합니다! {settings.PROJECT_NAME}",
-        "version": settings.PROJECT_VERSION,
+        "message": f"환영합니다! {settings.project_name}",
+        "version": settings.project_version,
         "docs": "/docs",
         "health": "/health",
         "timestamp": datetime.now().isoformat()
@@ -68,7 +68,7 @@ async def health_check():
         return {
             "status": "healthy",
             "service": "running",
-            "version": settings.PROJECT_VERSION,
+            "version": settings.project_version,
             "timestamp": datetime.now().isoformat()
         }
     except Exception as e:
@@ -92,7 +92,7 @@ async def health_check_with_db(db: Session = Depends(get_db)):
             "status": "healthy",
             "service": "running",
             "database": db_status,
-            "version": settings.PROJECT_VERSION,
+            "version": settings.project_version,
             "timestamp": datetime.now().isoformat()
         }
     except Exception as e:
@@ -109,15 +109,15 @@ async def health_check_with_db(db: Session = Depends(get_db)):
 async def app_info():
     """애플리케이션 정보 엔드포인트"""
     return {
-        "name": settings.PROJECT_NAME,
-        "description": settings.PROJECT_DESCRIPTION,
-        "version": settings.PROJECT_VERSION,
-        "debug": settings.DEBUG,
-        "environment": "development" if settings.DEBUG else "production",
+        "name": settings.project_name,
+        "description": settings.project_description,
+        "version": settings.project_version,
+        "debug": settings.debug,
+        "environment": "development" if settings.debug else "production",
         "database": {
-            "host": settings.MYSQL_HOST,
-            "port": settings.MYSQL_PORT,
-            "database": settings.MYSQL_DATABASE
+            "host": settings.mysql_host,
+            "port": settings.mysql_port,
+            "database": settings.mysql_database
         }
     }
 
@@ -132,7 +132,7 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
         "app.main:app",
-        host=settings.API_HOST,
-        port=settings.API_PORT,
-        reload=settings.DEBUG
+        host=settings.api_host,
+        port=settings.api_port,
+        reload=settings.debug
     )

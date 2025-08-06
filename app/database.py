@@ -5,10 +5,10 @@ from .config import settings
 
 # 데이터베이스 엔진 생성
 engine = create_engine(
-    settings.DATABASE_URL,
-    echo=settings.DEBUG,  # 개발 중에는 SQL 쿼리 로그 출력
-    pool_pre_ping=True,   # 연결 확인
-    pool_recycle=300      # 5분마다 연결 갱신
+    settings.database_url,  # DATABASE_URL → database_url
+    echo=settings.debug,    # DEBUG → debug
+    pool_pre_ping=True,     # 연결 확인
+    pool_recycle=300        # 5분마다 연결 갱신
 )
 
 # 세션 팩토리

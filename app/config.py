@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     debug: bool = True
     
     # 데이터베이스 설정 (현재 EC2 환경 기준)
-    mysql_host: str = "localhost"  # EC2에서는 localhost (로컬 MySQL 컨테이너)
+    mysql_host: str = "mysql"  # localhost → team-mysql (Docker 컨테이너명)
     mysql_port: int = 3306
     # TODO: 실제 프로젝트에서 사용할 MySQL 사용자명/비밀번호로 변경 필요
     mysql_user: str = "team_user"  # 현재 .env에서 사용 중인 값
@@ -77,7 +77,7 @@ class DevelopmentSettings(Settings):
     debug: bool = True
     
     # 개발용 데이터베이스 (로컬 Docker 컨테이너)
-    mysql_host: str = "localhost"
+    mysql_host: str = "mysql"  # localhost → mysql
     mysql_user: str = "team_user"  # 현재 docker-compose.yml에서 사용 중
     mysql_password: str = "team_password_123"
 
@@ -88,7 +88,7 @@ class ProductionSettings(Settings):
     debug: bool = False
     
     # 프로덕션용 데이터베이스 (현재 EC2 로컬 MySQL 사용)
-    mysql_host: str = "localhost"  # EC2에서 Docker MySQL 컨테이너 사용
+    mysql_host: str = "mysql"  # localhost → mysql
     mysql_user: str = "team_user"
     mysql_password: str = "team_password_123"
     
