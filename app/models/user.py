@@ -1,10 +1,7 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, func
-from sqlalchemy.orm import relationship, DeclarativeBase
-from datetime import datetime
-
-# 최신 방식: DeclarativeBase 사용
-class Base(DeclarativeBase):
-    pass
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey
+from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
+from .base import Base
 
 # User 모델
 class User(Base):
