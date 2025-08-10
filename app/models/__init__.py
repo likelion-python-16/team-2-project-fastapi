@@ -2,7 +2,7 @@
 from .base import Base
 
 # 모든 모델들을 import
-from .user import User, Post, Comment
+from .user import User
 
 # 나중에 추가될 모델들을 위한 공간
 # from .challenge import Challenge, ChallengeParticipant
@@ -14,8 +14,8 @@ from .user import User, Post, Comment
 __all__ = [
     "Base",
     "User", 
-    "Post", 
-    "Comment",
+    # "Post", 
+    # "Comment",
     # "Challenge",
     # "ChallengeParticipant",
     # "Tag",

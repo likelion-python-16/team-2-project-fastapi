@@ -1,7 +1,8 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from .config import settings
-
+from sqlalchemy.ext.declarative import declarative_base
+Base = declarative_base()
 
 SQLALCHEMY_DATABASE_URL = f"mysql+pymysql://{settings.mysql_user}:{settings.mysql_password}@{settings.mysql_host}:{settings.mysql_port}/{settings.mysql_database}"
 # 데이터베이스 엔진 생성

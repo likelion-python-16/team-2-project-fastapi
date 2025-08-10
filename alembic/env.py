@@ -10,7 +10,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
 # 🔧 우리 모델들 import
 from app.core.database import SQLALCHEMY_DATABASE_URL
-from app.models import Base,User,Post,Comment   # Base 클래스 import
+from app.models import Base,User   # Base 클래스 import
 target_metadata =Base.metadata
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

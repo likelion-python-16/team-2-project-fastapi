@@ -13,40 +13,7 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
-    
-    # 관계 설정
-    posts = relationship("Post", back_populates="author", cascade="all, delete-orphan")
-    comments = relationship("Comment", back_populates="author", cascade="all, delete-orphan")
-
-# Post 모델
-class Post(Base):
-    __tablename__ = "posts"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    title = Column(String(200), nullable=False)
-    content = Column(Text, nullable=False)
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
-    
-    # 실제 외래키 제약조건 추가
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    
-    # 관계 설정
-    author = relationship("User", back_populates="posts")
-    comments = relationship("Comment", back_populates="post", cascade="all, delete-orphan")
-
-# Comment 모델
-class Comment(Base):
-    __tablename__ = "comments"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    content = Column(Text, nullable=False)
-    created_at = Column(DateTime, server_default=func.now())
-    
-    # 실제 외래키 제약조건 추가
-    post_id = Column(Integer, ForeignKey("posts.id", ondelete="CASCADE"), nullable=False)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    
-    # 관계 설정
-    post = relationship("Post", back_populates="comments")
-    author = relationship("User", back_populates="comments")
+    phone = Column(String(20),nullable=True)
+    # # 관계 설정
+    # posts = relationship("Post", back_populates="author", cascade="all, delete-orphan")
+    # comments = relationship("Comment", back_populates="author", cascade="all, delete-orphan")

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 from ..core.database import get_db
-from ..models import User,Post,Comment
+from ..models.user import User
 # 라우터 생성
 router = APIRouter(
     prefix="/users",

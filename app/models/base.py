@@ -1,5 +1,4 @@
-from sqlalchemy.orm import DeclarativeBase
+# app/models/base.py
+from sqlalchemy.ext.declarative import declarative_base
 
-# 최신 방식: DeclarativeBase 사용
-class Base(DeclarativeBase):
-    pass
+Base = declarative_base()
