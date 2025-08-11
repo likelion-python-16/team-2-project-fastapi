@@ -19,6 +19,7 @@ services:
       - DEBUG=True   # 로컬용 - DEBUG ON
     volumes:
       - ./app:/app/app
+      - ./alembic:/app/alembic # 이 줄 추가!
     networks:
       - team-network-local
     restart: unless-stopped

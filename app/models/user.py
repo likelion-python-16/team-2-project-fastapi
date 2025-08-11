@@ -14,6 +14,7 @@ class User(Base):
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
     phone = Column(String(20),nullable=True)
-    # # 관계 설정
-    # posts = relationship("Post", back_populates="author", cascade="all, delete-orphan")
-    # comments = relationship("Comment", back_populates="author", cascade="all, delete-orphan")
+    #관계 설정
+    created_challenges=relationship("Challenge",back_populates="creator")
+    participated_challenges=relationship("ChallengeParticipant", back_populates="user")
+    

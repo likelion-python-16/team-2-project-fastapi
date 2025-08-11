@@ -10,8 +10,14 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
 # 🔧 우리 모델들 import
 from app.core.database import SQLALCHEMY_DATABASE_URL
-from app.models import Base,User   # Base 클래스 import
-target_metadata =Base.metadata
+from app.models.base import Base
+
+# 🔧 모든 모델들을 명시적으로 import (Alembic이 감지할 수 있도록)
+from app.models.user import User
+from app.models.challenge import Challenge
+from app.models.challenge_participant import ChallengeParticipant
+# 새로운 모델 추가시 여기에 import 추가
+
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
@@ -57,7 +63,8 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection, 
+            target_metadata=target_metadata
         )
 
         with context.begin_transaction():
