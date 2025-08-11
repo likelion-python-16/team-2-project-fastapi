@@ -10,7 +10,7 @@ from .core.lifespan import lifespan
 from .utils.logging import logger
 
 # 라우터들
-from .routers import users, health, system
+from .routers import users, health, system,challenges
 
 # FastAPI 앱 생성
 app = FastAPI(
@@ -49,7 +49,7 @@ async def read_root():
 app.include_router(health.router)           # /health/*
 app.include_router(system.router)          # /system/*
 app.include_router(users.router, prefix="/api/v1")  # /api/v1/users/*
-
+app.include_router(challenges.router)
 # TODO: 추가 라우터들
 # app.include_router(auth.router, prefix="/api/v1")      # /api/v1/auth/*
 # app.include_router(challenges.router, prefix="/api/v1") # /api/v1/challenges/*

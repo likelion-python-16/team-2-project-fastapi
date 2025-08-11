@@ -12,7 +12,8 @@ class Challenge(Base):
     start_date = Column(Date, nullable=True)
     end_date = Column(Date, nullable=True)
     created_at = Column(DateTime, default=func.now())
-    
+    status = Column(String(20), default="recruiting")
+
     # 🔗 Relationships
     creator = relationship("User", back_populates="created_challenges")
     participants = relationship("ChallengeParticipant", back_populates="challenge")
