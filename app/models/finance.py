@@ -38,8 +38,8 @@ class Payment(Base, TimestampMixin):
 
     id = Column(Integer, primary_key=True)
 
-    user_id      = Column(Integer, ForeignKey("user.id", ondelete="RESTRICT"), nullable=False)
-    challenge_id = Column(Integer, ForeignKey("challenge.id", ondelete="RESTRICT"), nullable=False)
+    user_id      = Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    challenge_id = Column(Integer, ForeignKey("challenges.id", ondelete="RESTRICT"), nullable=False)
 
     amount       = Column(DECIMAL(12, 2), nullable=False)
     currency     = Column(String(3), default="KRW", nullable=False)
@@ -69,8 +69,8 @@ class Refund(Base, TimestampMixin):
 
     id = Column(Integer, primary_key=True)
 
-    user_id      = Column(Integer, ForeignKey("user.id", ondelete="RESTRICT"), nullable=False)
-    challenge_id = Column(Integer, ForeignKey("challenge.id", ondelete="RESTRICT"), nullable=False)
+    user_id      = Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    challenge_id = Column(Integer, ForeignKey("challenges.id", ondelete="RESTRICT"), nullable=False)
 
     amount        = Column(DECIMAL(12, 2), nullable=False)
     currency      = Column(String(3), default="KRW", nullable=False)
@@ -99,7 +99,7 @@ class PointExchangeRequest(Base, TimestampMixin):
 
     id = Column(Integer, primary_key=True)
 
-    user_id = Column(Integer, ForeignKey("user.id", ondelete="RESTRICT"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
 
     point_amount = Column(Integer, nullable=False)        # 요청 포인트
     cash_amount  = Column(DECIMAL(12, 2), nullable=False) # 환전 금액(정책 반영 후)

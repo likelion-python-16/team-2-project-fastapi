@@ -18,6 +18,7 @@ from app.models.challenge import Challenge
 from app.models.challenge_participant import ChallengeParticipant
 from app.models.challenge_round import ChallengeRound
 from app.models.round_attendance import RoundAttendance
+from app.models.round_picture import RoundPicture
 # 새로운 모델 추가시 여기에 import 추가
 
 # this is the Alembic Config object, which provides

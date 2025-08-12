@@ -7,6 +7,8 @@ from .challenge import Challenge
 from .challenge_participant import ChallengeParticipant
 from .challenge_round import ChallengeRound
 from .round_attendance import RoundAttendance
+from .finance import Payment,Refund,PointExchangeRequest,PaymentStatus,RefundStatus,PointExchangeStatus
+
 # 나중에 추가될 모델들을 위한 공간
 # from .challenge import Challenge, ChallengeParticipant
 # from .tag import Tag, UserTag, ChallengeTag
@@ -17,12 +19,16 @@ from .round_attendance import RoundAttendance
 __all__ = [
     "Base",
     "User", 
-    # "Post", 
-    # "Comment",
     "Challenge",
     "ChallengeParticipant",
     "ChallengeRound",
     "RoundAttendance",
+    "Payment",
+    "Refund",
+    "PointExchangeRequest",
+    "PaymentStatus",
+    "RefundStatus",
+    "PointExchangeStatus",
     # "Tag",
     # "UserTag", 
     # "ChallengeTag",
