@@ -15,12 +15,21 @@ from app.models.base import Base
 # 🔧 모든 모델들을 명시적으로 import (Alembic이 감지할 수 있도록)
 from app.models.user import User
 from app.models.challenge import Challenge
-from app.models.challenge_participant import ChallengeParticipant
+from app.models.participation import Participation
 from app.models.challenge_round import ChallengeRound
-from app.models.round_attendance import RoundAttendance
 from app.models.round_picture import RoundPicture
-# 새로운 모델 추가시 여기에 import 추가
-
+from app.models.attendance import QRCode, RoundAttendance, Proof, Appeal
+from app.models.finance import Payment, Refund, PointExchangeRequest
+from app.models.tag import Tag, UserTag, ChallengeTag
+from app.models.admin_notice import AdminNotice
+from app.models.notification import Notification
+from app.models.following import Following
+from app.models.invitation import Invitation
+from app.models.pointhistory import PointHistory
+from app.models.review import Review, ReviewHelpful
+from app.models.challenge_embedding import ChallengeEmbedding
+from app.models.report import Report, ReportProof, PenaltyHistory
+from app.models.chat import ChatRoom, ChatMessage, ChatParticipant
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config

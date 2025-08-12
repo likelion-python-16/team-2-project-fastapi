@@ -70,7 +70,7 @@ class User(Base):
     uploaded_round_pictures = relationship(
         "RoundPicture",
         back_populates="uploader",
-        foreign_keys="RoundPicture.uploader_id",
+        foreign_keys="RoundPicture.uploader_by",
         overlaps="uploader"
     )
     created_challenges = relationship(
@@ -81,10 +81,30 @@ class User(Base):
     )
 
     participated_challenges = relationship(
-    "ChallengeParticipant", 
+    "Participation", 
     back_populates="user"
     )
-    
+    # User 모델에 추가해야 할 relationship들
+    user_tags = relationship("UserTag", back_populates="user")
+    following_relations = relationship("Following", foreign_keys="Following.follower_id", back_populates="follower")
+    follower_relations = relationship("Following", foreign_keys="Following.following_id", back_populates="following")
+    invitations_sent = relationship("Invitation", foreign_keys="Invitation.inviter_id", back_populates="inviter")
+    invitations_received = relationship("Invitation", foreign_keys="Invitation.invitee_id", back_populates="invitee")
+    invitations_reviewed = relationship("Invitation", foreign_keys="Invitation.reviewed_by", back_populates="reviewer")
+    point_histories = relationship("PointHistory", back_populates="user")
+    reviews = relationship("Review", back_populates="user")
+    helpful_given = relationship("ReviewHelpful", back_populates="user")
+    qrcodes = relationship("QRCode", back_populates="user")
+    round_attendances = relationship("RoundAttendance", back_populates="user", foreign_keys="RoundAttendance.user_id")
+    proofs = relationship("Proof", back_populates="user", foreign_keys="Proof.user_id")
+    verified_appeals = relationship("Appeal", back_populates="verifier", foreign_keys="Appeal.verified_by")
+    admin_notices = relationship("AdminNotice", back_populates="author")
+    reports_made = relationship("Report", foreign_keys="Report.reporter_id", back_populates="reporter")
+    reports_received = relationship("Report", foreign_keys="Report.reported_id", back_populates="reported") 
+    penalties = relationship("PenaltyHistory", back_populates="user")
+    chat_rooms_created = relationship("ChatRoom", back_populates="creator", foreign_keys="ChatRoom.creator_id")
+    chat_messages_sent = relationship("ChatMessage", back_populates="sender", foreign_keys="ChatMessage.sender_id")
+    chat_participations = relationship("ChatParticipant", back_populates="user")
     # 비밀번호 메서드
     def set_password(self, plain_password: str) -> None:
         """평문 비밀번호를 해시하여 저장"""

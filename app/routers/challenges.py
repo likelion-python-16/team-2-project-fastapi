@@ -9,7 +9,7 @@ from app.core.database import get_db
 # 모델들
 from app.models.user import User
 from app.models.challenge import Challenge
-from app.models.challenge_participant import ChallengeParticipant
+from app.models.participation import Participation  # ✅ 수정됨
 from app.models.challenge_round import ChallengeRound
 
 # 스키마들
@@ -313,11 +313,11 @@ def join_challenge(
             detail="Can only join recruiting challenges"
         )
     
-    # 이미 참가했는지 확인
-    existing_participant = db.query(ChallengeParticipant).filter(
-        ChallengeParticipant.challenge_id == challenge_id,
-        ChallengeParticipant.user_id == current_user_id,
-        ChallengeParticipant.is_active == True
+    # ✅ 이미 참가했는지 확인 - Participation 사용
+    existing_participant = db.query(Participation).filter(
+        Participation.challenge_id == challenge_id,
+        Participation.user_id == current_user_id,
+        Participation.is_active == True
     ).first()
     
     if existing_participant:
@@ -326,11 +326,11 @@ def join_challenge(
             detail="Already joined this challenge"
         )
     
-    # 🆕 최대 참가자 수 체크
+    # ✅ 최대 참가자 수 체크 - Participation 사용
     if challenge.max_participants:
-        current_participants = db.query(ChallengeParticipant).filter(
-            ChallengeParticipant.challenge_id == challenge_id,
-            ChallengeParticipant.is_active == True
+        current_participants = db.query(Participation).filter(
+            Participation.challenge_id == challenge_id,
+            Participation.is_active == True
         ).count()
         
         if current_participants >= challenge.max_participants:
@@ -339,8 +339,8 @@ def join_challenge(
                 detail="Challenge is full"
             )
     
-    # 참가자 추가
-    new_participant = ChallengeParticipant(
+    # ✅ 참가자 추가 - Participation 사용
+    new_participant = Participation(
         challenge_id=challenge_id,
         user_id=current_user_id
     )
@@ -364,14 +364,15 @@ def get_challenge_participants(
             detail="Challenge not found"
         )
     
-    participants = db.query(ChallengeParticipant).filter(
-        ChallengeParticipant.challenge_id == challenge_id
+    # ✅ Participation 사용
+    participants = db.query(Participation).filter(
+        Participation.challenge_id == challenge_id
     ).all()
     
     # 참가자 정보와 함께 반환
     result = []
     for participant in participants:
-        user = db.query(User).filter(User.user_id == participant.user_id).first()
+        user = db.query(User).filter(User.id == participant.user_id).first()  # ✅ user_id → id
         result.append({
             "user_id": participant.user_id,
             "username": user.username if user else "Unknown",
@@ -399,10 +400,10 @@ def leave_challenge(
             detail="Challenge not found"
         )
     
-    # 참가 여부 확인
-    participant = db.query(ChallengeParticipant).filter(
-        ChallengeParticipant.challenge_id == challenge_id,
-        ChallengeParticipant.user_id == current_user_id
+    # ✅ 참가 여부 확인 - Participation 사용
+    participant = db.query(Participation).filter(
+        Participation.challenge_id == challenge_id,
+        Participation.user_id == current_user_id
     ).first()
     
     if not participant:
@@ -438,9 +439,9 @@ def get_my_participations(db: Session = Depends(get_db)):
     # TODO: 현재 유저 ID 가져오기 (인증 구현 후)
     current_user_id = 2  # 임시값
     
-    # 내가 참가한 챌린지들의 ID 조회
-    participant_challenge_ids = db.query(ChallengeParticipant.challenge_id).filter(
-        ChallengeParticipant.user_id == current_user_id
+    # ✅ 내가 참가한 챌린지들의 ID 조회 - Participation 사용
+    participant_challenge_ids = db.query(Participation.challenge_id).filter(
+        Participation.user_id == current_user_id
     ).subquery()
     
     # 해당 챌린지들 조회
@@ -524,9 +525,9 @@ def delete_challenge(
     #         detail="Only the creator can delete this challenge"
     #     )
     
-    # 참가자가 있는지 확인
-    participants = db.query(ChallengeParticipant).filter(
-        ChallengeParticipant.challenge_id == challenge_id
+    # ✅ 참가자가 있는지 확인 - Participation 사용
+    participants = db.query(Participation).filter(
+        Participation.challenge_id == challenge_id
     ).count()
     
     if participants > 0:
@@ -540,16 +541,6 @@ def delete_challenge(
     db.commit()
     
     return {"message": "Challenge deleted successfully"}
-
-# 챌린지 상태별 조회
-@router.get("/status/{status}", response_model=List[ChallengeResponse])
-def get_challenges_by_status(
-    status: ChallengeStatus,
-    db: Session = Depends(get_db)
-):
-    """상태별 챌린지 조회"""
-    challenges = db.query(Challenge).filter(Challenge.status == status.value).all()
-    return challenges
 
 # 챌린지 상태 변경
 @router.patch("/{challenge_id}/status")
@@ -599,45 +590,3 @@ def update_challenge_status(
         "message": f"Challenge status updated to {new_status.value}",
         "challenge": challenge
     }
-
-# 챌린지 검색 (제목으로)
-@router.get("/search", response_model=List[ChallengeResponse])
-def search_challenges(
-    q: str = Query(..., description="검색어"),  # Query 명시
-    db: Session = Depends(get_db)
-):
-    """제목으로 챌린지 검색"""
-    challenges = db.query(Challenge).filter(
-        Challenge.title.contains(q)  # 제목에 검색어 포함
-    ).all()
-    return challenges
-
-# 챌린지 필터링
-@router.get("/filter", response_model=List[ChallengeResponse])
-def filter_challenges(
-    status: Optional[str] = Query(None, description="상태 필터"),
-    creator_id: Optional[int] = Query(None, description="생성자 ID"),
-    start_date_from: Optional[date] = Query(None, description="시작일 시작 범위"),
-    start_date_to: Optional[date] = Query(None, description="시작일 종료 범위"),
-    db: Session = Depends(get_db)
-):
-    """다양한 조건으로 챌린지 필터링"""
-    query = db.query(Challenge)
-    
-    # 상태 필터
-    if status:
-        query = query.filter(Challenge.status == status)
-    
-    # 생성자 필터
-    if creator_id:
-        query = query.filter(Challenge.creator_id == creator_id)
-    
-    # 시작일 범위 필터
-    if start_date_from:
-        query = query.filter(Challenge.start_date >= start_date_from)
-    
-    if start_date_to:
-        query = query.filter(Challenge.start_date <= start_date_to)
-    
-    challenges = query.all()
-    return challenges

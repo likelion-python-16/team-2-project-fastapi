@@ -1,5 +1,5 @@
 import enum
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     Column, Integer, String, ForeignKey, DateTime, Text,
@@ -34,9 +34,9 @@ class PointExchangeStatus(str, enum.Enum):
 # Payment
 # -------------------------
 class Payment(Base, TimestampMixin):
-    __tablename__ = "payment"
+    __tablename__ = "payments"
 
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, index=True)
 
     user_id      = Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
     challenge_id = Column(Integer, ForeignKey("challenges.id", ondelete="RESTRICT"), nullable=False)
@@ -44,7 +44,7 @@ class Payment(Base, TimestampMixin):
     amount       = Column(DECIMAL(12, 2), nullable=False)
     currency     = Column(String(3), default="KRW", nullable=False)
     payment_type = Column(String(20), nullable=False)   # 예: card, vbank, bank_transfer
-    status       = Column(SAEnum(PaymentStatus), default=PaymentStatus.pending, nullable=False)
+    status       = Column(SAEnum(PaymentStatus, name="payment_status_enum"), default=PaymentStatus.pending, nullable=False)
 
     toss_payment_id        = Column(String(100), nullable=False)
     idempotency_key        = Column(String(64), nullable=True)   # 요청 중복 방지용(선택)
@@ -59,15 +59,17 @@ class Payment(Base, TimestampMixin):
         UniqueConstraint('idempotency_key', name='uq_payment_idem'),
         Index('ix_payment_user_created', 'user_id', 'created_at'),
         Index('ix_payment_status', 'status'),
+        Index('ix_payment_challenge', 'challenge_id'),
+        Index('ix_payment_amount', 'amount'),  # 금액별 조회용
     )
 
 # -------------------------
 # Refund
 # -------------------------
 class Refund(Base, TimestampMixin):
-    __tablename__ = "refund"
+    __tablename__ = "refunds"
 
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, index=True)
 
     user_id      = Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
     challenge_id = Column(Integer, ForeignKey("challenges.id", ondelete="RESTRICT"), nullable=False)
@@ -77,7 +79,7 @@ class Refund(Base, TimestampMixin):
     reason        = Column(String(100), nullable=False)
     processed_at  = Column(DateTime, nullable=True)
 
-    refund_status = Column(SAEnum(RefundStatus), default=RefundStatus.pending, nullable=False)
+    refund_status = Column(SAEnum(RefundStatus, name="refund_status_enum"), default=RefundStatus.pending, nullable=False)
     toss_refund_id = Column(String(100), nullable=True)
     error_msg     = Column(Text, nullable=True)
 
@@ -89,23 +91,25 @@ class Refund(Base, TimestampMixin):
         UniqueConstraint('toss_refund_id', name='uq_refund_toss'),
         Index('ix_refund_user_processed', 'user_id', 'processed_at'),
         Index('ix_refund_status', 'refund_status'),
+        Index('ix_refund_challenge', 'challenge_id'),
+        Index('ix_refund_amount', 'amount'),  # 금액별 조회용
     )
 
 # -------------------------
 # PointExchangeRequest
 # -------------------------
 class PointExchangeRequest(Base, TimestampMixin):
-    __tablename__ = "point_exchange_request"
+    __tablename__ = "point_exchange_requests"
 
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, index=True)
 
     user_id = Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
 
     point_amount = Column(Integer, nullable=False)        # 요청 포인트
     cash_amount  = Column(DECIMAL(12, 2), nullable=False) # 환전 금액(정책 반영 후)
-    status       = Column(SAEnum(PointExchangeStatus), default=PointExchangeStatus.pending, nullable=False)
+    status       = Column(SAEnum(PointExchangeStatus, name="point_exchange_status_enum"), default=PointExchangeStatus.pending, nullable=False)
 
-    requested_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    requested_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     processed_at = Column(DateTime, nullable=True)
 
     # 관계
@@ -114,4 +118,5 @@ class PointExchangeRequest(Base, TimestampMixin):
     __table_args__ = (
         Index('ix_px_user_requested', 'user_id', 'requested_at'),
         Index('ix_px_status', 'status'),
+        Index('ix_px_amount', 'point_amount'),  # 포인트 금액별 조회용
     )

@@ -4,36 +4,88 @@ from .base import Base
 # 모든 모델들을 import
 from .user import User
 from .challenge import Challenge
-from .challenge_participant import ChallengeParticipant
+from .participation import Participation, ParticipationRole
 from .challenge_round import ChallengeRound
-from .round_attendance import RoundAttendance
-from .finance import Payment,Refund,PointExchangeRequest,PaymentStatus,RefundStatus,PointExchangeStatus
-
-# 나중에 추가될 모델들을 위한 공간
-# from .challenge import Challenge, ChallengeParticipant
-# from .tag import Tag, UserTag, ChallengeTag
-# from .qr import QRCode
-# from .chat import ChatRoom, ChatMessage, ChatParticipant
-
+from .round_picture import RoundPicture
+from .attendance import QRCode, RoundAttendance, Proof, Appeal
+from .attendance import QRStatus, CheckMethod, AutoDecision, InitialDecision, InitialDecisionCode, ProofStatus, AppealDecisionCode, AttendanceStatus
+from .finance import Payment, Refund, PointExchangeRequest
+from .finance import PaymentStatus, RefundStatus, PointExchangeStatus
+from .tag import Tag, UserTag, ChallengeTag
+from .admin_notice import AdminNotice
+from .notification import Notification, NotificationEvent
+from .following import Following
+from .invitation import Invitation, InvitationStatus
+from .pointhistory import PointHistory, PointHistoryType
+from .review import Review, ReviewHelpful, ReviewStatus
+from .challenge_embedding import ChallengeEmbedding
+from .report import Report, ReportProof, PenaltyHistory, ReportStatus, PenaltySource
+from .chat import ChatRoom, ChatMessage, ChatParticipant
 # __all__로 외부에서 import 가능한 것들 정의
 __all__ = [
+    # Base
     "Base",
-    "User", 
-    "Challenge",
-    "ChallengeParticipant",
+    
+    # Core Models
+    "User",
+    "Challenge", 
+    "Participation",
     "ChallengeRound",
-    "RoundAttendance",
+    "RoundPicture",
+    
+    # Attendance System
+    "QRCode",
+    "RoundAttendance", 
+    "Proof",
+    "Appeal",
+    
+    # Finance
     "Payment",
-    "Refund",
+    "Refund", 
     "PointExchangeRequest",
+    "PointHistory",
+    
+    # Social Features
+    "Tag",
+    "UserTag",
+    "ChallengeTag", 
+    "Following",
+    "Invitation",
+    "Review",
+    "ReviewHelpful",
+    
+    # Admin & System
+    "AdminNotice",
+    "Notification",
+    "ChallengeEmbedding",
+    
+    # Enums
+    "ParticipationRole",
+    "QRStatus",
+    "CheckMethod", 
+    "AutoDecision",
+    "InitialDecision",
+    "InitialDecisionCode",
+    "ProofStatus",
+    "AppealDecisionCode", 
+    "AttendanceStatus",
     "PaymentStatus",
     "RefundStatus",
     "PointExchangeStatus",
-    # "Tag",
-    # "UserTag", 
-    # "ChallengeTag",
-    # "QRCode",
-    # "ChatRoom",
-    # "ChatMessage", 
-    # "ChatParticipant",
+    "PointHistoryType", 
+    "NotificationEvent",
+    "InvitationStatus",
+    "ReviewStatus",
+    
+    #report
+    "Report",
+    "ReportProof",
+    "PenaltyHistory", 
+    "ReportStatus",
+    "PenaltySource",
+
+    #chat
+    "ChatRoom",
+    "ChatMessage",
+    "ChatParticipant",
 ]

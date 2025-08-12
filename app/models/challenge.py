@@ -40,7 +40,38 @@ class Challenge(Base):
     deleted_by = Column(Integer, ForeignKey("users.id"), nullable=True, comment="삭제한 유저")
     
     # 🔗 Relationships (foreign_keys 명시)
-    creator = relationship("User", back_populates="created_challenges", foreign_keys=[creator_id],overlaps="created_challenges")
-    participants = relationship("ChallengeParticipant", back_populates="challenge")
+    creator = relationship("User", back_populates="created_challenges", foreign_keys="Challenge.creator_id")
+    deleter = relationship("User", foreign_keys="Challenge.deleted_by")
+
+    # 참가 관련
+    participations = relationship("Participation", back_populates="challenge")
+
+    # 라운드 관련
     rounds = relationship("ChallengeRound", back_populates="challenge")
-    deleter = relationship("User", foreign_keys=[deleted_by], overlaps="created_challenges")
+
+    # 결제 관련
+    payments = relationship("Payment", back_populates="challenge")
+    refunds = relationship("Refund", back_populates="challenge")
+
+    # 초대 관련
+    invitations = relationship("Invitation", back_populates="challenge")
+
+    # 포인트 관련
+    point_histories = relationship("PointHistory", back_populates="challenge")
+
+    # 리뷰 관련
+    reviews = relationship("Review", back_populates="challenge")
+
+    # 태그 관련
+    challenge_tags = relationship("ChallengeTag", back_populates="challenge")
+
+    # 임베딩 관련
+    embeddings = relationship("ChallengeEmbedding", back_populates="challenge", cascade="all, delete-orphan")
+
+    proofs = relationship("Proof", back_populates="challenge")
+
+    # Challenge 모델에 추가
+    reports = relationship("Report", back_populates="challenge")
+    penalties = relationship("PenaltyHistory", back_populates="challenge")
+
+    chat_rooms = relationship("ChatRoom", back_populates="challenge")

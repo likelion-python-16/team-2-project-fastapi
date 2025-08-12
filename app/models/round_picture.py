@@ -6,12 +6,12 @@ from sqlalchemy.orm import relationship
 from .base import Base, TimestampMixin
 
 class RoundPicture(Base, TimestampMixin):
-    __tablename__ = "round_picture"
+    __tablename__ = "round_pictures"
     
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, index=True)
     
     # FK
-    challengeround_id = Column(Integer, ForeignKey("challenge_rounds.id", ondelete="CASCADE"), nullable=False)
+    round_id = Column(Integer, ForeignKey("challenge_rounds.id", ondelete="CASCADE"), nullable=False)
     uploaded_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     
     # 파일/공개여부/업로드시각
@@ -24,6 +24,8 @@ class RoundPicture(Base, TimestampMixin):
     uploader = relationship("User", back_populates="uploaded_round_pictures", foreign_keys=[uploaded_by])
     
     __table_args__ = (
-        Index("ix_roundpic_round", "challengeround_id"),
+        Index("ix_roundpic_round", "round_id"),
         Index("ix_roundpic_public", "is_public"),
+        Index("ix_roundpic_uploader", "uploaded_by"),
+        Index("ix_roundpic_created", "created_at"),
     )
