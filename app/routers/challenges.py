@@ -10,9 +10,11 @@ from app.core.database import get_db
 from app.models.user import User
 from app.models.challenge import Challenge
 from app.models.challenge_participant import ChallengeParticipant
+from app.models.challenge_round import ChallengeRound
 
 # 스키마들
 from app.schemas.challenge import ChallengeCreate, ChallengeResponse, ChallengeUpdate, ChallengeStatus
+from app.schemas.challenge_round import ChallengeRoundCreate, ChallengeRoundUpdate, ChallengeRoundResponse
 
 # 라우터 생성
 router = APIRouter(
@@ -30,13 +32,37 @@ def create_challenge(
     # TODO: 현재 유저 ID 가져오기 (인증 구현 후)
     current_user_id = 1  # 임시값
     
-    # 새 챌린지 생성
+    # 🆕 비즈니스 로직 검증
+    # 회비와 참가비 둘 다 설정할 수 없음
+    if challenge_data.fee and challenge_data.fee > 0 and challenge_data.participation_fee and challenge_data.participation_fee > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot set both fee and participation fee"
+        )
+    
+    # 리워드 사용 시 리워드 내용 필수
+    if challenge_data.use_reward and not challenge_data.reward:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reward content is required when use_reward is True"
+        )
+    
+    # 새 챌린지 생성 (모든 필드 포함)
     new_challenge = Challenge(
         title=challenge_data.title,
         description=challenge_data.description,
         start_date=challenge_data.start_date,
         end_date=challenge_data.end_date,
-        creator_id=current_user_id
+        creator_id=current_user_id,
+        # 🆕 새로운 필드들
+        fee=challenge_data.fee or 0,
+        participation_fee=challenge_data.participation_fee or 0,
+        min_participants=challenge_data.min_participants,
+        max_participants=challenge_data.max_participants,
+        total_rounds=challenge_data.total_rounds,
+        min_participation_rate=challenge_data.min_participation_rate or 80,
+        use_reward=challenge_data.use_reward or False,
+        reward=challenge_data.reward
     )
     
     # DB에 저장
@@ -52,6 +78,138 @@ def get_challenges(db: Session = Depends(get_db)):
     """모든 챌린지 목록 조회"""
     challenges = db.query(Challenge).all()
     return challenges
+
+# ===========================================
+# 🆕 회차 관리 API들
+# ===========================================
+
+# 특정 챌린지의 회차 목록 조회
+@router.get("/{challenge_id}/rounds", response_model=List[ChallengeRoundResponse])
+def get_challenge_rounds(
+    challenge_id: int,
+    db: Session = Depends(get_db)
+):
+    """특정 챌린지의 모든 회차 조회"""
+    # 챌린지 존재 확인
+    challenge = db.query(Challenge).filter(Challenge.id == challenge_id).first()
+    if not challenge:
+        raise HTTPException(status_code=404, detail="Challenge not found")
+    
+    rounds = db.query(ChallengeRound).filter(
+        ChallengeRound.challenge_id == challenge_id
+    ).order_by(ChallengeRound.round).all()
+    
+    return rounds
+
+# 회차 생성
+@router.post("/{challenge_id}/rounds", response_model=ChallengeRoundResponse)
+def create_challenge_round(
+    challenge_id: int,
+    round_data: ChallengeRoundCreate,
+    db: Session = Depends(get_db)
+):
+    """새 회차 생성"""
+    # 챌린지 존재 확인
+    challenge = db.query(Challenge).filter(Challenge.id == challenge_id).first()
+    if not challenge:
+        raise HTTPException(status_code=404, detail="Challenge not found")
+    
+    # 같은 회차 번호 중복 확인
+    existing_round = db.query(ChallengeRound).filter(
+        ChallengeRound.challenge_id == challenge_id,
+        ChallengeRound.round == round_data.round
+    ).first()
+    
+    if existing_round:
+        raise HTTPException(status_code=400, detail="Round number already exists")
+    
+    # 새 회차 생성
+    new_round = ChallengeRound(
+        challenge_id=challenge_id,
+        mode=round_data.mode,
+        round=round_data.round,
+        processing_at=round_data.processing_at,
+        start_time=round_data.start_time,
+        finish_time=round_data.finish_time,
+        description=round_data.description,
+        url=round_data.url,
+        lat=round_data.lat,
+        lon=round_data.lon,
+        geofence_radius_m=round_data.geofence_radius_m,
+        zoom_meeting_id=round_data.zoom_meeting_id
+    )
+    
+    db.add(new_round)
+    db.commit()
+    db.refresh(new_round)
+    
+    return new_round
+
+# 특정 회차 조회
+@router.get("/{challenge_id}/rounds/{round_id}", response_model=ChallengeRoundResponse)
+def get_challenge_round(
+    challenge_id: int,
+    round_id: int,
+    db: Session = Depends(get_db)
+):
+    """특정 회차 상세 조회"""
+    round_obj = db.query(ChallengeRound).filter(
+        ChallengeRound.challenge_id == challenge_id,
+        ChallengeRound.id == round_id
+    ).first()
+    
+    if not round_obj:
+        raise HTTPException(status_code=404, detail="Round not found")
+    
+    return round_obj
+
+# 회차 수정
+@router.put("/{challenge_id}/rounds/{round_id}", response_model=ChallengeRoundResponse)
+def update_challenge_round(
+    challenge_id: int,
+    round_id: int,
+    round_update: ChallengeRoundUpdate,
+    db: Session = Depends(get_db)
+):
+    """회차 정보 수정"""
+    round_obj = db.query(ChallengeRound).filter(
+        ChallengeRound.challenge_id == challenge_id,
+        ChallengeRound.id == round_id
+    ).first()
+    
+    if not round_obj:
+        raise HTTPException(status_code=404, detail="Round not found")
+    
+    # 수정할 필드만 업데이트
+    update_data = round_update.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(round_obj, field, value)
+    
+    db.commit()
+    db.refresh(round_obj)
+    
+    return round_obj
+
+# 회차 삭제
+@router.delete("/{challenge_id}/rounds/{round_id}")
+def delete_challenge_round(
+    challenge_id: int,
+    round_id: int,
+    db: Session = Depends(get_db)
+):
+    """회차 삭제"""
+    round_obj = db.query(ChallengeRound).filter(
+        ChallengeRound.challenge_id == challenge_id,
+        ChallengeRound.id == round_id
+    ).first()
+    
+    if not round_obj:
+        raise HTTPException(status_code=404, detail="Round not found")
+    
+    db.delete(round_obj)
+    db.commit()
+    
+    return {"message": "Round deleted successfully"}
 
 # 진행 중인 챌린지만 조회 (경로 충돌 방지를 위해 위로 이동)
 @router.get("/active", response_model=List[ChallengeResponse])
@@ -141,10 +299,25 @@ def join_challenge(
             detail="Challenge not found"
         )
     
+    # 🆕 삭제된 챌린지 체크
+    if challenge.is_deleted:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot join a deleted challenge"
+        )
+    
+    # 🆕 모집 중인 챌린지만 참가 가능
+    if challenge.status != "recruiting":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Can only join recruiting challenges"
+        )
+    
     # 이미 참가했는지 확인
     existing_participant = db.query(ChallengeParticipant).filter(
         ChallengeParticipant.challenge_id == challenge_id,
-        ChallengeParticipant.user_id == current_user_id
+        ChallengeParticipant.user_id == current_user_id,
+        ChallengeParticipant.is_active == True
     ).first()
     
     if existing_participant:
@@ -152,6 +325,19 @@ def join_challenge(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Already joined this challenge"
         )
+    
+    # 🆕 최대 참가자 수 체크
+    if challenge.max_participants:
+        current_participants = db.query(ChallengeParticipant).filter(
+            ChallengeParticipant.challenge_id == challenge_id,
+            ChallengeParticipant.is_active == True
+        ).count()
+        
+        if current_participants >= challenge.max_participants:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Challenge is full"
+            )
     
     # 참가자 추가
     new_participant = ChallengeParticipant(
@@ -185,7 +371,7 @@ def get_challenge_participants(
     # 참가자 정보와 함께 반환
     result = []
     for participant in participants:
-        user = db.query(User).filter(User.id == participant.user_id).first()
+        user = db.query(User).filter(User.user_id == participant.user_id).first()
         result.append({
             "user_id": participant.user_id,
             "username": user.username if user else "Unknown",

@@ -3,7 +3,10 @@ from .base import Base
 
 # 모든 모델들을 import
 from .user import User
-
+from .challenge import Challenge
+from .challenge_participant import ChallengeParticipant
+from .challenge_round import ChallengeRound
+from .round_attendance import RoundAttendance
 # 나중에 추가될 모델들을 위한 공간
 # from .challenge import Challenge, ChallengeParticipant
 # from .tag import Tag, UserTag, ChallengeTag
@@ -18,6 +21,8 @@ __all__ = [
     # "Comment",
     "Challenge",
     "ChallengeParticipant",
+    "ChallengeRound",
+    "RoundAttendance",
     # "Tag",
     # "UserTag", 
     # "ChallengeTag",

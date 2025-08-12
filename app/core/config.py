@@ -3,13 +3,15 @@ import os
 from enum import Enum
 from functools import lru_cache
 from pydantic_settings import BaseSettings
+from dotenv import load_dotenv
 
+# .env 파일 로드
+load_dotenv()
 
 class Environment(str, Enum):
     DEVELOPMENT = "development"
     PRODUCTION = "production"
     TESTING = "testing"
-
 
 class Settings(BaseSettings):
     # 기본 설정
@@ -23,35 +25,36 @@ class Settings(BaseSettings):
     api_port: int = 8000
     debug: bool = True
     
-    # 데이터베이스 설정 (현재 EC2 환경 기준)
-    mysql_host: str = "mysql"  # localhost → team-mysql (Docker 컨테이너명)
+    # 데이터베이스 설정
+    mysql_host: str = "mysql"
     mysql_port: int = 3306
-    # TODO: 실제 프로젝트에서 사용할 MySQL 사용자명/비밀번호로 변경 필요
-    mysql_user: str = "team_user"  # 현재 .env에서 사용 중인 값
-    mysql_password: str = "team_password_123"  # 현재 .env에서 사용 중인 값
-    mysql_database: str = "team_project_db"  # 현재 사용 중
-    mysql_root_password: str = "root_password_123"  # 현재 .env에서 사용 중인 값
+    mysql_user: str = "team_user"
+    mysql_password: str = "team_password_123"
+    mysql_database: str = "team_project_db"
+    mysql_root_password: str = "root_password_123"
     
-    # RDS 사용시 (현재는 주석처리)
-    # mysql_host: str = "myapp-mysql.c7cmcg408xvn.ap-northeast-2.rds.amazonaws.com"
-    # mysql_user: str = "admin"
-    # mysql_password: str = "rjschd159951"
-    
-    # JWT 설정 - TODO: 실제 프로젝트에서는 더 강력한 키로 변경
-    jwt_secret: str = "team-project-secret-key-change-this-in-production"
+    # 🆕 JWT 설정 (환경변수 우선)
+    jwt_secret: str = os.getenv("JWT_SECRET", "team-project-secret-key-change-this-in-production")
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 30
     
-    # CORS 설정 (현재 EC2 IP 포함)
+    # 🆕 암호화 설정
+    fernet_key: str = os.getenv("FERNET_KEY", "")
+    
+    # 🆕 AWS 설정
+    aws_region: str = os.getenv("AWS_REGION", "")
+    aws_access_key_id: str = os.getenv("AWS_ACCESS_KEY_ID", "")
+    aws_secret_access_key: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
+    s3_bucket: str = os.getenv("S3_BUCKET", "")
+    
+    # CORS 설정
     allowed_origins: list[str] = [
         "http://localhost:3000",
         "http://localhost:8080",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:8080",
-        "http://54.180.237.228:3000",  # EC2 IP - 프론트엔드용
-        "http://54.180.237.228:8080",  # EC2 IP - phpMyAdmin용
-        # TODO: 실제 도메인 주소 추가 필요 (도메인 설정시)
-        # "https://yourdomain.com",
+        "http://54.180.237.228:3000",
+        "http://54.180.237.228:8080",
     ]
     
     @property
@@ -66,58 +69,43 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.environment == Environment.PRODUCTION
     
+    def validate_required_keys(self):
+        """필수 키 검증"""
+        missing_keys = []
+        
+        # 프로덕션에서만 필수인 키들
+        if self.is_production:
+            if not self.fernet_key:
+                missing_keys.append("FERNET_KEY")
+            if not self.aws_access_key_id:
+                missing_keys.append("AWS_ACCESS_KEY_ID")
+        
+        if missing_keys:
+            raise RuntimeError(f"Missing required environment variables: {', '.join(missing_keys)}")
+    
     class Config:
         env_file = ".env"
         case_sensitive = False
 
-
+# 환경별 설정 클래스들 (기존 코드 유지)
 class DevelopmentSettings(Settings):
-    """개발 환경 설정"""
     environment: Environment = Environment.DEVELOPMENT
     debug: bool = True
-    
-    # 개발용 데이터베이스 (로컬 Docker 컨테이너)
-    mysql_host: str = "mysql"  # localhost → mysql
-    mysql_user: str = "team_user"  # 현재 docker-compose.yml에서 사용 중
-    mysql_password: str = "team_password_123"
-
+    mysql_host: str = "mysql"
 
 class ProductionSettings(Settings):
-    """프로덕션 환경 설정"""
     environment: Environment = Environment.PRODUCTION
     debug: bool = False
+    jwt_secret: str = os.getenv("JWT_SECRET", "CHANGE-THIS-TO-SUPER-SECURE-KEY-FOR-PRODUCTION")
     
-    # 프로덕션용 데이터베이스 (현재 EC2 로컬 MySQL 사용)
-    mysql_host: str = "mysql"  # localhost → mysql
-    mysql_user: str = "team_user"
-    mysql_password: str = "team_password_123"
-    
-    # RDS 사용시 주석 해제하고 위 3줄 주석처리
-    # mysql_host: str = "myapp-mysql.c7cmcg408xvn.ap-northeast-2.rds.amazonaws.com"
-    # mysql_user: str = "admin"
-    # mysql_password: str = "rjschd159951"
-    
-    # CORS - 프로덕션에서는 EC2 IP 포함
-    allowed_origins: list[str] = [
-        "http://54.180.237.228:3000",  # EC2 프론트엔드
-        "http://54.180.237.228:8080",  # EC2 phpMyAdmin
-        # TODO: 실제 도메인 설정시 추가
-        # "https://yourdomain.com",
-        # "https://api.yourdomain.com",
-    ]
-    
-    # TODO: 프로덕션에서는 더 강력한 JWT 시크릿 사용
-    jwt_secret: str = "CHANGE-THIS-TO-SUPER-SECURE-KEY-FOR-PRODUCTION"
-
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.validate_required_keys()  # 프로덕션에서만 검증
 
 class TestingSettings(Settings):
-    """테스트 환경 설정"""
     environment: Environment = Environment.TESTING
     debug: bool = True
-    
-    # 테스트용 데이터베이스
     mysql_database: str = "test_team_project_db"
-
 
 @lru_cache()
 def get_settings() -> Settings:
@@ -131,6 +119,14 @@ def get_settings() -> Settings:
     else:
         return DevelopmentSettings()
 
-
 # 전역 설정 인스턴스
 settings = get_settings()
+
+# 🆕 하위 호환성을 위한 개별 변수들
+DATABASE_URL = settings.database_url
+JWT_SECRET = settings.jwt_secret
+FERNET_KEY = settings.fernet_key
+AWS_REGION = settings.aws_region
+AWS_ACCESS_KEY_ID = settings.aws_access_key_id
+AWS_SECRET_ACCESS_KEY = settings.aws_secret_access_key
+S3_BUCKET = settings.s3_bucket

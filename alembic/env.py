@@ -9,13 +9,15 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
 # 🔧 우리 모델들 import
-from app.core.database import SQLALCHEMY_DATABASE_URL
+from app.core.config import settings
 from app.models.base import Base
 
 # 🔧 모든 모델들을 명시적으로 import (Alembic이 감지할 수 있도록)
 from app.models.user import User
 from app.models.challenge import Challenge
 from app.models.challenge_participant import ChallengeParticipant
+from app.models.challenge_round import ChallengeRound
+from app.models.round_attendance import RoundAttendance
 # 새로운 모델 추가시 여기에 import 추가
 
 # this is the Alembic Config object, which provides
@@ -23,7 +25,7 @@ from app.models.challenge_participant import ChallengeParticipant
 config = context.config
 
 # 🔧 환경변수에서 DB URL 가져오기
-config.set_main_option("sqlalchemy.url", SQLALCHEMY_DATABASE_URL)
+config.set_main_option("sqlalchemy.url", settings.database_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
