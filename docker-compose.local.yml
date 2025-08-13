@@ -11,21 +11,21 @@ services:
       mysql:
         condition: service_healthy
     environment:
-      # 🆕 환경 설정
+      # 환경 설정
       - ENVIRONMENT=development
       
-      # MySQL 설정 (기존)
+      # MySQL 설정
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
       - MYSQL_USER=team_user
       - MYSQL_PASSWORD=team_password_123
       - MYSQL_DATABASE=team_project_db
       
-      # 🆕 보안 관련 (.env에서 가져오기)
+      # 보안 관련 (.env에서 가져오기)
       - JWT_SECRET=${JWT_SECRET:-default-dev-secret-change-in-production}
       - FERNET_KEY=${FERNET_KEY:-}
       
-      # 🆕 AWS 설정 (.env에서 가져오기)  
+      # AWS 설정 (.env에서 가져오기)
       - AWS_REGION=${AWS_REGION:-}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
@@ -33,11 +33,9 @@ services:
       
       # 기타 설정
       - DEBUG=True
-      
     volumes:
       - ./app:/app/app
       - ./alembic:/app/alembic
-      # 🆕 .env 파일도 볼륨으로 마운트 (선택사항)
       - ./.env:/app/.env:ro
     networks:
       - team-network-local
@@ -70,23 +68,25 @@ services:
       timeout: 5s
       retries: 5
 
-  # phpMyAdmin  
-  phpmyadmin:
-    image: phpmyadmin/phpmyadmin
-    container_name: team-phpmyadmin-local
-    environment:
-      - PMA_HOST=mysql
-      - PMA_PORT=3306
-      - PMA_USER=team_user
-      - PMA_PASSWORD=team_password_123
+  # 프론트엔드
+  frontend:
+    build: ./frontend
+    container_name: team-frontend-local
     ports:
       - "8081:80"
     depends_on:
-      mysql:
+      api:
         condition: service_healthy
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
     networks:
       - team-network-local
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 volumes:
   mysql_data_local:
