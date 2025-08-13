@@ -70,7 +70,7 @@ class User(Base):
     uploaded_round_pictures = relationship(
         "RoundPicture",
         back_populates="uploader",
-        foreign_keys="RoundPicture.uploader_by",
+        foreign_keys="RoundPicture.uploaded_by",
         overlaps="uploader"
     )
     created_challenges = relationship(
@@ -80,7 +80,7 @@ class User(Base):
     overlaps="creator"
     )
 
-    participated_challenges = relationship(
+    participations = relationship(
     "Participation", 
     back_populates="user"
     )
