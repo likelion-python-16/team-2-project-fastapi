@@ -13,7 +13,7 @@ venv.bak/
 
 # FastAPI
 .env
-
+.env.production
 # Database
 *.db
 *.sqlite3
