@@ -26,6 +26,7 @@ class Participation(Base, TimestampMixin):
     
     # 관계
     user = relationship("User", back_populates="participations")
+    challenge = relationship("Challenge", back_populates="participated_challenges")
     challenge = relationship("Challenge", back_populates="participations")
     
     __table_args__ = (

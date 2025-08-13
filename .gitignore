@@ -6,6 +6,7 @@ __pycache__/
 .Python
 env/
 venv/
+.venv/          # Python 가상환경(현재 문제 해결용)
 ENV/
 env.bak/
 venv.bak/
@@ -14,6 +15,7 @@ venv.bak/
 # FastAPI
 .env
 .env.production
+
 # Database
 *.db
 *.sqlite3
