@@ -3,6 +3,11 @@ name: Deploy to EC2
 on:
   push:
     branches: [ main, develop ]
+    paths-ignore:  # 특정 파일 변경시에는 배포 안함
+      - '**.md'
+      - '.gitignore'
+      - '.dockerignore'
+      - 'docs/**'
   pull_request:
     branches: [ main ]
 
@@ -69,8 +74,9 @@ jobs:
           cd /home/ec2-user/myapp/team-project
           log_with_timestamp "📁 Changed to project directory"
 
-          # 브랜치별 배포
-          if [ "${{ github.ref }}" == "refs/heads/develop" ]; then
+          # 브랜치별 배포 (조건 수정!)
+          BRANCH_NAME="${{ github.ref_name }}"
+          if [ "$BRANCH_NAME" == "develop" ]; then
             log_with_timestamp "🔧 Deploying develop branch..."
             git fetch origin develop && log_with_timestamp "✅ Fetched develop"
             git checkout develop && log_with_timestamp "✅ Checked out develop"
