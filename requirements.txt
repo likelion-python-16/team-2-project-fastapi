@@ -35,3 +35,4 @@ email-validator==2.1.0
 # auth (우리가 쓰는 건 jose + passlib)
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
+httpx
