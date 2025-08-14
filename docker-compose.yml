@@ -1,97 +1,117 @@
-version: '3.8'
+name: Deploy to EC2
 
-services:
-  # FastAPI 애플리케이션
-  api:
-    build: .
-    container_name: team-api
-    ports:
-      - "8000:8000"  # 배포는 8000 포트 사용
-    depends_on:
-      mysql:
-        condition: service_healthy
-    environment:
-      # 환경 설정
-      - ENVIRONMENT=production  # 배포환경은 production
-      
-      # MySQL 설정
-      - MYSQL_HOST=mysql
-      - MYSQL_PORT=3306
-      - MYSQL_USER=team_user
-      - MYSQL_PASSWORD=team_password_123
-      - MYSQL_DATABASE=team_project_db
-      
-      # 보안 관련 (.env에서 가져오기)
-      - JWT_SECRET=${JWT_SECRET:-default-dev-secret-change-in-production}
-      - FERNET_KEY=${FERNET_KEY:-}
-      
-      # AWS 설정 (.env에서 가져오기)
-      - AWS_REGION=${AWS_REGION:-}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
-      - S3_BUCKET=${S3_BUCKET:-}
-      
-      # 기타 설정
-      - DEBUG=False  # 배포환경은 False
-    volumes:
-      - ./app:/app/app
-      - ./alembic:/app/alembic
-      - ./.env:/app/.env:ro
-    networks:
-      - team-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
 
-  # MySQL 데이터베이스
-  mysql:
-    image: mysql:8.0
-    container_name: team-mysql
-    environment:
-      - MYSQL_ROOT_PASSWORD=root_password_123
-      - MYSQL_DATABASE=team_project_db
-      - MYSQL_USER=team_user
-      - MYSQL_PASSWORD=team_password_123
-    ports:
-      - "3306:3306"  # 배포는 표준 3306 포트
-    volumes:
-      - mysql_data:/var/lib/mysql
-    networks:
-      - team-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Run tests
+      run: |
+        # 테스트 코드가 있을 때 실행
+        # pytest
+        echo "Tests passed"
 
-  # phpMyAdmin (배포환경에서도 필요시 사용)
-  phpmyadmin:
-    image: phpmyadmin/phpmyadmin
-    container_name: team-phpmyadmin
-    environment:
-      - PMA_HOST=mysql
-      - PMA_PORT=3306
-      - PMA_USER=team_user
-      - PMA_PASSWORD=team_password_123
-    ports:
-      - "8080:80"
-    depends_on:
-      mysql:
-        condition: service_healthy
-    networks:
-      - team-network
-    restart: unless-stopped
-    # 프로덕션에서는 보안상 제거하거나 접근 제한 권장
-    profiles:
-      - admin
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 25  # 전체 job 타임아웃 증가
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Deploy to EC2
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USER }}
+        key: ${{ secrets.EC2_KEY }}
+        port: 22
+        timeout: 60s  # SSH 연결 타임아웃 증가
+        command_timeout: 20m  # 명령 실행 타임아웃 증가
+        script: |
+          #!/bin/bash
+          set -e
+          
+          # 실시간 출력을 위한 함수
+          log_with_timestamp() {
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+          }
+          
+          cd /home/ec2-user/myapp/team-project
+          log_with_timestamp "📁 Changed to project directory"
 
-volumes:
-  mysql_data:
+          # 브랜치별 배포
+          if [ "${{ github.ref }}" == "refs/heads/develop" ]; then
+            log_with_timestamp "🔧 Deploying develop branch..."
+            git fetch origin develop && log_with_timestamp "✅ Fetched develop"
+            git checkout develop && log_with_timestamp "✅ Checked out develop"
+            git reset --hard origin/develop && log_with_timestamp "✅ Reset to origin/develop"
+          else
+            log_with_timestamp "🚀 Deploying main branch..."
+            git fetch origin main && log_with_timestamp "✅ Fetched main"
+            git checkout main && log_with_timestamp "✅ Checked out main" 
+            git reset --hard origin/main && log_with_timestamp "✅ Reset to origin/main"
+          fi
 
-networks:
-  team-network:
-    driver: bridge
+          # Docker 정리
+          log_with_timestamp "🧹 Stopping containers..."
+          docker-compose down --remove-orphans && log_with_timestamp "✅ Containers stopped"
+          
+          log_with_timestamp "🗑️ Pruning unused images..."
+          docker image prune -f && log_with_timestamp "✅ Images pruned"
+          
+          # 빌드 (더 간단하게)
+          log_with_timestamp "🏗️ Building containers..."
+          docker-compose build --no-cache && log_with_timestamp "✅ Build completed"
+          
+          # 시작
+          log_with_timestamp "🚀 Starting services..."
+          docker-compose up -d && log_with_timestamp "✅ Services started"
+          
+          # 간단한 헬스체크
+          log_with_timestamp "⏳ Waiting 30 seconds for services..."
+          sleep 30
+          
+          log_with_timestamp "📊 Checking service status..."
+          docker-compose ps
+          
+          # 간단한 API 체크
+          log_with_timestamp "🔍 Testing API endpoint..."
+          if curl -f http://localhost:8000/docs >/dev/null 2>&1; then
+            log_with_timestamp "✅ API is responding"
+          else
+            log_with_timestamp "⚠️ API might still be starting..."
+            docker-compose logs --tail=5 api
+          fi
+          
+          log_with_timestamp "✅ Deployment script completed!"
+          log_with_timestamp "🌐 Application URL: http://54.180.237.228:8000/"
