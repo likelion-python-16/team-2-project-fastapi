@@ -64,3 +64,35 @@ temp/
 *.bak
 *.backup
 *.orig
+
+# Metronic 관련 - 불필요한 파일들 제외
+**/node_modules/
+**/src/
+**/build/
+**/docs/
+**/demo*/
+**/*.map
+**/*.scss
+**/*.less
+**/gulpfile.js
+**/webpack.config.js
+**/package*.json
+**/yarn.lock
+
+# Metronic demo/sample 파일들
+**/demo/
+**/samples/
+**/preview/
+**/documentation/
+
+# 개발용 소스 파일들 (빌드된 파일만 사용)
+**/assets/plugins/**/src/
+**/assets/plugins/**/scss/
+**/assets/plugins/**/less/
+
+# 대용량 미디어 파일들
+**/*.psd
+**/*.ai
+**/*.sketch
+**/media/stock/
+**/media/logos/original/
