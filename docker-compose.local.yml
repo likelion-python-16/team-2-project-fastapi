@@ -68,26 +68,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # 프론트엔드
-  frontend:
-    build: ./frontend
-    container_name: team-frontend-local
-    ports:
-      - "8081:80"
-    depends_on:
-      api:
-        condition: service_healthy
-    volumes:
-      - ./frontend:/usr/share/nginx/html:ro
-    networks:
-      - team-network-local
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
 volumes:
   mysql_data_local:
 

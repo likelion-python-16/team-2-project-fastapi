@@ -1,5 +1,8 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from fastapi.responses import HTMLResponse
 from datetime import datetime
 
 # 설정 및 라이프사이클
@@ -10,7 +13,7 @@ from .core.lifespan import lifespan
 from .utils.logging import logger
 
 # 라우터들
-from .routers import users, health, system,challenges,auth
+from .routers import users, health, system, challenges, auth
 
 # FastAPI 앱 생성
 app = FastAPI(
@@ -32,29 +35,78 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 🏠 루트 엔드포인트 (메인에 하나만 남김)
-@app.get("/", tags=["Root"])
-async def read_root():
-    """루트 엔드포인트 - API 소개"""
-    return {
-        "message": f"환영합니다! {settings.project_name} API",
-        "version": settings.project_version,
-        "docs": "/docs",
-        "health": "/health",
-        "info": "/system/info",
-        "timestamp": datetime.now().isoformat()
-    }
+# 정적 파일 마운트
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
-# 📍 라우터 등록
+# 템플릿 설정
+templates = Jinja2Templates(directory="app/templates")
+
+# 📍 API 라우터 등록
 app.include_router(health.router)           # /health/*
 app.include_router(system.router)          # /system/*
 app.include_router(users.router, prefix="/api/v1")  # /api/v1/users/*
-app.include_router(challenges.router)
-app.include_router(auth.router)
-# TODO: 추가 라우터들
-# app.include_router(auth.router, prefix="/api/v1")      # /api/v1/auth/*
-# app.include_router(challenges.router, prefix="/api/v1") # /api/v1/challenges/*
-# app.include_router(qr.router, prefix="/api/v1")        # /api/v1/qr/*
+app.include_router(challenges.router)      # /challenges/*
+app.include_router(auth.router)            # /auth/*
+
+# 🏠 페이지 라우터들 (HTML 페이지)
+@app.get("/", response_class=HTMLResponse, tags=["Pages"])
+async def home_page(request: Request):
+    """메인 페이지"""
+    return templates.TemplateResponse("index.html", {"request": request})
+
+@app.get("/signup", response_class=HTMLResponse, tags=["Pages"])
+async def signup_page(request: Request):
+    """회원가입 페이지"""
+    return templates.TemplateResponse("signup.html", {"request": request})
+
+@app.get("/login", response_class=HTMLResponse, tags=["Pages"])
+async def login_page(request: Request):
+    """로그인 페이지"""
+    return templates.TemplateResponse("signin.html", {"request": request})
+
+@app.get("/dashboard", response_class=HTMLResponse, tags=["Pages"])
+async def dashboard_page(request: Request):
+    """대시보드 페이지"""
+    return templates.TemplateResponse("dashboard.html", {"request": request})
+
+@app.get("/users-list", response_class=HTMLResponse, tags=["Pages"])
+async def users_list_page(request: Request):
+    """사용자 목록 페이지"""
+    return templates.TemplateResponse("users.html", {"request": request})
+@app.get("/final", response_class=HTMLResponse)
+def final_page(request: Request):
+    return templates.TemplateResponse("final.html", {"request": request})
+
+@app.get("/full", response_class=HTMLResponse)
+def full_page(request: Request):
+    return templates.TemplateResponse("full_index.html", {"request": request})
+# 🔗 API 정보 엔드포인트 (JSON 응답)
+@app.get("/api", tags=["API Info"])
+async def api_info():
+    """API 정보"""
+    return {
+        "message": f"{settings.project_name} API",
+        "version": settings.project_version,
+        "docs": "/docs",
+        "redoc": "/redoc",
+        "health": "/health",
+        "system_info": "/system/info",
+        "endpoints": {
+            "auth": "/auth/*",
+            "users": "/api/v1/users/*", 
+            "challenges": "/challenges/*",
+            "health": "/health/*",
+            "system": "/system/*"
+        },
+        "pages": {
+            "home": "/",
+            "signup": "/signup",
+            "login": "/login",
+            "dashboard": "/dashboard",
+            "users": "/users-list"
+        },
+        "timestamp": datetime.now().isoformat()
+    }
 
 # 🚀 서버 실행 (개발용)
 if __name__ == "__main__":

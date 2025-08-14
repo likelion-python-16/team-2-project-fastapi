@@ -43,3 +43,7 @@ htmlcov/
 # EC2 키파일
 *.pem
 *.key
+# asset
+app/static/assets/**/media/*
+app/static/assets/**/js/widgets/*
+app/static/assets/**/js/layouts/*
