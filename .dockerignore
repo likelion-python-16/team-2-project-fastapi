@@ -13,3 +13,54 @@ Dockerfile
 app/static/assets/full/
 *.md
 .github/
+
+# 추가로 넣으면 좋은 것들:
+# Python 관련
+**/*.pyo
+**/*.pyd
+.Python
+.coverage
+.pytest_cache/
+.mypy_cache/
+.tox/
+.nox/
+*.egg-info/
+dist/
+build/
+*.wheel
+
+# IDE/Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# 로그 파일
+*.log
+logs/
+
+# 테스트 관련
+tests/
+test_*.py
+*_test.py
+htmlcov/
+
+# 개발용 파일들
+docker-compose.override.yml
+.env.development
+.env.local
+.env.test
+
+# 임시 파일
+tmp/
+temp/
+*.tmp
+*.temp
+
+# 백업 파일
+*.bak
+*.backup
+*.orig
