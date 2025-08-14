@@ -18,8 +18,6 @@ venv.bak/
 *.db
 *.sqlite3
 
-# Docker
-.dockerignore
 
 # IDE
 .vscode/
