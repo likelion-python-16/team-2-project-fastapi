@@ -49,3 +49,7 @@ htmlcov/
 app/static/assets/**/media/*
 app/static/assets/**/js/widgets/*
 app/static/assets/**/js/layouts/*
+
+
+# 중첩된 프로젝트 폴더 무시
+team-2-project-fastapi/
