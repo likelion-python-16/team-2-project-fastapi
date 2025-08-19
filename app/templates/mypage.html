@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="ko" data-kt-theme="true" data-kt-theme-mode="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>마이페이지</title>
+
+  <!-- Metronic Full 네임스페이스 정적 리소스 -->
+  <link href="{{ url_for('static', path='assets/full/vendors/keenicons/styles.bundle.css') }}" rel="stylesheet" />
+  <link href="{{ url_for('static', path='assets/full/css/styles.css') }}" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- 커스텀 CSS -->
+  <link href="{{ url_for('static', path='assets/full/css/mypage.css') }}" rel="stylesheet" />
+</head>
+<body class="antialiased">
+  <main class="mypage container mx-auto px-4 py-8">
+    <div class="section-stack flex flex-col">
+
+      <!-- 프로필 -->
+      <section class="kt-card mypage-card">
+        <header class="kt-card-header flex items-center justify-between">
+          <h2 class="text-xl font-semibold flex items-center gap-2">
+            <i class="ki-duotone ki-user fs-2"></i><span>내 프로필</span>
+          </h2>
+          <button id="btn-edit-profile" class="kt-btn kt-btn-primary">프로필 수정</button>
+        </header>
+        <div class="kt-card-body grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="flex gap-4 items-center">
+            <img id="me-avatar" class="w-16 h-16 rounded-full object-cover"
+                 src="{{ url_for('static', path='assets/full/media/avatars/300-1.png') }}" alt="avatar" />
+            <div>
+              <div id="me-name" class="text-lg font-semibold">-</div>
+              <div id="me-email" class="text-muted">-</div>
+              <div class="text-sm mt-1">
+                매너점수: <span id="me-manner">0</span> · 보유포인트: <span id="me-points">0</span>
+              </div>
+            </div>
+          </div>
+          <dl class="grid grid-cols-2 gap-3 text-sm">
+            <div><dt class="text-muted">거주지역</dt><dd id="me-region-living">-</dd></div>
+            <div><dt class="text-muted">활동지역</dt><dd id="me-region-active">-</dd></div>
+            <div><dt class="text-muted">전화번호</dt><dd id="me-phone">-</dd></div>
+            <div><dt class="text-muted">상태</dt><dd id="me-active">-</dd></div>
+          </dl>
+        </div>
+      </section>
+
+      <!-- 그룹 카드: 지출 요약 + 결제 내역 (2열) -->
+      <section class="kt-card grouped-card two-col">
+        <header class="kt-card-header">
+          <h2 class="text-xl font-semibold flex items-center gap-2">
+            <i class="ki-duotone ki-layout-grid-2 fs-2"></i><span>요약·결제 한눈에</span>
+          </h2>
+        </header>
+        <div class="kt-card-body">
+          <!-- 지출 요약 -->
+          <div class="sub-card">
+            <header class="flex items-center justify-between">
+              <h3 class="font-semibold flex items-center gap-2">
+                <i class="ki-duotone ki-wallet fs-3"></i><span>지출 요약</span>
+              </h3>
+              <label class="inline-flex items-center gap-2 text-sm">
+                <input id="include-deposit" type="checkbox" class="kt-checkbox" />
+                <span>보증금 포함</span>
+              </label>
+            </header>
+            <div class="grid grid-cols-3 gap-3 text-center">
+              <div>
+                <div class="text-muted text-sm mb-1">총 결제액</div>
+                <div id="sum-paid" class="text-2xl font-semibold">0</div>
+              </div>
+              <div>
+                <div class="text-muted text-sm mb-1">환급 합계</div>
+                <div id="sum-refunded" class="text-2xl font-semibold">0</div>
+              </div>
+              <div>
+                <div class="text-muted text-sm mb-1">순지출</div>
+                <div id="sum-net" class="text-2xl font-semibold">0</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 결제 내역 -->
+          <div class="sub-card">
+            <header class="flex items-center justify-between">
+              <h3 class="font-semibold flex items-center gap-2">
+                <i class="ki-duotone ki-wallet fs-3"></i><span>결제 내역</span>
+              </h3>
+            </header>
+            <div class="flex flex-wrap items-center gap-2 mb-3">
+              <select id="pay-status" class="kt-input w-32">
+                <option value="">상태 전체</option>
+                <option value="paid">paid</option>
+                <option value="pending">pending</option>
+                <option value="cancelled">cancelled</option>
+                <option value="refunded">refunded</option>
+              </select>
+              <select id="pay-type" class="kt-input w-28">
+                <option value="">유형 전체</option>
+                <option value="fee">fee</option>
+                <option value="deposit">deposit</option>
+              </select>
+              <!-- 🔹 날짜 하나만 -->
+              <input id="pay-from" type="date" class="kt-input w-36" aria-label="일자" />
+              <button id="pay-search" class="kt-btn">검색</button>
+            </div>
+            <div class="table-wrap">
+              <!-- ✅ colgroup으로 폭 배분: 일시 컬럼이 남는 폭 전부 차지 -->
+              <table class="kt-table w-full pay-table">
+                <colgroup>
+                  <col style="width:60px" />   <!-- ID -->
+                  <col style="width:120px" />  <!-- 유형 -->
+                  <col style="width:100px" />  <!-- 금액 -->
+                  <col style="width:100px" />  <!-- 상태 -->
+                  <col />                      <!-- 일시(유동) -->
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>유형</th>
+                    <th class="text-right">금액</th>
+                    <th>상태</th>
+                    <th>일시</th>
+                  </tr>
+                </thead>
+                <tbody id="pay-tbody">
+                  <tr><td colspan="5" class="text-center text-muted">로딩 중…</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="flex justify-end gap-2 mt-3">
+              <button id="pay-prev" class="kt-btn" disabled>이전</button>
+              <button id="pay-next" class="kt-btn">다음</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 포인트 내역 (단독 섹션) -->
+      <section class="kt-card">
+        <header class="kt-card-header flex items-center justify-between">
+          <h2 class="text-xl font-semibold flex items-center gap-2">
+            <i class="ki-duotone ki-coin fs-2"></i><span>포인트 내역</span>
+          </h2>
+          <div class="flex items-center gap-2">
+            <select id="ph-type" class="kt-input w-36">
+              <option value="">전체</option>
+              <option value="gain">적립</option>
+              <option value="use">사용</option>
+              <option value="refund">환급</option>
+            </select>
+            <button id="btn-ph-refresh" class="kt-btn">새로고침</button>
+          </div>
+        </header>
+        <div class="kt-card-body">
+          <div class="table-wrap overflow-auto">
+            <table class="kt-table w-full">
+              <thead>
+                <tr>
+                  <th class="text-left">일시</th>
+                  <th class="text-left">타입</th>
+                  <th class="text-left">변동</th>
+                  <th class="text-left">메모</th>
+                </tr>
+              </thead>
+              <tbody id="ph-tbody">
+                <tr><td colspan="4" class="text-center text-muted py-6">로딩 중…</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="flex justify-end gap-2 mt-3">
+            <button id="ph-prev" class="kt-btn" disabled>이전</button>
+            <button id="ph-next" class="kt-btn">다음</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 관심 태그 -->
+      <section class="kt-card">
+        <header class="kt-card-header">
+          <h2 class="text-xl font-semibold flex items-center gap-2">
+            <i class="ki-duotone ki-category fs-2"></i><span>관심 태그</span>
+          </h2>
+        </header>
+        <div class="kt-card-body">
+          <div id="tags-wrap" class="flex flex-wrap gap-2 mb-4"></div>
+          <div class="flex items-center gap-2">
+            <input id="tag-id-input" type="number" class="kt-input w-40" placeholder="tag_id" />
+            <button id="btn-add-tag" class="kt-btn kt-btn-primary">추가</button>
+            <p class="text-muted text-sm">* 지금은 ID로 추가. 검색 UI는 이후.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 참여한 챌린지 -->
+      <section class="kt-card">
+        <header class="kt-card-header flex items-center justify-between">
+          <h2 class="text-xl font-semibold flex items-center gap-2">
+            <i class="ki-duotone ki-flag fs-2"></i><span>참여한 챌린지</span>
+          </h2>
+          <div class="flex items-center gap-2">
+            <select id="ch-status" class="kt-input w-40">
+              <option value="active">진행중</option>
+              <option value="upcoming">예정</option>
+              <option value="finished">종료</option>
+              <option value="all">전체</option>
+            </select>
+          </div>
+        </header>
+        <div class="kt-card-body">
+          <div id="ch-list" class="space-y-3">
+            <div class="text-sm text-muted">로딩 중…</div>
+          </div>
+          <div class="flex justify-end gap-2 mt-3">
+            <button id="ch-prev" class="kt-btn" disabled>이전</button>
+            <button id="ch-next" class="kt-btn">다음</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 팔로잉 / 팔로워 -->
+      <section class="kt-card">
+        <header class="kt-card-header flex items-center justify-between">
+          <div class="flex items-center gap-4">
+            <h2 class="text-xl font-semibold flex items-center gap-2">
+              <i class="ki-duotone ki-people fs-2"></i><span>팔로잉 / 팔로워</span>
+            </h2>
+            <label class="inline-flex items-center gap-2 text-sm">
+              <input id="follow-only-active" type="checkbox" class="kt-checkbox" checked />
+              <span>활성 유저만</span>
+            </label>
+          </div>
+        </header>
+        <div class="kt-card-body">
+          <div class="border-b border-gray-200 mb-4">
+            <nav class="flex gap-6" aria-label="Tabs">
+              <button id="tab-following" class="py-2 font-medium border-b-2 border-primary">팔로잉</button>
+              <button id="tab-followers" class="py-2 font-medium text-gray-500">팔로워</button>
+            </nav>
+          </div>
+          <div id="following-wrap" class="space-y-3">
+            <div class="text-sm text-muted">로딩 중…</div>
+          </div>
+          <div id="following-pager" class="flex justify-end gap-2 mt-3">
+            <button id="following-prev" class="kt-btn" disabled>이전</button>
+            <button id="following-next" class="kt-btn">다음</button>
+          </div>
+          <div id="followers-wrap" class="space-y-3 hidden">
+            <div class="text-sm text-muted">로딩 중…</div>
+          </div>
+          <div id="followers-pager" class="flex justify-end gap-2 mt-3 hidden">
+            <button id="followers-prev" class="kt-btn" disabled>이전</button>
+            <button id="followers-next" class="kt-btn">다음</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 신고 내역 -->
+      <section class="kt-card">
+        <header class="kt-card-header flex items-center justify-between">
+          <h2 class="text-xl font-semibold flex items-center gap-2">
+            <i class="ki-duotone ki-warning-2 fs-2"></i><span>내 신고 내역</span>
+          </h2>
+          <div class="flex items-center gap-2">
+            <select id="rep-status" class="kt-input w-36">
+              <option value="">상태 전체</option>
+              <option value="pending">pending</option>
+              <option value="reviewing">reviewing</option>
+              <option value="accepted">accepted</option>
+              <option value="rejected">rejected</option>
+            </select>
+            <button id="rep-search" class="kt-btn">검색</button>
+          </div>
+        </header>
+        <div class="kt-card-body">
+          <div class="table-wrap overflow-x-auto">
+            <table class="kt-table w-full">
+              <thead>
+                <tr>
+                  <th class="w-20">ID</th>
+                  <th>종류</th>
+                  <th>대상</th>
+                  <th>사유</th>
+                  <th class="w-36">상태</th>
+                  <th class="w-44">신고일</th>
+                </tr>
+              </thead>
+              <tbody id="rep-tbody">
+                <tr><td colspan="6" class="text-center text-muted">준비 중…</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="flex justify-end gap-2 mt-3">
+            <button id="rep-prev" class="kt-btn" disabled>이전</button>
+            <button id="rep-next" class="kt-btn" disabled>다음</button>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- 프로필 수정 모달 -->
+  <div id="edit-modal" class="fixed inset-0 bg-black/40 backdrop-blur-sm hidden">
+    <div class="absolute inset-0" id="edit-backdrop"></div>
+    <div class="relative bg-white rounded-2xl shadow-xl w-full max-w-lg mx-auto mt-24 p-6">
+      <h3 class="text-lg font-semibold mb-4">프로필 수정</h3>
+      <form id="profile-form" class="space-y-3">
+        <div>
+          <label class="block text-sm text-gray-600 mb-1">이름</label>
+          <input id="inp-name" class="kt-input w-full" placeholder="이름" />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-sm text-gray-600 mb-1">거주 지역</label>
+            <input id="inp-region" class="kt-input w-full" placeholder="예: 서울" />
+          </div>
+          <div>
+            <label class="block text-sm text-gray-600 mb-1">전화번호</label>
+            <input id="inp-phone" class="kt-input w-full" placeholder="010-0000-0000" />
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm text-gray-600 mb-1">프로필 이미지 URL</label>
+          <input id="inp-profile" class="kt-input w-full" placeholder="https://…" />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-600 mb-1">소개</label>
+          <textarea id="inp-intro" class="kt-input w-full" rows="3" placeholder="간단한 소개"></textarea>
+        </div>
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" id="btn-cancel-edit" class="kt-btn">취소</button>
+          <button type="submit" id="btn-save-edit" class="kt-btn kt-btn-primary">저장</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 스크립트 -->
+  <script src="{{ url_for('static', path='assets/full/js/core.bundle.js') }}"></script>
+  <script src="{{ url_for('static', path='assets/full/vendors/ktui/ktui.min.js') }}"></script>
+  <script src="{{ url_for('static', path='assets/full/js/pages/mypage.js') }}" defer></script>
+</body>
+</html>

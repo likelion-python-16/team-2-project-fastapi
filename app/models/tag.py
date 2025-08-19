@@ -6,6 +6,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 from .base import Base, TimestampMixin
 
+
 class Tag(Base, TimestampMixin):
     """
     태그 마스터
@@ -32,28 +33,8 @@ class Tag(Base, TimestampMixin):
         Index("ix_tag_text", "tag"),
     )
 
-class UserTag(Base):
-    """
-    유저-태그 연결(다대다 조인 테이블)
-    - (tag_id, user_id) 유니크
-    """
-    __tablename__ = "user_tags"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    tag_id = Column(Integer, ForeignKey("tags.id", ondelete="CASCADE"), nullable=False)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    selected_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
-    
-    # 관계
-    tag = relationship("Tag", back_populates="user_tags", lazy="joined")
-    user = relationship("User", back_populates="user_tags", lazy="joined")
-    
-    __table_args__ = (
-        UniqueConstraint("tag_id", "user_id", name="uq_user_tag_pair"),
-        Index("ix_user_tag_user", "user_id"),
-        Index("ix_user_tag_tag", "tag_id"),
-    )
 
+# --- removed duplicate class block ---
 class ChallengeTag(Base):
     """
     챌린지-태그 연결(다대다 조인 테이블)
@@ -75,3 +56,16 @@ class ChallengeTag(Base):
         Index("ix_ch_tag_challenge", "challenge_id"),
         Index("ix_ch_tag_tag", "tag_id"),
     )
+
+
+# --- removed duplicate class block ---
+class UserTag(Base):
+    __tablename__ = "user_tag"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    tag_id = Column(Integer, ForeignKey("tags.id", ondelete="CASCADE"), nullable=False)
+
+    user = relationship("User", back_populates="user_tags")
+    tag = relationship("Tag", back_populates="user_tags")
+
+    __table_args__ = (UniqueConstraint('user_id','tag_id', name='uq_user_tag'),)

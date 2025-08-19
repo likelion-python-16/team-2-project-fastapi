@@ -1,6 +1,6 @@
 # app/schemas/challenge.py 업데이트
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, ConfigDict
 from datetime import date, datetime
 from typing import Optional
 from enum import Enum
@@ -128,3 +128,18 @@ class ChallengeResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+class ChallengeBrief(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    title: str
+    thumbnail: str | None = None
+    start_at: datetime | None = None
+    end_at: datetime | None = None
+    is_active: bool
+
+class PaginatedChallenges(BaseModel):
+    items: list[ChallengeBrief]
+    total: int
+    page: int
+    size: int

@@ -4,7 +4,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.security import decode_access_token   # ✅ payload 디코더 (함수 호출용)
+from app.core.security import decode_token as decode_access_token  # ✅ payload 디코더 (함수 호출용)
 from app.models.user import User
 
 # =========================================

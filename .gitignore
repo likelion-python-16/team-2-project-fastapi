@@ -53,3 +53,7 @@ app/static/assets/**/js/layouts/*
 
 # 중첩된 프로젝트 폴더 무시
 team-2-project-fastapi/
+openapi.json
+backup_2025-08-18_1517.sql
+.gitignore
+team-2-project-fastapi/
