@@ -1,0 +1,534 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>Challenge Create</title>
+  <style>
+    body{font-family:system-ui,apple-system,Segoe UI,Roboto,Arial;margin:16px}
+    .row{display:flex;gap:16px}
+    .col{flex:1}
+    .panel{border:1px solid #ddd;border-radius:8px;padding:12px;margin-bottom:20px}
+    .muted{color:#666}
+    .inline-controls label{display:inline-block;margin:6px 10px 6px 0}
+    .inline-controls input[type="number"]{width:140px}
+    textarea{width:100%;max-width:520px}
+    .chip{display:inline-flex;align-items:center;gap:8px;border:1px solid #ddd;border-radius:999px;padding:6px 12px;font-size:13px;background:#fafafa;cursor:pointer;user-select:none}
+    .chip.sel{background:#2563eb;border-color:#2563eb;color:#fff}
+    .chip.x{gap:6px}
+    .chip.x b{margin-right:4px}
+    .grid{display:flex;flex-wrap:wrap;gap:8px;max-width:720px}
+    button{cursor:pointer}
+    #placeResults{border:1px solid #ddd;padding:8px;margin-top:6px;max-height:220px;overflow-y:auto;border-radius:6px;display:none}
+    #placeResults .item{padding:6px;border-bottom:1px solid #eee;cursor:pointer;border-radius:4px}
+    #placeResults .item:hover{background:#f7f7f7}
+    #placePreview{display:none;margin-top:10px}
+  </style>
+</head>
+<body>
+<h2>Create Challenge</h2>
+
+<div class="panel">
+  <div class="row">
+    <div class="col">
+      <label>Title <input id="title" placeholder="제목"></label><br>
+      <label>Start <input id="start" type="date"></label>
+      <label>End <input id="end" type="date"></label><br>
+      <label>Total rounds <input id="total" type="number" min="1" value="5"></label><br>
+
+      <label>Mode
+        <select id="mode">
+          <option value="online">온라인</option>
+          <option value="offline">오프라인</option>
+          <option value="hybrid" selected>온오프라인</option>
+        </select>
+      </label><br>
+
+      <label><input type="checkbox" id="samePlace"> 모든 회차 동일 장소</label><br>
+      <label>Default Zoom <input id="zoom" placeholder="https://..."></label><br>
+
+      <!-- 💳 결제/참가: 각자 입력(두 칸), 0 이상, 둘 다 양수 가능 -->
+      <div class="panel" style="margin:10px 0">
+        <h3 style="margin:0 0 8px">결제/참가 설정</h3>
+
+        <div class="inline-controls">
+          <label>회비(원)
+            <input id="fee" type="number" min="0" value="0" placeholder="예: 10000">
+          </label>
+          <label>참가비(원)
+            <input id="participation_fee" type="number" min="0" value="0" placeholder="예: 3000">
+          </label>
+        </div>
+
+        <!-- 요약/안내 영역 -->
+        <div id="priceSummary" class="muted" style="font-size:12px;margin-top:6px"></div>
+        <div id="priceNotice" class="muted" style="font-size:12px"></div>
+        <div id="priceError" class="muted" style="font-size:12px;color:#b91c1c"></div>
+
+        <hr style="border:none;border-top:1px solid #eee;margin:10px 0">
+
+        <!-- 합산 오해 방지 안내 -->
+        <ul class="muted" style="font-size:12px; margin:0; padding-left:16px; list-style:disc">
+          <li><b>회비</b>는 모임 전체/기간 기준의 공통 비용입니다.</li>
+          <li><b>참가비</b>는 회차별로 참가하는 인원에게 받는 비용입니다.</li>
+          <li>두 값은 <b>서로 다른 성격</b>이며 <b>합산 결제가 아닙니다</b> (운영 정책에 따라 정산 방식은 달라질 수 있어요).</li>
+          <li>두 금액 모두 <b>0 이상</b> 입력할 수 있으며, <b>둘 다 유료</b>로 설정해도 됩니다.</li>
+          <li><b>둘 다 0을 초과</b>할 경우 <b>강사님 포인트는 지급되지 않습니다.</b></li>
+        </ul>
+
+        <div class="inline-controls" style="margin-top:10px">
+          <label>최소 인원 <input id="min_participants" type="number" min="0" placeholder="예: 4"></label>
+          <label>최대 인원 <input id="max_participants" type="number" min="0" placeholder="예: 12"></label>
+        </div>
+      </div>
+
+      <!-- 🎁 리워드 -->
+      <div class="panel" style="margin:10px 0">
+        <h3 style="margin:0 0 8px">리워드</h3>
+        <label><input type="checkbox" id="use_reward"> 리워드 사용</label><br>
+        <label>리워드 내용<br>
+          <textarea id="reward" rows="3" placeholder="예: 모두 80% 이상 참여 시 배드민턴 셔틀콕 1통 제공"></textarea>
+        </label>
+      </div>
+
+      <!-- 관심사(카테고리) 선택 -->
+      <div class="panel" style="margin:10px 0">
+        <h3 style="margin:0 0 8px">관심사(카테고리) 선택
+          <span class="muted" style="font-size:12px">최대 10개까지 선택할 수 있어요.</span>
+        </h3>
+        <div id="selectedCats" class="grid" style="margin-bottom:6px"></div>
+        <div id="catGrid" class="grid"></div>
+      </div>
+
+      <!-- 장소 검색 -->
+      <div class="panel" style="margin:10px 0">
+        <h3 style="margin:0 0 8px">장소</h3>
+        <!-- 키워드 검색 + 지도 검색 -->
+        <div class="row" style="align-items:center">
+          <label class="col" style="display:flex; gap:8px; align-items:center">
+            장소 검색
+            <input id="placeQuery" placeholder="예: 경복궁 / 정자동 카페" style="flex:1">
+            <button type="button" onclick="searchPlace()">검색</button>
+            <button type="button" onclick="confirmSelectedPlace()">확인</button>
+            <button type="button" onclick="openMapPicker()">지도 검색</button>
+          </label>
+        </div>
+        <div class="muted" style="font-size:12px;margin-top:6px">
+          장소명을 모를 때는 <b>지도 검색</b>을 눌러 지도에서 직접 선택하세요.
+        </div>
+
+        <!-- 검색 결과 -->
+        <div id="placeResults"></div>
+
+        <!-- 선택 미리보기 -->
+        <div id="placePreview" class="panel">
+          <div style="display:flex; gap:10px; align-items:flex-start">
+            <img id="pv_img" alt="map preview" style="width:220px;height:140px;object-fit:cover;border-radius:6px;border:1px solid #eee">
+            <div>
+              <div><b id="pv_title"></b></div>
+              <div id="pv_road" class="muted" style="font-size:12px"></div>
+              <div id="pv_addr" class="muted" style="font-size:12px"></div>
+              <div class="muted" style="font-size:12px;margin-top:4px">위도 <span id="pv_lat">-</span> / 경도 <span id="pv_lng">-</span></div>
+              <div style="margin-top:6px"><a id="pv_link" href="#" target="_blank" rel="noopener">네이버 장소 링크</a></div>
+              <div class="muted" style="font-size:12px;margin-top:4px" id="pv_link_hint"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 실제 폼 값 -->
+      <label>장소명 <input id="place"></label><br>
+      <label>도로명주소 <input id="road"></label><br>
+      <label>주소(지번) <input id="addr"></label><br>
+      <label>네이버지도 링크 <input id="mapurl" placeholder="네이버 지도 place url"></label><br>
+      <input id="lat" type="hidden">
+      <input id="lng" type="hidden">
+      <input id="placeId" type="hidden"><br>
+
+      <button onclick="createChallenge()">Create</button>
+      <span id="createStatus"></span>
+    </div>
+  </div>
+</div>
+
+<!-- axios CDN -->
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+
+<!-- ✅ 토큰 검사 + axios Authorization 전역 세팅 -->
+<script>
+function parseJwt(token) {
+  const base64Url = token.split('.')[1];
+  const base64 = base64Url.replace(/-/g,'+').replace(/_/g,'/');
+  const json = decodeURIComponent(
+    atob(base64).split('').map(c => '%' + ('00'+c.charCodeAt(0).toString(16)).slice(-2)).join('')
+  );
+  return JSON.parse(json);
+}
+
+(function ensureAuth(){
+  const t = localStorage.getItem('access_token');
+  const goLogin = () => { alert('로그인이 필요합니다 🙏'); location.href='/login'; };
+
+  if (!t) return goLogin();
+  try {
+    const { exp } = parseJwt(t);
+    if (Date.now() > exp * 1000) return goLogin();   // 만료
+    axios.defaults.headers.common['Authorization'] = `Bearer ${t}`;  // 전역 적용
+  } catch(e) {
+    return goLogin();
+  }
+})();
+
+// 공통 GET 헬퍼 (axios)
+async function apiGet(url, params = {}) {
+  try {
+    const res = await axios.get(url, { params });
+    return res.data;
+  } catch (err) {
+    if (err.response && err.response.status === 401) {
+      alert('로그인이 필요합니다 🙏');
+      location.href = '/login';
+    }
+    throw err;
+  }
+}
+</script>
+
+<script>
+/* ===== 인증 헤더 (개별 요청용) ===== */
+function authHeader(){
+  const token = localStorage.getItem("access_token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+/* ===== 카테고리 ===== */
+const catGrid = document.getElementById('catGrid');
+const selCats = document.getElementById('selectedCats');
+let categories = [];
+let selectedCategories = [];
+
+function renderCategories(){
+  catGrid.innerHTML = categories.map(c=>{
+    const on = selectedCategories.includes(c);
+    return `<span class="chip ${on?'sel':''}" onclick="toggleCategory('${c.replace(/'/g,"\\'")}')">${c}</span>`;
+  }).join('');
+  selCats.innerHTML = selectedCategories.map(c =>
+    `<span class="chip x" onclick="removeCategory('${c.replace(/'/g,"\\'")}')"><b>×</b>${c}</span>`
+  ).join('');
+}
+function toggleCategory(name){
+  const i = selectedCategories.indexOf(name);
+  if(i>=0){ selectedCategories.splice(i,1); }
+  else{
+    if(selectedCategories.length>=10){ alert('카테고리는 최대 10개까지 선택 가능합니다.'); return; }
+    selectedCategories.push(name);
+  }
+  renderCategories();
+}
+function removeCategory(name){
+  const i = selectedCategories.indexOf(name);
+  if(i>=0){ selectedCategories.splice(i,1); renderCategories(); }
+}
+async function loadCategories(){
+  try{
+    const data = await apiGet('/api/v1/tags/categories'); // list[str]
+    categories = Array.isArray(data) ? data : [];
+    renderCategories();
+  }catch(e){ console.error(e); }
+}
+
+/* ===== 지도/장소 검색 ===== */
+// 네이버 placeId 추출 (id, placeId, link 모두 시도)
+function extractPlaceId(item){
+  if (!item) return null;
+  if (item.id && /^\d+$/.test(String(item.id))) return String(item.id);
+  if (item.placeId && /^\d+$/.test(String(item.placeId))) return String(item.placeId);
+  const link = item.link || item.place_url || item.url || '';
+  const m = link.match(/(?:entry\/place|\/place)\/(\d+)/);
+  if (m && m[1]) return m[1];
+  const m2 = link.match(/[?&]placeId=(\d+)/i);
+  if (m2 && m2[1]) return m2[1];
+  return null;
+}
+
+// 네이버 지도 링크 생성 (placeId가 있으면 마커 보장)
+function makeNaverPlaceUrl({ placeId, lat, lng, title } = {}) {
+  const lvl = 15;
+  if (placeId) {
+    const c = (lat != null && lng != null) ? `?c=${lng},${lat},${lvl},0,0,0,dh` : '';
+    return `https://map.naver.com/v5/entry/place/${encodeURIComponent(String(placeId))}${c}`;
+  }
+  if (lat != null && lng != null) {
+    return `https://map.naver.com/v5/?c=${lng},${lat},${lvl},0,0,0,dh`;
+  }
+  const key = encodeURIComponent((title || '').trim());
+  return `https://map.naver.com/v5/search/${key}`;
+}
+
+// StaticMap 이미지 로더 (blob)
+const pvImg = document.getElementById('pv_img');
+if (pvImg) { pvImg.onerror = () => { pvImg.removeAttribute('src'); }; }
+let __pv_blob_url = null;
+async function loadStaticMap(lat, lng, w=360, h=220, scale=2, level=16){
+  try{
+    const resp = await axios.get('/places/staticmap', {
+      params: { lat, lng, w, h, scale, level },
+      responseType: 'blob'
+    });
+    if (__pv_blob_url) URL.revokeObjectURL(__pv_blob_url);
+    __pv_blob_url = URL.createObjectURL(resp.data);
+    pvImg.src = __pv_blob_url;
+  }catch(e){
+    console.warn('staticmap load failed', e);
+    pvImg.removeAttribute('src');
+  }
+}
+
+let _placeItems = [];
+let _searchTimer;
+
+function searchPlace(){
+  clearTimeout(_searchTimer);
+  _searchTimer = setTimeout(_doSearchPlace, 250);
+}
+
+async function _doSearchPlace(){
+  const q = (document.getElementById('placeQuery').value || '').trim();
+  const box = document.getElementById('placeResults');
+  _placeItems = [];
+  document.getElementById('placePreview').style.display='none';
+  if(!q){ box.style.display='none'; box.innerHTML=''; return; }
+
+  try{
+    const data = await apiGet('/naver/local', { q, display: 10, start: 1 });
+    _placeItems = data.items || [];
+  }catch(e){
+    alert('검색 실패');
+    return;
+  }
+
+  if(!_placeItems.length){ box.style.display='none'; box.innerHTML=''; return; }
+
+  box.style.display='block';
+  box.innerHTML = _placeItems.map((it, i) => {
+    const title = (it.name||it.title||'').replace(/<[^>]+>/g,'');
+    const road = it.roadAddress || it.road_address || '';
+    const addr = it.address || it.jibunAddress || '';
+    return `<div class="item" onclick="selectPlace(${i})">
+      <div style="font-weight:600">${title}</div>
+      <div style="font-size:12px;color:#555">${road || addr}</div>
+    </div>`;
+  }).join('');
+}
+
+async function selectPlace(i){
+  const it = _placeItems[i];
+  const title = (it.name||it.title||'').replace(/<[^>]+>/g,'');
+  const road  = it.roadAddress || it.road_address || '';
+  const addr  = it.address || it.jibunAddress || '';
+  const placeId = extractPlaceId(it);
+
+  // 지오코딩
+  let lat=null, lng=null;
+  try{
+    const q = road || addr || title;
+    if(q){
+      const j = await apiGet('/places/geocode', { query: q });
+      lat = j.lat ?? null;
+      lng = j.lng ?? null;
+    }
+  }catch(e){}
+
+  const link  = makeNaverPlaceUrl({placeId, lat, lng, title});
+
+  const box = document.getElementById('placeResults');
+  box.style.display='none'; box.innerHTML='';
+
+  document.getElementById('pv_title').innerText = title;
+  document.getElementById('pv_road').innerText  = road ? `도로명주소: ${road}` : '';
+  document.getElementById('pv_addr').innerText  = addr ? `지번: ${addr}` : '';
+  document.getElementById('pv_lat').innerText   = lat ?? '-';
+  document.getElementById('pv_lng').innerText   = lng ?? '-';
+  document.getElementById('pv_link').href = link;
+  document.getElementById('pv_link_hint').innerText = placeId ? '🔵 이 링크는 해당 장소에 마커가 표시됩니다.' : '⚪ 좌표/검색 기반 링크(마커는 보장되지 않음)';
+
+  if(lat!=null && lng!=null){
+    await loadStaticMap(lat, lng, 360, 220, 2, 16);
+  }else{
+    pvImg.removeAttribute('src');
+  }
+  document.getElementById('placePreview').style.display='block';
+
+  window.__lastPicked = { title, road, addr, link, lat, lng, placeId };
+}
+
+function confirmSelectedPlace(){
+  const p = window.__lastPicked;
+  if(!p){ alert('먼저 결과에서 항목을 선택하세요'); return; }
+  document.getElementById('place').value   = p.title || '';
+  document.getElementById('road').value    = p.road  || '';
+  document.getElementById('addr').value    = p.addr  || '';
+  document.getElementById('mapurl').value  = p.link  || '';
+  document.getElementById('lat').value     = p.lat != null ? p.lat : '';
+  document.getElementById('lng').value     = p.lng != null ? p.lng : '';
+  document.getElementById('placeId').value = p.placeId || '';
+  alert('장소 정보가 입력되었습니다.');
+}
+
+// 지도 검색 팝업
+function openMapPicker(){
+  window.open('/map', 'mapPicker', 'width=1200,height=800');
+}
+
+// 팝업 → 부모로 전달된 장소 선택 결과
+window.addEventListener('message', async (e)=>{
+  const msg = e.data || {};
+  if(msg.type === 'placePicked'){
+    const title = msg.title || '';
+    const road  = msg.road  || '';
+    const addr  = msg.addr  || '';
+    const lat   = (msg.lat ?? null);
+    const lng   = (msg.lng ?? null);
+    const placeId = msg.placeId || msg.id || null;
+
+    const link = makeNaverPlaceUrl({placeId, lat, lng, title});
+
+    document.getElementById('place').value   = title;
+    document.getElementById('road').value    = road;
+    document.getElementById('addr').value    = addr;
+    document.getElementById('mapurl').value  = link;
+    document.getElementById('lat').value     = lat ?? '';
+    document.getElementById('lng').value     = lng ?? '';
+    document.getElementById('placeId').value = placeId || '';
+
+    document.getElementById('pv_title').innerText = title;
+    document.getElementById('pv_road').innerText  = road ? `도로명주소: ${road}` : '';
+    document.getElementById('pv_addr').innerText  = addr ? `지번: ${addr}` : '';
+    document.getElementById('pv_lat').innerText   = lat ?? '-';
+    document.getElementById('pv_lng').innerText   = lng ?? '-';
+    document.getElementById('pv_link').href       = link;
+    document.getElementById('pv_link_hint').innerText = placeId ? '🔵 이 링크는 해당 장소에 마커가 표시됩니다.' : '⚪ 좌표/검색 기반 링크(마커는 보장되지 않음)';
+    if(lat!=null && lng!=null){
+      await loadStaticMap(lat, lng, 360, 220, 2, 16);
+    }
+    document.getElementById('placePreview').style.display='block';
+  }
+});
+
+/* ===== 결제/참가 요약/검증 ===== */
+const feeEl  = document.getElementById('fee');
+const partEl = document.getElementById('participation_fee');
+const priceSummary = document.getElementById('priceSummary');
+const priceNotice  = document.getElementById('priceNotice');
+const priceError   = document.getElementById('priceError');
+
+function repaintPriceHelp(){
+  const fee  = Number(feeEl.value || '0');
+  const part = Number(partEl.value || '0');
+
+  priceSummary.textContent = `회비: ${isNaN(fee)?'-':fee.toLocaleString()}원 / 참가비: ${isNaN(part)?'-':part.toLocaleString()}원`;
+  priceError.textContent = '';
+  priceNotice.textContent = '';
+
+  if (fee < 0 || part < 0) {
+    priceError.textContent = '정중히 안내드립니다: 회비/참가비는 0 이상의 값으로 입력해 주세요.';
+    return;
+  }
+  if (fee > 0 && part > 0) {
+    priceNotice.textContent = '안내: 회비와 참가비를 모두 받는 경우, 강사님 포인트는 지급되지 않습니다.';
+  }
+}
+[feeEl, partEl].forEach(el => el.addEventListener('input', repaintPriceHelp));
+
+function getPricesOrThrow(){
+  const fee  = Number(document.getElementById('fee').value || '0');
+  const participation_fee = Number(document.getElementById('participation_fee').value || '0');
+  if (fee < 0 || participation_fee < 0) {
+    throw new Error('회비/참가비는 0 이상의 값으로 입력해 주세요.');
+  }
+  return { fee, participation_fee };
+}
+
+/* ===== 생성 ===== */
+async function createChallenge(){
+  const title = (document.getElementById('title').value || '').trim();
+  if(!title){ alert('제목은 필수입니다.'); return; }
+
+  const zoomVal = (document.getElementById('zoom').value || '').trim();
+  if (zoomVal && !/^https?:\/\//i.test(zoomVal)) {
+    alert('Default Zoom 링크는 http(s):// 로 시작해야 합니다.');
+    return;
+  }
+
+  // 금액 검증 (0 이상 허용, 둘 다 양수도 허용)
+  let fee, participation_fee;
+  try{
+    ({ fee, participation_fee } = getPricesOrThrow());
+  }catch(e){
+    alert(e.message || String(e));
+    return;
+  }
+
+  const latStr = document.getElementById('lat').value;
+  const lngStr = document.getElementById('lng').value;
+  const default_latitude  = latStr === '' ? null : Number(latStr);
+  const default_longitude = lngStr === '' ? null : Number(lngStr);
+
+  const payload = {
+    title,
+    start_date:document.getElementById('start').value||null,
+    end_date:document.getElementById('end').value||null,
+    total_rounds:parseInt(document.getElementById('total').value||'0'),
+    mode:document.getElementById('mode').value,
+    same_place_for_all_rounds: document.getElementById('samePlace').checked,
+    default_zoom_link: zoomVal || null,
+
+    // 장소
+    default_place_name:document.getElementById('place').value||null,
+    default_road_address:document.getElementById('road').value||null,
+    default_address:document.getElementById('addr').value||null,
+    default_map_url:document.getElementById('mapurl').value||null,
+    default_latitude,
+    default_longitude,
+
+    // 결제/참가
+    fee,
+    participation_fee,
+    min_participants:Number(document.getElementById('min_participants').value) || null,
+    max_participants:Number(document.getElementById('max_participants').value) || null,
+
+    // 리워드
+    use_reward: document.getElementById('use_reward').checked,
+    reward:(document.getElementById('reward').value||'').trim() || null,
+
+    // 태그(카테고리)
+    categories: selectedCategories
+  };
+
+  axios.post("/api/v1/challenges", {
+    challenge_data: payload,       // 그대로
+    tags: selectedCategories       // 이 줄 추가
+    })
+    .then(res => {
+      alert("챌린지가 생성되었습니다!");
+      window.location.href = `/pages/challenges/${res.data.id}`;
+    })
+    .catch(err => {
+      if (err.response && err.response.status === 401) {
+        alert("로그인 부탁드립니다 🙏");
+        location.href = "/login";
+      } else {
+        const detail = err.response?.data?.detail;
+        const msg = typeof detail === 'string' ? detail : (Array.isArray(detail) ? JSON.stringify(detail) : (detail?.msg || err.message));
+        alert("오류가 발생했습니다: " + msg);
+      }
+    });
+}
+
+// 초기화
+ document.addEventListener('DOMContentLoaded', () => {
+  loadCategories();
+  repaintPriceHelp();
+});
+</script>
+</body>
+</html>

@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from .database import init_db
 from .config import settings
 from ..utils.logging import logger
+from app.services.map_version import start_version_refresher
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -23,3 +24,13 @@ async def lifespan(app: FastAPI):
     
     # 🛑 Shutdown
     logger.info("🛑 FastAPI 서버가 종료됩니다...")
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        # 백그라운드 태스크 시작
+        import asyncio
+        task = asyncio.create_task(start_version_refresher())
+        try:
+            yield
+        finally:
+            task.cancel()

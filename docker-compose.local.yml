@@ -13,6 +13,11 @@ services:
     environment:
       # 환경 설정
       - ENVIRONMENT=development
+
+      - NAVER_SEARCH_CLIENT_ID=${NAVER_SEARCH_CLIENT_ID}
+      - NAVER_SEARCH_CLIENT_SECRET=${NAVER_SEARCH_CLIENT_SECRET}
+      - NAVER_MAPS_CLIENT_ID=${NAVER_MAPS_CLIENT_ID}
+      - NAVER_MAPS_CLIENT_SECRET=${NAVER_MAPS_CLIENT_SECRET}
       
       # MySQL 설정
       - MYSQL_HOST=mysql

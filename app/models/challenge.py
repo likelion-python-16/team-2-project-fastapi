@@ -1,8 +1,10 @@
 # app/models/challenge.py 업데이트
 
-from sqlalchemy import Column, Integer, String, Text, Date, Boolean, ForeignKey, DateTime, func, Enum
+from sqlalchemy import Column, Integer, String, Text, Date, Boolean, ForeignKey, DateTime, func, Enum, Float
 from sqlalchemy.orm import relationship
 from .base import Base
+from app.models.round_manager import RoundManager  # 필요시 상대 import 대신 문자열로도 가능
+from datetime import date
 
 class Challenge(Base):
     __tablename__ = "challenges"
@@ -12,9 +14,9 @@ class Challenge(Base):
     title = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
     creator_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    start_date = Column(Date, nullable=True)
-    end_date = Column(Date, nullable=True)
-    status = Column(String(20), default="recruiting")
+    start_date = Column(Date, nullable=False)
+    end_date = Column(Date, nullable=False)
+    status = Column(String(20), default="recruiting", comment="챌린지 상태")
     created_at = Column(DateTime, default=func.now())
     
     # 🆕 1단계: 핵심 필드들 (결제/참가 관련)
@@ -38,6 +40,50 @@ class Challenge(Base):
     is_deleted = Column(Boolean, default=False, comment="삭제 여부")
     deleted_at = Column(DateTime, nullable=True, comment="삭제 시간")
     deleted_by = Column(Integer, ForeignKey("users.id"), nullable=True, comment="삭제한 유저")
+
+    max_participation_rate = Column(Integer, nullable=True, comment="최대 참여율 (%)")
+
+    def get_status(self, current_count: int = 0) -> str:
+        today = date.today()
+
+        # 삭제된 경우 → 종료
+        if getattr(self, "is_deleted", False):
+            return "completed"
+
+        # 종료일이 있고, 오늘이 종료일 이후 → 종료
+        if self.end_date and today > self.end_date:
+            return "completed"
+
+        # 시작일이 있고, 오늘이 시작일 이전 → 모집중
+        if self.start_date and today < self.start_date:
+            return "recruiting"
+
+        # 시작일이 있고, 오늘이 시작일 이후(포함)
+        if self.start_date and today >= self.start_date:
+            # 최소 인원 미달이면 계속 모집중
+            if self.min_participants and current_count < self.min_participants:
+                return "recruiting"
+            # 종료일이 없거나 오늘이 종료일 이내 → 진행중
+            if (self.end_date is None) or (today <= self.end_date):
+                return "active"
+            
+        # 기본값
+        return "recruiting"
+
+
+
+    # 모드 & 기본값
+    mode = Column(Enum("online", "offline", "hybrid", name="challenge_mode_enum"), nullable=True)
+    default_zoom_link = Column(Text, nullable=True)
+    default_place_name = Column(String(255), nullable=True)
+    default_road_address = Column(String(255), nullable=True)
+    default_address = Column(String(255), nullable=True)
+
+    same_place_for_all_rounds = Column(Boolean, default=False, nullable=False, comment="모든 회차 동일 장소 여부")
+
+    default_map_url = Column(String(512), nullable=True)
+    default_latitude = Column(Float, nullable=True)
+    default_longitude = Column(Float, nullable=True)
     
     # 🔗 Relationships (foreign_keys 명시)
     creator = relationship("User", back_populates="created_challenges", foreign_keys="Challenge.creator_id")
@@ -75,3 +121,10 @@ class Challenge(Base):
     penalties = relationship("PenaltyHistory", back_populates="challenge")
 
     chat_rooms = relationship("ChatRoom", back_populates="challenge")
+
+    # 회차-매니저 위임 관계
+    round_managers = relationship(
+        "RoundManager",
+        back_populates="challenge",
+        cascade="all, delete-orphan"
+    )
