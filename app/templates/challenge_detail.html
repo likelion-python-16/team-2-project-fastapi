@@ -1,0 +1,457 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Challenge Detail</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="/static/styles.css" rel="stylesheet">
+  <style>
+    :root{--card-bg:#fff;--muted:#777;--br:#eee}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Noto Sans KR,Apple SD Gothic Neo,Helvetica,Arial,sans-serif;margin:16px}
+    .panel{border:1px solid var(--br);border-radius:12px;padding:12px;margin:12px 0;background:#fff}
+    .muted{color:var(--muted);font-size:12px}
+    .w-100{width:100%}
+    .btn{padding:6px 10px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer}
+    .btn:hover{background:#f7f7f7}
+    table{width:100%;border-collapse:collapse}
+    th,td{border-top:1px solid var(--br);padding:8px;vertical-align:top}
+    th{background:#fafafa;text-align:left}
+    .ok{color:#0a7}.err{color:#c00}
+    .row-flex{display:flex;gap:6px;align-items:center}
+    .tiny{font-size:12px}
+    .cards-row{display:grid;grid-template-columns:repeat(3,minmax(220px,1fr));gap:12px}
+    .card{border:1px solid var(--br);border-radius:12px;background:var(--card-bg);padding:12px;display:flex;flex-direction:column;gap:8px}
+    .card-head{display:flex;justify-content:space-between;align-items:center}
+    .badge{display:inline-block;border:1px solid #ddd;border-radius:999px;padding:3px 8px;font-size:12px}
+    .desc{font-size:13px;line-height:1.4;color:#333;white-space:pre-line;max-height:5.6em;overflow:hidden}
+    .kv{display:flex;gap:8px;font-size:13px;align-items:center}
+    .pagination{display:flex;gap:8px;align-items:center;justify-content:center;margin-top:8px}
+    @media (max-width:960px){.cards-row{grid-template-columns:repeat(2,minmax(220px,1fr));}}
+    @media (max-width:640px){.cards-row{grid-template-columns:1fr;}}
+  </style>
+</head>
+<body>
+
+<h2>Challenge Detail</h2>
+
+<div class="panel">
+  <div id="challengeHeader" class="muted" style="margin-bottom:8px">Loading...</div>
+  <pre id="challengeInfo"></pre>
+</div>
+
+<div class="panel">
+  <h3>장소 설정</h3>
+  <label><input type="checkbox" id="samePlace"> 모든 회차 동일 장소</label>
+  <div style="margin-top:8px;display:grid;grid-template-columns:repeat(2,minmax(240px,1fr));gap:10px">
+    <label>장소명 <input id="g_place_name" type="text" class="w-100" placeholder="예: 탄천종합운동장"></label>
+    <label>도로명주소 <input id="g_road_address" type="text" class="w-100"></label>
+    <label>지번주소 <input id="g_address" type="text" class="w-100"></label>
+    <label>지도 URL <input id="g_map_url" type="text" class="w-100" placeholder="네이버/카카오 지도 링크"></label>
+    <label>위도 <input id="g_lat" type="text" class="w-100" placeholder="37.4102033"></label>
+    <label>경도 <input id="g_lon" type="text" class="w-100" placeholder="127.1212796"></label>
+  </div>
+  <div class="row-flex" style="margin-top:6px">
+    <button class="btn" onclick="openPlacePicker('global')">장소 검색</button>
+    <span class="muted">체크 시 전역 값이 오프라인 회차에 일괄 반영됩니다(저장 시 적용).</span>
+  </div>
+</div>
+
+<div class="panel">
+  <h3>회차 목록</h3>
+  <table id="roundTable">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>모드</th>
+        <th>진행 날짜</th>
+        <th>시작</th>
+        <th>종료</th>
+        <th>설명</th>
+        <th>장소명</th>
+        <th>회의/지도 URL</th>
+        <th>리워드</th>
+        <th>참석</th>
+        <th>사진</th>
+        <th>저장/삭제</th>
+      </tr>
+    </thead>
+    <tbody id="roundTbody"></tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h3>생성된 회차</h3>
+  <div id="cardWrap" class="cards-row"></div>
+  <div class="pagination">
+    <button class="btn" onclick="prevPage()">이전</button>
+    <span id="pageInfo" class="muted"></span>
+    <button class="btn" onclick="nextPage()">다음</button>
+  </div>
+</div>
+
+<div class="panel">
+  <h3>참여 예정자(선택 회차)</h3>
+  <div style="margin-bottom:6px">
+    <label>Round ID <input id="selRoundId" type="number" style="width:120px"></label>
+    <button class="btn" onclick="loadPlanned()">불러오기</button>
+  </div>
+  <div id="planned"></div>
+</div>
+
+<script>
+  const CHALLENGE_ID = JSON.parse('{{ challenge_id|default(none)|tojson }}');
+
+  // API Prefix
+  const API_CH = '/api/v1'; // challenges 등
+  const API_ROOT = '';      // pictures는 루트로 노출
+
+  function authHeader(){
+    const t = localStorage.getItem('access_token');
+    return t ? { 'Authorization': 'Bearer ' + t } : {};
+  }
+
+  async function safeFetchJSON(url, options = {}) {
+    const res = await fetch(url, {
+      credentials: 'include',
+      headers: { 'Accept': 'application/json', ...authHeader(), ...(options.headers||{}) },
+      ...options,
+    });
+    const ct = res.headers.get('content-type') || '';
+    const isJSON = ct.includes('application/json');
+    const body = isJSON ? await res.json() : await res.text();
+    if (!isJSON) throw new Error(`Expected JSON but got ${ct} ${res.status}: ${String(body).slice(0,200)}`);
+    if (!res.ok) throw new Error(body?.detail || `HTTP ${res.status}`);
+    return body;
+  }
+
+  const S = { challenge:null, rounds:[], samePlace:false, page:1, pageSize:3 };
+
+  document.addEventListener('DOMContentLoaded', async () => {
+    if (CHALLENGE_ID == null) {
+      document.getElementById('challengeHeader').innerHTML = '<span class="err">challenge_id 없음</span>';
+      return;
+    }
+    await loadChallenge();
+    await loadRounds();
+    wireSamePlace();
+  });
+
+  async function loadChallenge(){
+    const ch = await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}`);
+    S.challenge = ch;
+    document.getElementById('challengeHeader').innerHTML =
+      `<b>#${ch.id}</b> ${ch.title || ''} · ${ch.mode || ''} · ${ch.status || ''}`;
+    document.getElementById('challengeInfo').textContent = JSON.stringify(ch, null, 2);
+
+    document.getElementById('g_place_name').value = ch.default_place_name || '';
+    document.getElementById('g_road_address').value = ch.default_road_address || '';
+    document.getElementById('g_address').value = ch.default_address || '';
+    document.getElementById('g_map_url').value = ch.default_map_url || '';
+    document.getElementById('g_lat').value = (ch.default_latitude ?? '') || '';
+    document.getElementById('g_lon').value = (ch.default_longitude ?? '') || '';
+  }
+
+  async function loadRounds(){
+    S.rounds = await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}/rounds`);
+    renderRounds();
+    renderRoundCards();
+  }
+
+  function isHybrid(){ return (S.challenge?.mode || '').toLowerCase() === 'hybrid'; }
+
+  function renderRounds(){
+    const tb = document.getElementById('roundTbody');
+    tb.innerHTML = S.rounds.map(r => {
+      const rid = r.id;
+
+      const modeCell = isHybrid()
+        ? `<select data-k="mode">
+             <option value="online"  ${r.mode==='online'?'selected':''}>온라인</option>
+             <option value="offline" ${r.mode==='offline'?'selected':''}>오프라인</option>
+           </select>`
+        : (r.mode || '');
+
+      return `
+      <tr data-rid="${rid}">
+        <td>${r.round}</td>
+        <td>${modeCell}</td>
+        <td>${r.processing_at || ''}</td>
+        <td><input type="time" value="${(r.start_time||'').slice(0,5)}" data-k="start_time"></td>
+        <td><input type="time" value="${(r.finish_time||'').slice(0,5)}" data-k="finish_time"></td>
+
+        <td>
+          <textarea class="w-100" data-k="description" rows="2" placeholder="설명">${r.description || ''}</textarea>
+        </td>
+
+        <td>
+          <div class="row-flex">
+            <input type="text" class="w-100" value="${r.place_name || ''}" data-k="place_name" placeholder="장소명" ${r.mode==='online'?'disabled':''}>
+            <button class="btn tiny" onclick="openPlacePicker('row', ${rid})" ${r.mode==='online'?'disabled':''}>검색</button>
+          </div>
+        </td>
+
+        <td>
+          <input type="text" class="w-100" value="${(r.mode==='online' ? (r.url||'') : (r.map_url||''))}" data-k="map_url" placeholder="회의/지도 URL">
+          <div class="muted tiny">온라인→url 저장 · 오프라인→map_url 저장</div>
+        </td>
+
+        <td>
+          <label class="tiny">
+            <input type="checkbox" data-k="reward_toggle"> 리워드
+          </label>
+          <input type="text" class="w-100" data-k="reward_text" placeholder="예: 인증 시 스탬프 2배" style="display:none;margin-top:4px">
+        </td>
+
+        <td>
+          <button class="btn" onclick="attend(${rid})">참석</button>
+          <button class="btn" onclick="decline(${rid})">불참</button>
+          <div class="muted" id="attendMsg-${rid}"></div>
+        </td>
+
+        <td>
+          <input type="file" accept="image/*" id="pic-${rid}">
+          <button class="btn" onclick="uploadPic(${rid})">업로드</button>
+          <div class="muted" id="picMsg-${rid}"></div>
+        </td>
+
+        <td>
+          <button class="btn" onclick="saveRound(${rid})">저장</button>
+          <button class="btn" onclick="delRound(${rid})">삭제</button>
+        </td>
+      </tr>`;
+    }).join('');
+
+    // 리워드 토글
+    document.querySelectorAll('#roundTbody tr').forEach(tr=>{
+      const toggle = tr.querySelector('[data-k="reward_toggle"]');
+      const input  = tr.querySelector('[data-k="reward_text"]');
+      toggle?.addEventListener('change', ()=>{ input.style.display = toggle.checked ? 'block' : 'none'; });
+    });
+
+    // 하이브리드: 모드 변경 시 입력 활성화/비활성
+    if (isHybrid()){
+      document.querySelectorAll('#roundTbody tr').forEach(tr=>{
+        const sel = tr.querySelector('[data-k="mode"]');
+        sel?.addEventListener('change', ()=>{
+          const isOn = sel.value === 'online';
+          const placeName = tr.querySelector('[data-k="place_name"]');
+          const placeBtn  = tr.querySelector('button[onclick^="openPlacePicker"]');
+          placeName.disabled = isOn;
+          placeBtn.disabled  = isOn;
+        });
+      });
+    }
+  }
+
+  // 카드 + 페이지네이션
+  function renderRoundCards(){
+    const wrap = document.getElementById('cardWrap');
+    const pageInfo = document.getElementById('pageInfo');
+    const total = S.rounds.length;
+    const pages = Math.max(1, Math.ceil(total / S.pageSize));
+    if (S.page > pages) S.page = pages;
+
+    const start = (S.page - 1) * S.pageSize;
+    const slice = S.rounds.slice(start, start + S.pageSize);
+
+    wrap.innerHTML = slice.map(r=>{
+      const spanTime = `${(r.start_time||'').slice(0,5)} - ${(r.finish_time||'').slice(0,5)}`;
+      const urlForMode = r.mode === 'online' ? (r.url||'') : (r.map_url||'');
+      const where = (r.mode === 'online') ? '온라인' : (r.place_name || '오프라인');
+      return `
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <div style="font-weight:600">Round ${r.round}</div>
+              <div class="muted">${r.processing_at || ''}</div>
+            </div>
+            <span class="badge">${r.mode === 'online' ? 'Online' : 'Offline'}</span>
+          </div>
+          <div class="kv"><span>⏱️</span><span>${spanTime}</span></div>
+          <div class="kv"><span>📍</span><span>${where}</span></div>
+          ${urlForMode ? `<div class="kv"><span>🔗</span><a href="${urlForMode}" target="_blank" rel="noopener">${urlForMode}</a></div>` : ''}
+          <div class="desc">${r.description || ''}</div>
+        </div>`;
+    }).join('');
+
+    pageInfo.textContent = `${S.page} / ${Math.max(1, Math.ceil(total / S.pageSize))} 페이지`;
+  }
+  function prevPage(){ if (S.page > 1){ S.page--; renderRoundCards(); } }
+  function nextPage(){
+    const pages = Math.max(1, Math.ceil(S.rounds.length / S.pageSize));
+    if (S.page < pages){ S.page++; renderRoundCards(); }
+  }
+
+  function wireSamePlace(){
+    const chk = document.getElementById('samePlace');
+    chk.addEventListener('change', () => {
+      S.samePlace = chk.checked;
+      if (S.samePlace) applyGlobalPlaceToAllRows();
+    });
+    ['g_place_name','g_road_address','g_address','g_map_url','g_lat','g_lon'].forEach(id=>{
+      document.getElementById(id).addEventListener('input', () => {
+        if (S.samePlace) applyGlobalPlaceToAllRows();
+      });
+    });
+  }
+
+  function applyGlobalPlaceToAllRows(){
+    const place = {
+      place_name: document.getElementById('g_place_name').value,
+      road_address: document.getElementById('g_road_address').value,
+      address: document.getElementById('g_address').value,
+      map_url: document.getElementById('g_map_url').value,
+      lat: document.getElementById('g_lat').value,
+      lon: document.getElementById('g_lon').value,
+    };
+    document.querySelectorAll('#roundTbody tr').forEach(tr=>{
+      const modeSel = tr.querySelector('[data-k="mode"]');
+      const currentMode = modeSel ? modeSel.value : (S.challenge?.mode || '');
+      if (currentMode === 'offline' || (!isHybrid() && currentMode === 'offline')) {
+        const q = sel => tr.querySelector(`[data-k="${sel}"]`);
+        if (q('place_name')) q('place_name').value = place.place_name;
+        if (q('map_url'))   q('map_url').value   = place.map_url;
+      }
+    });
+  }
+
+  // 저장
+  async function saveRound(rid){
+    const tr = document.querySelector(`tr[data-rid="${rid}"]`);
+    const val = k => tr.querySelector(`[data-k="${k}"]`)?.value || null;
+    const has = k => !!tr.querySelector(`[data-k="${k}"]`);
+
+    const payload = {
+      start_time: val('start_time'),
+      finish_time: val('finish_time'),
+      description: buildDescriptionWithReward(val('description'), tr),
+      place_name: val('place_name'),
+    };
+
+    if (has('mode')) payload.mode = tr.querySelector('[data-k="mode"]').value;
+
+    const effectiveUrl = val('map_url');
+    const modeNow = payload.mode || (S.rounds.find(r=>r.id===rid)?.mode || S.challenge?.mode || '');
+    if (modeNow === 'online')      payload.url = effectiveUrl;
+    else if (modeNow === 'offline') payload.map_url = effectiveUrl;
+    else {
+      const round = S.rounds.find(r=>r.id===rid);
+      if (round?.mode === 'online') payload.url = effectiveUrl;
+      else payload.map_url = effectiveUrl;
+    }
+
+    if (document.getElementById('samePlace').checked) {
+      payload.road_address = document.getElementById('g_road_address').value || null;
+      payload.address      = document.getElementById('g_address').value || null;
+      payload.lat          = document.getElementById('g_lat').value || null;
+      payload.lon          = document.getElementById('g_lon').value || null;
+    }
+
+    await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}/rounds/${rid}`, {
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload),
+    });
+    await loadRounds();
+    alert('저장 완료');
+  }
+
+  function buildDescriptionWithReward(desc, tr){
+    const toggle = tr.querySelector('[data-k="reward_toggle"]');
+    const input  = tr.querySelector('[data-k="reward_text"]');
+    const reward = (toggle?.checked ? (input?.value || '').trim() : '');
+    if (!reward) return desc || '';
+    const base = (desc || '').trim();
+    const tag  = `[리워드] ${reward}`;
+    if (!base) return tag;
+    if (base.includes(tag)) return base;
+    return base + '\n' + tag;
+  }
+
+  async function delRound(rid){
+    if(!confirm('이 회차를 삭제하시겠습니까?')) return;
+    await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}/rounds/${rid}`, { method:'DELETE' });
+    await loadRounds();
+    alert('삭제 완료 (총 라운드 수 자동 갱신)');
+  }
+
+  // 참석/불참
+  async function attend(rid){
+    try{
+      await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}/rounds/${rid}/attend`, { method:'POST' });
+      document.getElementById(`attendMsg-${rid}`).innerHTML = '<span class="ok">참석 처리됨</span>';
+    }catch(e){
+      document.getElementById(`attendMsg-${rid}`).innerHTML = `<span class="err">${e.message}</span>`;
+    }
+  }
+  async function decline(rid){
+    try{
+      await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}/rounds/${rid}/decline`, { method:'POST' });
+      document.getElementById(`attendMsg-${rid}`).innerHTML = '<span class="ok">불참 처리됨</span>';
+    }catch(e){
+      document.getElementById(`attendMsg-${rid}`).innerHTML = `<span class="err">${e.message}</span>`;
+    }
+  }
+
+  // 참석 예정자
+  async function loadPlanned(){
+    const rid = parseInt(document.getElementById('selRoundId').value||'0');
+    if(!rid) return;
+    const list = await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}/rounds/${rid}/attendees?planned_only=true`);
+    document.getElementById('planned').innerHTML =
+      list.map(u => `<div>${u.username || u.name || ('user#'+u.user_id)} (id:${u.user_id})</div>`).join('');
+  }
+
+  // 장소 검색 팝업
+  function openPlacePicker(scope, rid){
+    const url = `/pages/place-picker?scope=${encodeURIComponent(scope)}${rid?`&rid=${rid}`:''}`;
+    window.open(url, 'placePicker', 'width=720,height=640,menubar=no,toolbar=no,location=no');
+  }
+
+  // 팝업에서 값 받기
+  window.addEventListener('message', (e) => {
+    if (e.origin !== window.location.origin) return;
+    const d = e.data || {};
+    if (d.type !== 'place-picked' || !d.place) return;
+
+    const p = d.place;
+    if (d.scope === 'global') {
+      document.getElementById('g_place_name').value = p.place_name || '';
+      document.getElementById('g_road_address').value = p.road_address || '';
+      document.getElementById('g_address').value = p.address || '';
+      document.getElementById('g_map_url').value = p.map_url || '';
+      if (S.samePlace) applyGlobalPlaceToAllRows();
+    } else if (d.scope === 'row' && d.rid) {
+      const tr = document.querySelector(`tr[data-rid="${d.rid}"]`);
+      if (!tr) return;
+      const q = k => tr.querySelector(`[data-k="${k}"]`);
+      if (q('place_name')) q('place_name').value = p.place_name || '';
+      if (q('map_url'))   q('map_url').value   = p.map_url || '';
+      const selMode = tr.querySelector('[data-k="mode"]');
+      if (selMode && selMode.value === 'online') selMode.value = 'offline';
+    }
+  });
+
+  // 사진 업로드
+  async function uploadPic(rid){
+    const f = document.getElementById(`pic-${rid}`).files?.[0];
+    if(!f){ alert('파일을 선택하세요'); return; }
+    const fd = new FormData();
+    fd.append('file', f);
+
+    const res = await fetch(`${API_ROOT}/challenges/${CHALLENGE_ID}/rounds/${rid}/pictures`, {
+      method:'POST',
+      credentials:'include',
+      headers: { ...authHeader() }, // multipart는 Content-Type 지정 금지
+      body: fd
+    });
+    if(!res.ok){
+      const t = await res.text();
+      document.getElementById(`picMsg-${rid}`).innerHTML = `<span class="err">업로드 실패: ${t.slice(0,200)}</span>`;
+      return;
+    }
+    document.getElementById(`picMsg-${rid}`).innerHTML = '<span class="ok">업로드 성공</span>';
+  }
+</script>
+</body>
+</html>

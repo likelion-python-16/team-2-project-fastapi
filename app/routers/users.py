@@ -1,225 +1,218 @@
-# app/routers/users.py
-
-from fastapi import APIRouter, Depends, Query, HTTPException, status
-from typing import Literal, List, Dict, Any, Optional
-from datetime import datetime, timezone, date as ddate
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import EmailStr
 from sqlalchemy.orm import Session
+from sqlalchemy import func
+from typing import List, Optional
+from datetime import datetime
 
-from app.schemas.user import MeOut, MeUpdateIn  # ← 핵심: MeOut/MeUpdateIn 사용
-from app.deps.auth import get_current_user
-from app.db.session import get_db
+from app.security import normalize_phone, id_fingerprint
+from ..core.database import get_db
+from ..models.user import User
+from ..schemas.auth import UserOut
+from ..utils.logging import logger
 
 from app.models.challenge import Challenge
 from app.models.participation import Participation
 from app.models.user import User
 from app.models.tag import Tag, UserTag  # ⬅️ 조인 테이블
 
-router = APIRouter(prefix="/api/v1/users", tags=["users"])
+# -------------------------------
+# 사용자 목록 / 조회 / 검색 API
+# -------------------------------
+@router.get("/", response_model=List[UserOut])
+async def get_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    """모든 사용자 목록 조회 (페이지네이션 포함)"""
+    try:
+        users = db.query(User).offset(skip).limit(limit).all()
+        logger.info(f"사용자 목록 조회: {len(users)}명")
+        return users
+    except Exception as e:
+        logger.error(f"사용자 목록 조회 오류: {str(e)}")
+        raise HTTPException(status_code=500, detail="사용자 목록을 가져오는데 실패했습니다")
 
-# ─────────────────────────────────────────────────────────────
-# 0) /api/v1/users/me : 현재 유저 정보
-# ─────────────────────────────────────────────────────────────
-@router.get("/me", response_model=MeOut)
-def read_me(current_user: User = Depends(get_current_user)):
-    return current_user
 
-# ─────────────────────────────────────────────────────────────
-# 1) 프로필 수정: PATCH /api/v1/users/me
-# ─────────────────────────────────────────────────────────────
-@router.patch("/me", response_model=MeOut)
-def update_me(
-    payload: MeUpdateIn,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    data = payload.model_dump(exclude_unset=True, exclude_none=True)
-    if not data:
-        return current_user  # 변경 없음
+@router.get("/count")
+async def get_users_count(db: Session = Depends(get_db)):
+    """전체 사용자 수 조회"""
+    try:
+        total_users = db.query(User).count()
+        active_users = db.query(User).filter(User.is_active == True).count()
+        return {
+            "total_users": total_users,
+            "active_users": active_users,
+            "inactive_users": total_users - active_users,
+        }
+    except Exception as e:
+        logger.error(f"사용자 수 조회 오류: {str(e)}")
+        raise HTTPException(status_code=500, detail="사용자 수를 가져오는데 실패했습니다")
 
-    # 이메일 중복 체크(값이 들어온 경우만)
-    if "email" in data:
-        exists = (
-            db.query(User)
-            .filter(User.email == data["email"], User.id != current_user.id)
-            .first()
-        )
-        if exists:
-            raise HTTPException(status_code=409, detail="Email already in use")
 
-    # 필드 적용
-    for k, v in data.items():
-        if hasattr(current_user, k):
-            setattr(current_user, k, v)
+@router.get("/search")
+async def search_users(q: str, db: Session = Depends(get_db)):
+    """사용자 검색 (username, email, name으로)"""
+    if len(q.strip()) < 2:
+        raise HTTPException(status_code=400, detail="검색어는 2자 이상이어야 합니다")
 
-    db.add(current_user)
+    try:
+        users = db.query(User).filter(
+            User.username.contains(q) |
+            User.email.contains(q) |
+            User.name.contains(q)
+        ).limit(20).all()
+        return {
+            "query": q,
+            "results": len(users),
+            "users": [
+                {"id": u.id, "username": u.username, "email": u.email,
+                 "name": u.name, "is_active": u.is_active}
+                for u in users
+            ],
+        }
+    except Exception as e:
+        logger.error(f"사용자 검색 오류: {str(e)}")
+        raise HTTPException(status_code=500, detail="사용자 검색에 실패했습니다")
+
+
+@router.get("/{user_id:int}", response_model=UserOut)
+async def get_user(user_id: int, db: Session = Depends(get_db)):
+    """특정 사용자 조회"""
+    if user_id <= 0:
+        raise HTTPException(status_code=400, detail="올바르지 않은 사용자 ID입니다")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail=f"사용자 ID {user_id}를 찾을 수 없습니다")
+    return user
+
+
+@router.get("/username/{username}", response_model=UserOut)
+async def get_user_by_username(username: str, db: Session = Depends(get_db)):
+    """사용자명으로 사용자 조회"""
+    user = db.query(User).filter(User.username == username).first()
+    if not user:
+        raise HTTPException(status_code=404, detail=f"사용자명 '{username}'을 찾을 수 없습니다")
+    return user
+
+# -------------------------------
+# 계정 활성/비활성, 삭제
+# -------------------------------
+@router.patch("/{user_id:int}/activate")
+async def activate_user(user_id: int, db: Session = Depends(get_db)):
+    """사용자 계정 활성화"""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다")
+    user.is_active = True
     db.commit()
-    db.refresh(current_user)
-    return current_user
+    return {"message": f"사용자 {user_id}가 활성화되었습니다"}
 
-# ─────────────────────────────────────────────────────────────
-# 2) 관심 태그: GET/POST/DELETE
-# ─────────────────────────────────────────────────────────────
-def _tag_to_dict(t: Tag) -> dict:
+
+@router.patch("/{user_id:int}/deactivate")
+async def deactivate_user(user_id: int, db: Session = Depends(get_db)):
+    """사용자 계정 비활성화"""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다")
+    user.is_active = False
+    db.commit()
+    return {"message": f"사용자 {user_id}가 비활성화되었습니다"}
+
+
+@router.delete("/{user_id:int}")
+async def delete_user(user_id: int, db: Session = Depends(get_db)):
+    """사용자 삭제 (주의: 실제 삭제됨)"""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다")
+    db.delete(user)
+    db.commit()
+    return {"message": f"사용자 {user_id}가 삭제되었습니다"}
+
+# -------------------------------
+# 중복 검사 (회원가입/수정 전)
+# -------------------------------
+@router.get("/dup-check")
+def check_duplicates(
+    username: Optional[str] = Query(None, description="사용자명"),
+    email: Optional[EmailStr] = Query(None, description="이메일"),
+    phone: Optional[str] = Query(None, description="전화번호(하이픈 가능)"),
+    ident: Optional[str] = Query(None, description="주민/식별번호(하이픈 가능)"),
+    name: Optional[str] = Query(None, description="실명(동명이인 방지)"),
+    exclude_user_id: Optional[int] = Query(None, description="수정 시 자기 자신 제외"),
+    db: Session = Depends(get_db),
+):
+    """
+    ✅ 회원가입/수정 시 중복 검사
+    - username, email, phone, ident 개별 필드 중복 여부
+    - name + ident + (email or phone) 조합 → 동일인 여부 판단
+    """
+    if not any([username, email, phone, ident, name]):
+        raise HTTPException(status_code=400, detail="검사할 파라미터가 없습니다")
+
+    # --- Normalize & Fingerprint ---
+    u = username.strip().lower() if username else None
+    e = str(email).strip().lower() if email else None
+    p_norm = normalize_phone(phone) if phone else None
+    p_fp = id_fingerprint(p_norm) if p_norm else None
+    fp_ident = id_fingerprint(ident) if ident else None
+    n = name.strip() if name else None
+
+    def not_me(q):
+        return q.filter(User.id != exclude_user_id) if exclude_user_id else q
+
+    # --- 개별 중복 체크 ---
+    username_exists = (
+        not_me(db.query(User.id).filter(func.lower(User.username) == u)).first() is not None
+        if u else "not_provided"
+    )
+    email_exists = (
+        not_me(db.query(User.id).filter(func.lower(User.email) == e)).first() is not None
+        if e else "not_provided"
+    )
+    phone_exists = (
+        not_me(db.query(User.id).filter(User.phone_fingerprint == p_fp)).first() is not None
+        or not_me(db.query(User.id).filter(User.phone == p_norm)).first() is not None
+        if p_norm else "not_provided"
+    )
+    ident_exists = (
+        not_me(db.query(User.id).filter(User.identification_fingerprint == fp_ident)).first() is not None
+        if fp_ident else "not_provided"
+    )
+
+    # --- 동명이인 조합 체크 ---
+    duplicate_person_by_email = (
+        not_me(db.query(User.id).filter(
+            User.identification_fingerprint == fp_ident,
+            func.lower(User.name) == func.lower(n),
+            func.lower(User.email) == e,
+        )).first() is not None
+        if n and fp_ident and e else "not_checked"
+    )
+    duplicate_person_by_phone = (
+        not_me(db.query(User.id).filter(
+            User.identification_fingerprint == fp_ident,
+            func.lower(User.name) == func.lower(n),
+            (User.phone_fingerprint == p_fp) | (User.phone == p_norm),
+        )).first() is not None
+        if n and fp_ident and p_norm else "not_checked"
+    )
+
+    # --- 최종 ---
+    any_dup = any(x is True for x in [
+        username_exists, email_exists, phone_exists, ident_exists,
+        duplicate_person_by_email, duplicate_person_by_phone
+    ])
+
     return {
-        "id": t.id,
-        "name": getattr(t, "name", None) or getattr(t, "tag", None) or "",
-        "icon_url": getattr(t, "icon_url", None),
+        "available": not any_dup,
+        "username": username_exists,
+        "email": email_exists,
+        "phone": phone_exists,
+        "ident": ident_exists,
+        "composite": {
+            "duplicate_person_by_email": duplicate_person_by_email,
+            "duplicate_person_by_phone": duplicate_person_by_phone,
+            "rule": "name + ident + (email or phone) 일치 시 같은 사람으로 간주",
+        },
+        "message": "제공한 값만 검사합니다. phone은 fingerprint 기준으로 우선 검사하며, 레거시 phone(숫자열)도 보조로 확인합니다.",
     }
-
-@router.get("/me/tags", response_model=List[Dict[str, Any]])
-def get_my_tags(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    rows = (
-        db.query(Tag)
-        .join(UserTag, UserTag.tag_id == Tag.id)
-        .filter(UserTag.user_id == current_user.id, Tag.is_active == True)
-        .order_by(Tag.id.asc())
-        .all()
-    )
-    return [_tag_to_dict(t) for t in rows]
-
-# 구버전 호환
-@router.get("/me/tags/detail", response_model=List[Dict[str, Any]])
-def get_my_tags_detail(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    return get_my_tags(db=db, current_user=current_user)
-
-from pydantic import BaseModel
-class TagAddIn(BaseModel):
-    tag_id: int
-
-@router.post("/me/tags", response_model=Dict[str, Any], status_code=status.HTTP_201_CREATED)
-def add_my_tag(
-    payload: TagAddIn,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    tag = db.query(Tag).filter(Tag.id == payload.tag_id, Tag.is_active == True).first()
-    if not tag:
-        raise HTTPException(status_code=404, detail="Tag not found or inactive")
-
-    exists = (
-        db.query(UserTag)
-        .filter(UserTag.user_id == current_user.id, UserTag.tag_id == payload.tag_id)
-        .first()
-    )
-    if exists:
-        return _tag_to_dict(tag)
-
-    db.add(UserTag(user_id=current_user.id, tag_id=payload.tag_id))
-    db.commit()
-    return _tag_to_dict(tag)
-
-@router.delete("/me/tags/{tag_id}", status_code=status.HTTP_204_NO_CONTENT)
-def remove_my_tag(
-    tag_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    ut = (
-        db.query(UserTag)
-        .filter(UserTag.user_id == current_user.id, UserTag.tag_id == tag_id)
-        .first()
-    )
-    if not ut:
-        return  # 멱등
-    db.delete(ut)
-    db.commit()
-    return
-
-# ─────────────────────────────────────────────────────────────
-# 3) 챌린지 목록
-# ─────────────────────────────────────────────────────────────
-def _to_date(v):
-    if isinstance(v, ddate):
-        return v
-    if isinstance(v, datetime):
-        return v.date()
-    if isinstance(v, str):
-        try:
-            return datetime.strptime(v, "%Y-%m-%d").date()
-        except Exception:
-            return None
-    return None
-
-def _challenge_status(start_d: ddate | None, end_d: ddate | None, today: ddate) -> str | None:
-    if not (start_d and end_d):
-        return None
-    if start_d <= today <= end_d:
-        return "active"
-    if end_d < today:
-        return "finished"
-    return "upcoming"
-
-def _row_to_item(p: Participation, c: Challenge, today: ddate) -> dict:
-    start_d = _to_date(getattr(c, "start_date", None))
-    end_d   = _to_date(getattr(c, "end_date", None))
-    return {
-        "challenge_id": c.id,
-        "title": getattr(c, "title", None) or getattr(c, "name", None),
-        "challenge_status": _challenge_status(start_d, end_d, today),
-        "start_date": start_d,
-        "end_date": end_d,
-        "participation_id": p.id,
-        "participation_status": getattr(p, "status", "active") if hasattr(p, "status") else "active",
-        "role": getattr(p, "role", "participant"),
-        "joined_at": getattr(p, "created_at", None),
-    }
-
-def _apply_status_filter(items: list[dict], status: str) -> list[dict]:
-    if status in {"active", "finished", "upcoming"}:
-        return [it for it in items if it.get("challenge_status") == status]
-    return items
-
-@router.get("/me/challenges")
-def list_my_challenges(
-    status: Literal["all", "active", "finished", "upcoming"] = Query("all"),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(10, ge=1, le=100),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    q = (
-        db.query(Participation, Challenge)
-        .join(Challenge, Challenge.id == Participation.challenge_id)
-        .filter(Participation.user_id == current_user.id)
-        .order_by(Challenge.id.desc())
-        .offset(skip)
-        .limit(limit)
-    )
-    rows = q.all()
-
-    today = datetime.now(timezone.utc).date()
-    items = [_row_to_item(p, c, today) for p, c in rows]
-    items = _apply_status_filter(items, status)
-
-    return {"items": items, "total": len(items), "skip": skip, "limit": limit}
-
-@router.get("/{user_id}/challenges")
-def list_user_challenges(
-    user_id: int,
-    status: Literal["all", "active", "finished", "upcoming"] = Query("all"),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(10, ge=1, le=100),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    q = (
-        db.query(Participation, Challenge)
-        .join(Challenge, Challenge.id == Participation.challenge_id)
-        .filter(Participation.user_id == user_id)
-        .order_by(Challenge.id.desc())
-        .offset(skip)
-        .limit(limit)
-    )
-    rows = q.all()
-
-    today = datetime.now(timezone.utc).date()
-    items = [_row_to_item(p, c, today) for p, c in rows]
-    items = _apply_status_filter(items, status)
-
-    return {"items": items, "total": len(items), "skip": skip, "limit": limit}

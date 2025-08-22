@@ -21,6 +21,7 @@ from .review import Review, ReviewHelpful, ReviewStatus
 from .challenge_embedding import ChallengeEmbedding
 from .report import Report, ReportProof, PenaltyHistory, ReportStatus, PenaltySource
 from .chat import ChatRoom, ChatMessage, ChatParticipant
+from .round_manager import RoundManager
 # __all__로 외부에서 import 가능한 것들 정의
 __all__ = [
     # Base
@@ -76,7 +77,10 @@ __all__ = [
     "NotificationEvent",
     "InvitationStatus",
     "ReviewStatus",
-    
+
+    # round_manager
+    "RoundManager",
+
     #report
     "Report",
     "ReportProof",

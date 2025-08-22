@@ -16,7 +16,13 @@ services:
     # ✅ 비밀 아닌 운영/DB 값만 유지
     environment:
       - ENVIRONMENT=development
-      - DEBUG=True
+
+      - NAVER_SEARCH_CLIENT_ID=${NAVER_SEARCH_CLIENT_ID}
+      - NAVER_SEARCH_CLIENT_SECRET=${NAVER_SEARCH_CLIENT_SECRET}
+      - NAVER_MAPS_CLIENT_ID=${NAVER_MAPS_CLIENT_ID}
+      - NAVER_MAPS_CLIENT_SECRET=${NAVER_MAPS_CLIENT_SECRET}
+      
+      # MySQL 설정
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
       - MYSQL_USER=team_user

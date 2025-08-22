@@ -1,152 +1,111 @@
-# app/routers/users.py
-
-from fastapi import APIRouter, Depends, Query
-from typing import Literal, List, Dict, Any
-from datetime import datetime, timezone, date as ddate
-
+from ..schemas.tags import TagAIRequest, TagAIResponse, TagCreate, TagResponse, TagUpdate
+from fastapi import APIRouter, Query, Depends, HTTPException
+from app.services.predictor import predict_category
+from ..core.database import get_db
+from app.models import Tag
 from sqlalchemy.orm import Session
 
-from app.schemas.user import UserOut
-from app.deps.auth import get_current_user
-from app.db.session import get_db
+router = APIRouter(prefix="/tags", tags=["Tags"])
 
-from app.models.challenge import Challenge
-from app.models.participation import Participation
-from app.models.user import User
-from app.models.tag import Tag  # 🔹 tags/detail 응답용
+@router.post("/search", response_model=TagAIResponse)
+def search_tags(req: TagAIRequest):
+    tag, score = predict_category(req.query)
+    return TagAIResponse(tag=tag, score=score)
 
-router = APIRouter(prefix="/api/v1/users", tags=["users"])
+@router.get("/search", response_model=TagAIResponse)
+def search_tags_get(query: str = Query(..., description="검색어")):
+    tag, score = predict_category(query)
+    return TagAIResponse(tag=tag, score=score)
 
-# 1) /api/v1/users/me : 현재 유저 정보
-@router.get("/me", response_model=UserOut)
-def read_me(current_user: UserOut = Depends(get_current_user)):
-    return current_user
+@router.post("/create", response_model=TagResponse)
+def create_tag(tag_data: TagCreate, db: Session = Depends(get_db)):
+    # 중복 태그 체크
+    existing = db.query(Tag).filter(Tag.tag == tag_data.tag).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="이미 존재하는 태그입니다.")
 
-
-# ---- 공통 유틸 ----
-def _to_date(v):
-    """datetime -> date, date -> date, 'YYYY-MM-DD' -> date"""
-    if isinstance(v, ddate):
-        return v
-    if isinstance(v, datetime):
-        return v.date()
-    if isinstance(v, str):
-        try:
-            return datetime.strptime(v, "%Y-%m-%d").date()
-        except Exception:
-            return None
-    return None
-
-
-def _challenge_status(start_d: ddate | None, end_d: ddate | None, today: ddate) -> str | None:
-    if not (start_d and end_d):
-        return None
-    if start_d <= today <= end_d:
-        return "active"
-    if end_d < today:
-        return "finished"
-    return "upcoming"
-
-
-def _row_to_item(p: Participation, c: Challenge, today: ddate) -> dict:
-    # ⚠️ 모델은 못 건드린다고 했으니 start_date/end_date만 사용
-    start_d = _to_date(getattr(c, "start_date", None))
-    end_d   = _to_date(getattr(c, "end_date", None))
-    return {
-        "challenge_id": c.id,
-        "title": getattr(c, "title", None) or getattr(c, "name", None),
-        "challenge_status": _challenge_status(start_d, end_d, today),
-        "start_date": start_d,
-        "end_date": end_d,
-        "participation_id": p.id,
-        "participation_status": getattr(p, "status", "active") if hasattr(p, "status") else "active",
-        "role": getattr(p, "role", "participant"),
-        "joined_at": getattr(p, "created_at", None),
-    }
-
-
-def _apply_status_filter(items: list[dict], status: str) -> list[dict]:
-    if status in {"active", "finished", "upcoming"}:
-        return [it for it in items if it.get("challenge_status") == status]
-    return items
-
-
-# 2) /api/v1/users/me/challenges : 현재 유저의 챌린지 목록
-@router.get("/me/challenges")
-def list_my_challenges(
-    status: Literal["all", "active", "finished", "upcoming"] = Query("all"),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(10, ge=1, le=100),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    q = (
-        db.query(Participation, Challenge)
-        .join(Challenge, Challenge.id == Participation.challenge_id)
-        .filter(Participation.user_id == current_user.id)
-        .order_by(Challenge.id.desc())
-        .offset(skip)
-        .limit(limit)
+    new_tag = Tag(
+        tag=tag_data.tag,
+        icon_url=tag_data.icon_url,
+        is_active=True,
+        embedding=None,
+        embedding_model=None,
+        embedding_updated_at=None
     )
-    rows = q.all()
+    db.add(new_tag)
+    db.commit()
+    db.refresh(new_tag)
 
-    today = datetime.now(timezone.utc).date()
-    items = [_row_to_item(p, c, today) for p, c in rows]
-    items = _apply_status_filter(items, status)
+    return new_tag
 
-    return {"items": items, "total": len(items), "skip": skip, "limit": limit}
+# 태그 수정
+@router.put("/update/{tag_id}", response_model=TagResponse)
+def update_tag(tag_id: int, tag_data: TagUpdate, db: Session = Depends(get_db)):
+    tag = db.query(Tag).filter(Tag.id == tag_id).first()
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
 
+    # 중복 태그명 방지
+    if tag_data.tag:
+        existing = db.query(Tag).filter(Tag.tag == tag_data.tag, Tag.id != tag_id).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="Tag name already exists")
 
-# 3) (옵션) /api/v1/users/{id}/challenges : 다른 유저의 챌린지 목록
-@router.get("/{user_id}/challenges")
-def list_user_challenges(
-    user_id: int,
-    status: Literal["all", "active", "finished", "upcoming"] = Query("all"),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(10, ge=1, le=100),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    q = (
-        db.query(Participation, Challenge)
-        .join(Challenge, Challenge.id == Participation.challenge_id)
-        .filter(Participation.user_id == user_id)
-        .order_by(Challenge.id.desc())
-        .offset(skip)
-        .limit(limit)
-    )
-    rows = q.all()
+    if tag_data.tag is not None:
+        tag.tag = tag_data.tag
+    if tag_data.icon_url is not None:
+        tag.icon_url = tag_data.icon_url
 
-    today = datetime.now(timezone.utc).date()
-    items = [_row_to_item(p, c, today) for p, c in rows]
-    items = _apply_status_filter(items, status)
-
-    return {"items": items, "total": len(items), "skip": skip, "limit": limit}
+    db.commit()
+    db.refresh(tag)
+    return tag
 
 
-# 4) /api/v1/users/me/tags/detail : 관심 태그 상세 (프론트가 호출)
-@router.get("/me/tags/detail", response_model=List[Dict[str, Any]])
-def get_my_tags_detail(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """
-    현재 로그인한 사용자의 관심 태그 목록.
-    프론트는 'name' 키를 기대하므로 Tag.tag/Tag.name 중 있는 값을 name으로 변환.
-    관계가 비어 있으면 [] 반환.
-    """
-    tags: List[Tag] = []
-    # User 모델에 tags 관계가 있는 경우
-    if hasattr(current_user, "tags") and current_user.tags:
-        tags = current_user.tags  # lazy-load 관계 허용
+# 태그 삭제
+@router.delete("/delete/{tag_id}")
+def delete_tag(tag_id: int, db: Session = Depends(get_db)):
+    tag = db.query(Tag).filter(Tag.id == tag_id).first()
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
 
-    # (선택) 관계가 없다면, 조인 조회 로직을 여기에 추가하면 됨.
+    db.delete(tag)
+    db.commit()
+    return {"message": "Tag deleted successfully"}
 
-    return [
-        {
-            "id": t.id,
-            "name": getattr(t, "name", None) or getattr(t, "tag", None) or "",
-            "icon_url": getattr(t, "icon_url", None),
-        }
-        for t in (tags or [])
-    ]
+
+
+# 기본 카테고리 레이블(centroids) 리스트
+@router.get("/defaults")
+def list_default_labels():
+    from app.services.store import store
+    return {"labels": store.centroid_labels}
+
+# 기본 키워드(용어)와 소속 카테고리
+@router.get("/default-terms")
+def list_default_terms():
+    from app.services.store import store
+    return {"terms": [{"term": t, "category": c} for t, c in zip(store.flat_terms, store.flat_labels)]}
+
+@router.post("/defaults/reload")
+def reload_defaults():
+    from app.services.store import store
+    store.load()
+    return {"reloaded": True, "labels": store.centroid_labels}
+
+@router.post("/seed-defaults")
+def seed_defaults(db: Session = Depends(get_db)):
+    from app.services.store import store
+    from app.models import Tag
+    inserted, skipped = 0, 0
+    for name in store.centroid_labels:
+        name = (name or "").strip()
+        if not name:
+            continue
+        exists = db.query(Tag).filter(Tag.tag == name).first()
+        if exists:
+            skipped += 1
+            continue
+        db.add(Tag(tag=name, is_active=True))
+        inserted += 1
+    db.commit()
+    return {"inserted": inserted, "skipped": skipped, "total": len(store.centroid_labels)}

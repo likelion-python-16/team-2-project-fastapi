@@ -10,6 +10,7 @@ from .base import Base, TimestampMixin
 class ParticipationRole(str, enum.Enum):
     creator = "creator"
     participant = "participant"
+    manager = "manager"  # 🆕 위임 관리자 역할 추가
 
 class Participation(Base, TimestampMixin):
     __tablename__ = "participations"
@@ -20,8 +21,11 @@ class Participation(Base, TimestampMixin):
     joined_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     status = Column(String(20), default="active", nullable=False)   # 예: active, left, kicked 등 자유롭게 사용
     is_active = Column(Boolean, default=True, nullable=False)
-    role = Column(SAEnum(ParticipationRole, name="participation_role_enum"),
-    default=ParticipationRole.participant, nullable=False)
+    role = Column(
+        SAEnum(ParticipationRole, name="participation_role_enum"),
+        default=ParticipationRole.participant,
+        nullable=False
+    )
     leave_type = Column(String(20), nullable=True)   # 예: voluntary, kicked 등 자유 입력
     
     # 관계
