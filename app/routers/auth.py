@@ -1,5 +1,4 @@
 # app/routers/auth.py
-
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -20,8 +19,10 @@ from app.utils.logging import logger
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
+# ✅ 기본 프로필 이미지(정적 제공)
+DEFAULT_PROFILE_IMAGE = "/static/pictures/defaultprofile.jpeg"
 
-# ✅ 사전 중복 체크용 (가입과 분리된 GET)
+
 @router.get("/check-duplicates")
 def check_duplicates(
     db: Session = Depends(get_db),
@@ -32,24 +33,29 @@ def check_duplicates(
     taken = {"username": False, "email": False, "phone": False}
 
     if username:
-        taken["username"] = db.query(User.id).filter(User.username == username.lower()).first() is not None
+        taken["username"] = (
+            db.query(User.id).filter(User.username == username.lower()).first()
+            is not None
+        )
 
     if email:
-        taken["email"] = db.query(User.id).filter(User.email == email).first() is not None
+        taken["email"] = (
+            db.query(User.id).filter(User.email == email).first()
+            is not None
+        )
 
     if phone:
-        # phone 은 정규화 + fingerprint 로 조회 (레거시 평문 컬럼 보조)
+        # phone: 정규화 + fingerprint
         try:
-            norm = normalize_phone(phone)  # "070-1234-5678" -> "07012345678" 등, 프로젝트 구현 재사용
+            norm = normalize_phone(phone)
         except Exception:
             norm = None
         if norm:
             fp = id_fingerprint(norm)
             taken["phone"] = (
                 db.query(User.id).filter(User.phone_fingerprint == fp).first() is not None
-                or db.query(User.id).filter(User.phone == norm).first() is not None  # 레거시 호환
+                or db.query(User.id).filter(User.phone == norm).first() is not None
             )
-
     return {"taken": taken}
 
 
@@ -72,9 +78,13 @@ def signup(payload: SignUpIn, db: Session = Depends(get_db)):
     phone_norm = normalize_phone(getattr(payload, "phone", None))
     phone_fp = id_fingerprint(phone_norm) if phone_norm else None
 
-    id_fp = id_fingerprint(getattr(payload, "identification_number", None)) if getattr(payload, "identification_number", None) else None
+    id_fp = (
+        id_fingerprint(getattr(payload, "identification_number", None))
+        if getattr(payload, "identification_number", None)
+        else None
+    )
 
-    # 3) 중복 검사 (레이스 컨디션 대비, IntegrityError도 아래서 잡음)
+    # 3) 중복 검사
     if db.query(User).filter(or_(User.username == username, User.email == email)).first():
         raise HTTPException(status.HTTP_409_CONFLICT, "이미 사용 중인 사용자명 또는 이메일입니다")
 
@@ -89,18 +99,21 @@ def signup(payload: SignUpIn, db: Session = Depends(get_db)):
 
     # 4) 생성 & 저장
     try:
+        # ✅ 프로필 이미지: 값이 없으면 기본 이미지로 대체
+        profile_image_value = (payload.profile_image or "").strip() or DEFAULT_PROFILE_IMAGE
+
         user = User(
             username=username,
             email=email,
             name=(payload.name or username),
-            phone=None,                      # 레거시 평문은 저장 안 함
-            identification_number=None,      # 암호문은 set_identification_number 로
+            phone=None,                      # 레거시 평문 저장 안 함
+            identification_number=None,      # 암호문은 set_identification_number 사용
             identification_fingerprint=id_fp,
             gender=(payload.gender or "other"),
             region_living=(payload.region_living or ""),
             region_active=(payload.region_active or ""),
-            profile_image=(payload.profile_image or ""),
-            introduction=(payload.introduction or ""),  # TEXT NOT NULL → ''
+            profile_image=profile_image_value,              # ✅ 여기 저장
+            introduction=(payload.introduction or ""),      # TEXT NOT NULL → ''
         )
         user.set_password(payload.password)
 
@@ -113,8 +126,9 @@ def signup(payload: SignUpIn, db: Session = Depends(get_db)):
         db.add(user)
         db.commit()
         db.refresh(user)
-
-        logger.info(f"회원가입 성공: user_id={user.id}, username={user.username}")
+        logger.info(
+            f"회원가입 성공: user_id={user.id}, username={user.username}, profile_image={user.profile_image}"
+        )
 
     except IntegrityError as e:
         db.rollback()
@@ -143,7 +157,6 @@ def signup(payload: SignUpIn, db: Session = Depends(get_db)):
 @router.post("/login", response_model=TokenOut)
 def login(payload: LoginIn, db: Session = Depends(get_db)):
     """사용자 로그인 (성공 시 token_version 증가 → 기존 토큰 무효화)"""
-
     user = db.query(User).filter(
         or_(User.username == payload.login, User.email == payload.login)
     ).first()
