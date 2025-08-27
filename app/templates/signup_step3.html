@@ -6,19 +6,22 @@
     <form class="kt-card-content flex flex-col gap-5 p-10" id="profileForm" method="post" novalidate>
       <div class="text-center mb-2.5">
         <h3 class="text-lg font-medium text-mono mb-2.5">🎨 프로필 설정</h3>
-        <div class="text-sm text-muted-foreground mb-4">
-          <span class="inline-flex items-center gap-2 text-muted-foreground/50">
-            <span class="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-xs font-bold">✓</span>기본 정보
+
+        <!-- 단계표시: 한 줄 고정 + 라벨 줄바꿈 방지 -->
+        <div class="flex justify-center items-center gap-2 flex-nowrap text-sm text-muted-foreground mb-4">
+          <span class="inline-flex items-center gap-2 whitespace-nowrap text-muted-foreground/50">
+            <span class="w-7 h-7 bg-green-500 text-white rounded-full flex items-center justify-center text-sm font-bold leading-none">✓</span>기본 정보
           </span>
-          <span class="mx-2">→</span>
-          <span class="inline-flex items-center gap-2 text-muted-foreground/50">
-            <span class="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-xs font-bold">✓</span>개인 정보
+          <span>→</span>
+          <span class="inline-flex items-center gap-2 whitespace-nowrap text-muted-foreground/50">
+            <span class="w-7 h-7 bg-green-500 text-white rounded-full flex items-center justify-center text-sm font-bold leading-none">✓</span>개인 정보
           </span>
-          <span class="mx-2">→</span>
-          <span class="inline-flex items-center gap-2">
-            <span class="w-6 h-6 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-xs font-bold">3</span>프로필 설정
+          <span>→</span>
+          <span class="inline-flex items-center gap-2 whitespace-nowrap">
+            <span class="w-7 h-7 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-sm font-bold leading-none">3</span>프로필 설정
           </span>
         </div>
+
         <div class="text-sm text-muted-foreground">마지막 단계! 프로필을 꾸며보세요</div>
       </div>
 
@@ -42,7 +45,7 @@
               <button type="button" class="kt-btn kt-btn-sm kt-btn-light" id="btnDefault">기본 아바타</button>
             </div>
             <div class="text-[11px] text-muted-foreground">
-              파일 선택 후 <b>업로드</b>를 누르면 서버에 저장되고, 아래 입력칸에 URL이 자동으로 채워집니다.
+              파일을 선택하면 <b>자동 업로드</b>되며, 위 입력칸에 URL이 채워집니다. 업로드 버튼은 수동 업로드용입니다.
             </div>
           </div>
         </div>
@@ -121,7 +124,9 @@ function showAlert(m,t){
   el.classList.remove('hidden'); setTimeout(()=>el.classList.add('hidden'),5000);
 }
 
-/* ===== 미리보기 ===== */
+/* ===== 기본 아바타 + 미리보기 ===== */
+const DEFAULT_AVATAR = '/static/pictures/defaultprofile.jpeg';
+
 function updateProfilePreview(url){
   const img  = document.getElementById('profilePreview');
   const icon = document.getElementById('defaultAvatar');
@@ -134,59 +139,75 @@ function updateProfilePreview(url){
   if (img.complete && img.naturalWidth > 0) showImg();
 }
 
-document.addEventListener('DOMContentLoaded',()=>{
-  const btnPick=document.getElementById('btnPick');
-  const btnDefault=document.getElementById('btnDefault');
-  const btnUpload=document.getElementById('btnUpload');
-  const fileInput=document.getElementById('profile_file');
-  const urlInput=document.getElementById('profile_image');
+/* ===== 업로드 공통 함수 ===== */
+async function uploadFileToServer(file, btn){
+  if(!file){ showAlert('먼저 파일을 선택해 주세요.','error'); return null; }
+  const fd=new FormData(); fd.append('file', file);
+  const oldTxt = btn ? btn.textContent : null;
+  if(btn){ btn.disabled=true; btn.textContent='업로드 중...'; }
+  try{
+    const res = await fetch('/api/v1/files/profile-image', { method:'POST', body:fd });
+    const j = await res.json();
+    if(!res.ok || !j?.url) throw new Error(j?.detail || '업로드 실패');
+    showAlert('업로드 완료!','success');
+    return j.url;                 // 예: /static/pictures/xxxx.jpg
+  }catch(e){
+    showAlert(String(e?.message||e),'error');
+    return null;
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent=oldTxt; }
+  }
+}
 
+document.addEventListener('DOMContentLoaded',()=>{
+  const btnPick    = document.getElementById('btnPick');
+  const btnDefault = document.getElementById('btnDefault');
+  const btnUpload  = document.getElementById('btnUpload');
+  const fileInput  = document.getElementById('profile_file');
+  const urlInput   = document.getElementById('profile_image');
+
+  // ➊ 페이지 로드 시 기본 아바타 자동 적용(입력칸이 비었으면)
+  if(!urlInput.value?.trim()){
+    urlInput.value = DEFAULT_AVATAR;
+  }
+  updateProfilePreview(urlInput.value.trim());
+
+  // 파일선택 열기
   btnPick.addEventListener('click',()=>fileInput.click());
 
-  // ✅ 기본 아바타: /static/pictures/defaultprofile.jpeg
+  // 기본 아바타 버튼(선택)
   btnDefault.addEventListener('click',()=>{
-    const url='/static/pictures/defaultprofile.jpeg';
-    urlInput.value=url;
-    updateProfilePreview(url);
+    urlInput.value = DEFAULT_AVATAR;
+    updateProfilePreview(DEFAULT_AVATAR);
   });
 
-  // 파일 선택 시 로컬 미리보기
-  fileInput.addEventListener('change',()=>{
-    const f=fileInput.files?.[0]; if(!f) return;
+  // ➋ 파일 선택 시: 미리보기 + 자동 업로드 + URL 채움
+  fileInput.addEventListener('change', async ()=>{
+    const f = fileInput.files?.[0];
+    if(!f) return;
+    // 로컬 미리보기 먼저
     updateProfilePreview(URL.createObjectURL(f));
-  });
-
-  // ✅ 서버 업로드 (백엔드: /api/v1/files/profile-image)
-  btnUpload.addEventListener('click', async ()=>{
-    const f=fileInput.files?.[0];
-    if(!f){ showAlert('먼저 파일을 선택해 주세요.','error'); return; }
-
-    const fd=new FormData();
-    fd.append('file', f);
-
-    btnUpload.disabled=true;
-    const oldText=btnUpload.textContent;
-    btnUpload.textContent='업로드 중...';
-
-    try{
-      const res = await fetch('/api/v1/files/profile-image', { method: 'POST', body: fd });
-      const j = await res.json();
-      if(!res.ok || !j?.url){ throw new Error(j?.detail || '업로드 실패'); }
-      urlInput.value = j.url;          // 예: /static/pictures/xxxx.jpg
-      updateProfilePreview(j.url);
-      showAlert('업로드 완료!','success');
-    }catch(e){
-      console.error(e);
-      showAlert(String(e?.message||e),'error');
-    }finally{
-      btnUpload.disabled=false;
-      btnUpload.textContent=oldText;
+    // 서버 자동 업로드
+    const uploadedUrl = await uploadFileToServer(f, btnUpload);
+    if(uploadedUrl){
+      urlInput.value = uploadedUrl;
+      updateProfilePreview(uploadedUrl);
     }
   });
 
-  // URL 직접 입력시도 미리보기
+  // 수동 업로드 버튼도 유지(원하면 클릭)
+  btnUpload.addEventListener('click', async ()=>{
+    const f = fileInput.files?.[0];
+    const uploadedUrl = await uploadFileToServer(f, btnUpload);
+    if(uploadedUrl){
+      urlInput.value = uploadedUrl;
+      updateProfilePreview(uploadedUrl);
+    }
+  });
+
+  // URL 직접 입력 시에도 미리보기
   urlInput.addEventListener('input',function(){
-    const v=this.value.trim(); updateProfilePreview(v || '');
+    const v=this.value.trim(); updateProfilePreview(v || DEFAULT_AVATAR);
   });
 });
 
@@ -288,7 +309,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       name:d.name || d.username, phone:d.phone, gender:d.gender || null,
       region_living:d.region_living || '', region_active:d.region_active || '',
       identification_number:d.identification_number || null,
-      profile_image: profile_image || '',   // 서버에서 기본값으로 대체됨
+      profile_image: profile_image || '',   // 서버에서 기본 처리 가능
       introduction: JSON.stringify({bio:introduction, interests:{categories:[], keywords: interests_keywords}})
     };
 

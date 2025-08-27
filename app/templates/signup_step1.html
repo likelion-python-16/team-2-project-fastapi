@@ -1,17 +1,29 @@
 {% extends "final.html" %}
 {% block title %}회원가입 - Team Project{% endblock %}
 {% block content %}
-<div id="pageBg" class="flex items-center justify-center grow bg-center bg-no-repeat page-bg">
-  <div class="kt-card max-w-[420px] w-full">
+<div id="pageBg" class="flex items-start justify-center grow bg-center bg-no-repeat page-bg py-8">
+  <!-- 카드 살짝 넓힘 -->
+  <div class="kt-card max-w-[440px] w-full">
     <form class="kt-card-content flex flex-col gap-5 p-10" id="signupForm" method="post" novalidate>
       <div class="text-center mb-2.5">
         <h3 class="text-lg font-medium text-mono mb-2.5">🚀 Team Project 회원가입</h3>
-        <div class="text-sm text-muted-foreground mb-4">
-          <span class="inline-flex items-center gap-2"><span class="w-6 h-6 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-xs font-bold">1</span>기본 정보</span>
-          <span class="mx-2">→</span>
-          <span class="inline-flex items-center gap-2 text-muted-foreground/50"><span class="w-6 h-6 bg-muted text-muted-foreground rounded-full flex items-center justify-center text-xs">2</span>개인 정보</span>
-          <span class="mx-2">→</span>
-          <span class="inline-flex items-center gap-2 text-muted-foreground/50"><span class="w-6 h-6 bg-muted text-muted-foreground rounded-full flex items-center justify-center text-xs">3</span>프로필 설정</span>
+
+        <!-- 단계표시: 가로 일렬 / 1 파랑, 2·3 회색 -->
+        <div class="flex justify-center items-center gap-1 text-sm text-muted-foreground mb-4">
+          <div class="flex items-center gap-2">
+            <span class="flex items-center justify-center w-7 h-7 rounded-full bg-primary text-primary-foreground font-bold text-sm leading-none">1</span>
+            <span>기본 정보</span>
+          </div>
+          <span>→</span>
+          <div class="flex items-center gap-2 text-muted-foreground/50">
+            <span class="flex items-center justify-center w-7 h-7 rounded-full bg-muted text-muted-foreground font-bold text-sm leading-none">2</span>
+            <span>개인 정보</span>
+          </div>
+          <span>→</span>
+          <div class="flex items-center gap-2 text-muted-foreground/50">
+            <span class="flex items-center justify-center w-7 h-7 rounded-full bg-muted text-muted-foreground font-bold text-sm leading-none">3</span>
+            <span>프로필 설정</span>
+          </div>
         </div>
       </div>
 
@@ -64,6 +76,8 @@
             <span class="hidden kt-toggle-password-active:block"><i class="ki-filled ki-eye-slash text-muted-foreground"></i></span>
           </button>
         </div>
+
+        <!-- 요구사항 리스트 -->
         <div class="mt-2 p-3 bg-muted/20 rounded-lg border border-border">
           <span class="text-xs text-muted-foreground font-medium">비밀번호 요구사항:</span>
           <div class="grid grid-cols-1 gap-1 mt-2">
@@ -96,10 +110,12 @@
 </div>
 
 <script>
+/* ===== 로컬 드래프트 ===== */
 var KEY='signupDraft';
 function getDraft(){try{return JSON.parse(localStorage.getItem(KEY)||'{}')}catch(e){return {}}}
 function saveDraft(d){localStorage.setItem(KEY, JSON.stringify(d||{}))}
 
+/* ===== 알림 ===== */
 function showAlert(msg,type){
   var el=document.getElementById('alertContainer');
   var css=type==='error'?'kt-alert-danger':'kt-alert-success';
@@ -108,6 +124,7 @@ function showAlert(msg,type){
   setTimeout(function(){el.classList.add('hidden')},5000);
 }
 
+/* ===== 비밀번호 유효성 표시 ===== */
 function validatePassword(pw){
   var req={
     length: pw.length>=8,
@@ -116,29 +133,29 @@ function validatePassword(pw){
     digit: /\d/.test(pw),
     special: /[!@#$%^&*(),.?":{}|<>]/.test(pw)
   };
-  var keys=['length','upper','lower','digit','special'];
-  for(var i=0;i<keys.length;i++){
-    var k=keys[i], e=document.getElementById('req-'+k), ic=e.querySelector('.icon');
-    if(req[k]){ic.textContent='✓'; e.classList.add('text-green-600'); e.classList.remove('text-muted-foreground');}
-    else{ic.textContent='✗'; e.classList.remove('text-green-600'); e.classList.add('text-muted-foreground');}
-  }
+  ['length','upper','lower','digit','special'].forEach(function(k){
+    var e=document.getElementById('req-'+k), ic=e.querySelector('.icon');
+    if(req[k]){ ic.textContent='✓'; e.classList.add('text-green-600'); e.classList.remove('text-muted-foreground'); }
+    else      { ic.textContent='✗'; e.classList.remove('text-green-600'); e.classList.add('text-muted-foreground'); }
+  });
   return req.length && req.upper && req.lower && req.digit && req.special;
 }
 function checkPasswordMatch(){
   var p=document.getElementById('password').value;
   var c=document.getElementById('confirmPassword').value;
   var m=document.getElementById('passwordMatchMessage');
-  if(!c){m.textContent=''; m.className='text-xs mt-1'; return false;}
-  if(p===c){m.textContent='✓ 비밀번호가 일치합니다'; m.className='text-xs mt-1 text-green-600'; return true;}
+  if(!c){ m.textContent=''; m.className='text-xs mt-1'; return false; }
+  if(p===c){ m.textContent='✓ 비밀번호가 일치합니다'; m.className='text-xs mt-1 text-green-600'; return true; }
   m.textContent='✗ 비밀번호가 일치하지 않습니다'; m.className='text-xs mt-1 text-red-500'; return false;
 }
 
+/* ===== 전화번호/주민번호 포맷 ===== */
 function normalizePhoneForSave(raw){
   if(!raw) return null;
   var d=String(raw).replace(/\D/g,'');
   var p3=d.slice(0,3);
   if(!/^(070|010|011|016|017|018|019)$/.test(p3)) return null;
-  if(p3==='070' || p3==='010'){
+  if(p3==='070'||p3==='010'){
     if(d.length!==11) return null;
     return p3+'-'+d.slice(3,7)+'-'+d.slice(7,11);
   }else{
@@ -176,6 +193,7 @@ function formatIdentification(v){
   return n.replace(/(\d{6})(\d{7})/,'$1-$2');
 }
 
+/* ===== 중복검사 ===== */
 async function getDup(params){
   var url=new URL('/api/v1/auth/check-duplicates', window.location.origin);
   Object.keys(params).forEach(function(k){ if(params[k]) url.searchParams.set(k, params[k]); });
@@ -194,21 +212,28 @@ async function askDup(field, value){
   else{ el.textContent='✔ 사용 가능한 '+labelMap[field]+'입니다.'; el.classList.remove('hidden'); el.classList.remove('text-red-500'); el.classList.add('text-green-600'); }
 }
 
+/* ===== 바인딩/제출 ===== */
 document.addEventListener('DOMContentLoaded', function(){
-  document.getElementById('password').addEventListener('input', function(){ validatePassword(this.value); checkPasswordMatch(); });
-  document.getElementById('confirmPassword').addEventListener('input', checkPasswordMatch);
-
   var phone=document.getElementById('phone');
-  phone.addEventListener('input', function(){ this.value=formatPhoneOnInput(this.value); });
-
   var idn=document.getElementById('identification_number');
+
+  // 입력 중 자동 하이픈
+  phone.addEventListener('input', function(){ this.value=formatPhoneOnInput(this.value); });
   idn.addEventListener('input', function(){ this.value=formatIdentification(this.value); });
 
+  // 포커스아웃 시 정규화 + 중복검사
   document.getElementById('username').addEventListener('blur', function(e){ askDup('username', e.target.value.trim().toLowerCase()); });
   document.getElementById('email').addEventListener('blur', function(e){ askDup('email', e.target.value.trim()); });
   phone.addEventListener('blur', function(e){ var n=normalizePhoneForSave(e.target.value); if(n){ e.target.value=n; askDup('phone', n); }});
   idn.addEventListener('blur', function(e){ askDup('identification_number', e.target.value.replace(/\D/g,'')); });
 
+  // 비밀번호 즉시 검증/일치 표시
+  document.getElementById('password').addEventListener('input', function(){
+    validatePassword(this.value); checkPasswordMatch();
+  });
+  document.getElementById('confirmPassword').addEventListener('input', checkPasswordMatch);
+
+  // 제출
   document.getElementById('signupForm').addEventListener('submit', function(e){
     e.preventDefault();
     var pw=document.getElementById('password').value;
@@ -229,11 +254,12 @@ document.addEventListener('DOMContentLoaded', function(){
     window.location.href='/signup/step2';
   });
 });
+
 function showTerms(){alert('이용약관 내용이 여기에 표시됩니다.')}
 function showPrivacy(){alert('개인정보처리방침 내용이 여기에 표시됩니다.')}
 </script>
 
-<!-- 배경 이미지는 JS로 적용 (CSS Lint 오류 방지) -->
+<!-- 배경 이미지는 JS로 적용 -->
 <script>
 document.addEventListener('DOMContentLoaded', function () {
   var el = document.getElementById('pageBg');

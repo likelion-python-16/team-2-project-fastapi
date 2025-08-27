@@ -5,7 +5,8 @@ from sqlalchemy import func
 from typing import List, Optional
 from datetime import datetime
 
-from app.security import normalize_phone, id_fingerprint
+# ✅ 기존 임포트에 get_current_user 추가
+from app.security import normalize_phone, id_fingerprint, get_current_user
 from ..core.database import get_db
 from ..models.user import User
 from ..schemas.auth import UserOut
@@ -17,6 +18,28 @@ router = APIRouter(
     tags=["Users"],
     responses={404: {"description": "Not found"}},
 )
+
+# =========================
+# 내 정보 (아바타용) ✅ 추가
+# =========================
+DEFAULT_AVATAR = "/static/pictures/defaultprofile.jpeg"
+
+@router.get("/me")
+def read_me(current_user: User = Depends(get_current_user)):
+    """
+    내 프로필 조회
+    - 프로필 이미지가 없으면 기본 이미지로 대체
+    - 프론트는 'profile_image_url'만 사용
+    """
+    img = getattr(current_user, "profile_image", None) or DEFAULT_AVATAR
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "name": current_user.name,
+        "email": current_user.email,
+        "profile_image_url": img,
+        "is_active": current_user.is_active,
+    }
 
 # -------------------------------
 # 사용자 목록 / 조회 / 검색 API

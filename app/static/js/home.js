@@ -21,40 +21,40 @@ function fmtDate(d){
   if(!d) return "-";
   const x = new Date(d);
   if (Number.isNaN(x.getTime())) return d;
-  return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}-${String(x.getDate()).padStart(2,"0")}`;
+  return x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0")+"-"+String(x.getDate()).padStart(2,"0");
 }
 function feeBadge(ch){
   const paid = (ch.fee && ch.fee>0) || (ch.participation_fee && ch.participation_fee>0);
-  return `<span class="badge ${paid? 'paid':'free'}">${paid? '유료':'무료'}</span>`;
+  return '<span class="badge '+(paid? 'paid':'free')+'">'+(paid? '유료':'무료')+'</span>';
 }
 function statusBadge(k){
   const map = { recruiting:"모집중", active:"진행중", completed:"완료", cancelled:"취소" };
   const cls = k==="recruiting" ? "ok" : (k==="active"?"warn":"");
-  return `<span class="badge ${cls}">${map[k]||k}</span>`;
+  return '<span class="badge '+cls+'">'+(map[k]||k)+'</span>';
 }
 function thumb(url){
-  return url ? `<img class="thumb" src="${url}" alt="">` : `<div class="thumb"></div>`;
+  return url ? '<img class="thumb" src="'+url+'" alt="">' : '<div class="thumb"></div>';
 }
 function card(ch){
-  return `
-    <div class="card">
-      ${thumb(ch.thumbnail_url)}
-      <div class="card-body">
-        <div class="title">${ch.title}</div>
-        <div class="meta">
-          <span class="chip">등록일 ${fmtDate(ch.created_at || ch.start_date)}</span>
-          <span class="chip">기간 ${fmtDate(ch.start_date)} ~ ${fmtDate(ch.end_date)}</span>
-          <span class="chip">총 ${ch.total_rounds ?? '-'}회차</span>
-        </div>
-        <div class="meta" style="margin-top:6px">
-          ${statusBadge(ch.status)} ${feeBadge(ch)}
-        </div>
-      </div>
-    </div>
-  `;
+  return [
+    '<div class="card">',
+      thumb(ch.thumbnail_url),
+      '<div class="card-body">',
+        '<div class="title">', (ch.title||''), '</div>',
+        '<div class="meta">',
+          '<span class="chip">등록일 ', fmtDate(ch.created_at || ch.start_date), '</span>',
+          '<span class="chip">기간 ', fmtDate(ch.start_date),' ~ ', fmtDate(ch.end_date), '</span>',
+          '<span class="chip">총 ', (ch.total_rounds ?? '-'), '회차</span>',
+        '</div>',
+        '<div class="meta" style="margin-top:6px">',
+          statusBadge(ch.status), ' ', feeBadge(ch),
+        '</div>',
+      '</div>',
+    '</div>'
+  ].join('');
 }
 function renderGrid(containerId, list){
-  el(containerId).innerHTML = list.map(card).join("") || "";
+  el(containerId).innerHTML = (list||[]).map(card).join("") || "";
 }
 function renderEmpty(containerId, text){
   const root = el(containerId);
@@ -62,41 +62,190 @@ function renderEmpty(containerId, text){
   root.style.display = "block";
 }
 
-// ===== Header: profile dropdown =====
-function setupProfile(){
-  const trigger = el("profile-trigger");
-  const dd = el("profile-dd");
-  const menu = el("profile-menu");
-  if(isLoggedIn){
-    menu.innerHTML = `
-      <div class="dropdown-item"><span>마이페이지</span></div>
-      <div class="divider"></div>
-      <div id="logout-btn" class="dropdown-item"><span>로그아웃</span></div>
-    `;
-  }else{
-    menu.innerHTML = `
-      <a class="dropdown-item" href="/login">로그인</a>
-      <a class="dropdown-item" href="/signup">회원가입</a>
-    `;
+/* =========================
+ *  Header: 프로필/로그인 UI
+ * ========================= */
+const DEFAULT_AVATAR = "/static/pictures/defaultprofile.jpeg";
+
+async function fetchMe(tokenStr) {
+  try {
+    const res = await fetch("/api/v1/users/me", {
+      headers: tokenStr ? { Authorization: "Bearer "+tokenStr } : {},
+    });
+    if (!res.ok) throw new Error("unauthorized");
+    return await res.json();
+  } catch {
+    return null;
   }
-  trigger.addEventListener("click", ()=> dd.classList.toggle("open"));
-  document.addEventListener("click", (e)=>{ if(!dd.contains(e.target)) dd.classList.remove("open"); });
-  const lo = el("logout-btn");
-  if(lo){ lo.addEventListener("click", ()=>{ localStorage.removeItem("access_token"); location.reload(); }); }
-  el("home-logo").addEventListener("click", ()=>{
-    searchActive = false;
-    el("search-area").style.display = "none";
-    el("home-sections").style.display = "block";
-    el("search-input").value = "";
-    loadHomeSections();
+}
+function safeAvatarUrl(user) {
+  const raw = (user && (user.profile_image_url || user.profile_image || user.avatar_url || user.avatar)) || null;
+  if (!raw || typeof raw !== "string" || !raw.trim()) return DEFAULT_AVATAR;
+  return raw;
+}
+
+/* ▼▼▼ 로그인 상태별 트리거(UI) 구성 */
+function buildLoggedOutMenu() {
+  // 드롭다운 숨김 & 비우기
+  const menu = el("profile-menu");
+  if (menu) {
+    menu.innerHTML = "";
+    menu.style.display = "none";
+  }
+
+  // 동그라미 → 보라색 [로그인] 버튼
+  const trigger = el("profile-trigger");
+  trigger.classList.remove("avatar");
+  trigger.classList.add("btn","primary");
+  trigger.style.borderRadius = "10px";
+  trigger.style.width = "auto";
+  trigger.style.height = "38px";
+  trigger.style.padding = "0 14px";
+  trigger.title = "로그인";
+  trigger.textContent = "로그인";
+  trigger.onclick = function(e){
+    e.preventDefault();
+    location.href = "/login";
+  };
+
+  // 혹시 남아있을 이미지/텍스트 숨김
+  const img = document.getElementById("profile-img");
+  const txt = document.getElementById("profile-text");
+  if (img) img.style.display = "none";
+  if (txt) txt.style.display = "none";
+}
+
+function buildLoggedInMenu(user) {
+  const name = (user && (user.name || user.username)) || "나";
+  const menu = el("profile-menu");
+  // 메뉴 내용만 구성(표시는 CSS .dropdown.open 이 담당)
+  menu.innerHTML = [
+    '<div class="dropdown-item" style="cursor:default"><strong>', name ,'</strong></div>',
+    '<div class="divider"></div>',
+    '<a class="dropdown-item" href="/me">마이페이지</a>',
+    '<a class="dropdown-item" href="/profile">프로필 설정</a>',
+    '<div class="divider"></div>',
+    '<button id="logout-btn" class="dropdown-item" type="button">로그아웃</button>'
+  ].join("");
+
+  // 버튼 → 동그란 아바타
+  const trigger = el("profile-trigger");
+  trigger.onclick = null; // 로그인 상태는 토글만
+  trigger.classList.remove("btn","primary");
+  trigger.classList.add("avatar");
+  trigger.style.borderRadius = "50%";
+  trigger.style.width = "36px";
+  trigger.style.height = "36px";
+  trigger.style.padding = "0";
+  trigger.title = name;
+
+  // 아바타 이미지 DOM
+  trigger.innerHTML = [
+    '<img id="profile-img" alt="avatar" style="display:none;width:100%;height:100%;object-fit:cover;" />',
+    '<span id="profile-text" style="display:none"></span>'
+  ].join("");
+  const img = el("profile-img");
+  const txt = el("profile-text");
+  img.src = safeAvatarUrl(user);
+  img.onload  = function(){ img.style.display = "block"; if (txt) txt.style.display = "none"; };
+  img.onerror = function(){ img.src = DEFAULT_AVATAR; img.style.display = "block"; if (txt) txt.style.display = "none"; };
+
+  const lo = document.getElementById("logout-btn");
+  if (lo) lo.addEventListener("click", function(){
+    localStorage.removeItem("access_token");
+    location.reload();
   });
+}
+
+/* 드롭다운 토글(클릭) + 호버(진입/이탈) 둘 다 지원 */
+function initProfileDropdown(enable) {
+  const dd = el("profile-dd");
+  const trigger = el("profile-trigger");
+  const menu = el("profile-menu");
+  if (!dd || !trigger || !menu) return;
+
+  // 항상 초기 상태는 닫힘
+  dd.classList.remove("open");
+
+  // 기존 리스너 초기화용(중복 방지)
+  trigger.onmouseenter = null;
+  trigger.onmouseleave = null;
+  trigger.onclick = trigger.onclick || null;
+  menu.onmouseenter = null;
+  menu.onmouseleave = null;
+  document.removeEventListener("__outsideClickHandler__", window.__outsideClickHandler || (()=>{}));
+
+  if (!enable) return;
+
+  let hoverTimer = null;
+  let isHovering = false;
+
+  function openDD(){ dd.classList.add("open"); }
+  function closeDD(){ dd.classList.remove("open"); }
+
+  // 클릭으로 토글
+  trigger.addEventListener("click", function(e){
+    e.stopPropagation();
+    dd.classList.toggle("open");
+  });
+
+  // 바깥 클릭 시 닫기
+  window.__outsideClickHandler = function(e){
+    if (!dd.contains(e.target)) closeDD();
+  };
+  document.addEventListener("click", window.__outsideClickHandler);
+
+  // 호버로 열기(바로 열기)
+  trigger.onmouseenter = function(){
+    isHovering = true;
+    if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null; }
+    openDD();
+  };
+  // 메뉴/트리거 둘 다에서 벗어나면 약간의 딜레이 후 닫기
+  function scheduleClose(){
+    if (hoverTimer) clearTimeout(hoverTimer);
+    hoverTimer = setTimeout(function(){
+      if (!isHovering) closeDD();
+    }, 180);
+  }
+  trigger.onmouseleave = function(){
+    isHovering = false;
+    scheduleClose();
+  };
+  menu.onmouseenter = function(){
+    isHovering = true;
+    if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null; }
+  };
+  menu.onmouseleave = function(){
+    isHovering = false;
+    scheduleClose();
+  };
+}
+
+async function initProfileUI() {
+  const t = localStorage.getItem("access_token");
+  if (!t) {
+    buildLoggedOutMenu();
+    initProfileDropdown(false);
+    return;
+  }
+  const me = await fetchMe(t);
+  if (!me) {
+    localStorage.removeItem("access_token");
+    buildLoggedOutMenu();
+    initProfileDropdown(false);
+    return;
+  }
+  buildLoggedInMenu(me);
+  initProfileDropdown(true);
 }
 
 // ===== Filters toggle =====
 function setupFilters(){
   const tgl = el("filters-toggle");
   const panel = el("filters-panel");
-  tgl.addEventListener("click", ()=>{
+  if (!tgl || !panel) return;
+  tgl.addEventListener("click", function(){
     const open = panel.classList.toggle("open");
     tgl.classList.toggle("open", open);
     tgl.setAttribute("aria-expanded", open ? "true" : "false");
@@ -107,18 +256,17 @@ function setupFilters(){
 function makePrevNext(rootId, page, hasPrev, hasNext, onPrev, onNext){
   const root = el(rootId);
   root.innerHTML = "";
-
   const prev = document.createElement("button");
   prev.className = "page-btn";
   prev.textContent = "이전";
   prev.disabled = !hasPrev;
-  prev.addEventListener("click", ()=> onPrev());
+  prev.addEventListener("click", function(){ onPrev(); });
 
   const next = document.createElement("button");
   next.className = "page-btn";
   next.textContent = "다음";
   next.disabled = !hasNext;
-  next.addEventListener("click", ()=> onNext());
+  next.addEventListener("click", function(){ onNext(); });
 
   root.appendChild(prev);
   const label = document.createElement("span");
@@ -126,20 +274,22 @@ function makePrevNext(rootId, page, hasPrev, hasNext, onPrev, onNext){
   label.style.alignItems = "center";
   label.style.padding = "0 8px";
   label.style.fontWeight = "600";
-  label.textContent = `페이지 ${page}`;
+  label.textContent = "페이지 "+page;
   root.appendChild(label);
   root.appendChild(next);
 }
 
 // ===== Home sections =====
 async function loadHomeSections(){
-  el("rec-login-required").style.display = isLoggedIn ? "none" : "block";
-  el("follow-login-required").style.display = isLoggedIn ? "none" : "block";
+  const rlr = el("rec-login-required");
+  const flr = el("follow-login-required");
+  if (rlr) rlr.style.display = isLoggedIn ? "none" : "block";
+  if (flr) flr.style.display = isLoggedIn ? "none" : "block";
 
   const url = new URL(API_HOME, window.location.origin);
   url.searchParams.set("latest_page", String(latestPage));
   url.searchParams.set("latest_page_size", String(PAGE_SIZE_LATEST));
-  const res = await fetch(url.toString(), {headers: token? {Authorization:`Bearer ${token}`} : {}});
+  const res = await fetch(url.toString(), {headers: token? {Authorization:"Bearer "+token} : {}});
   if(!res.ok){
     el("rec-list").innerHTML = "";
     el("latest-list").innerHTML = "";
@@ -153,15 +303,15 @@ async function loadHomeSections(){
 
   if(data.recommended_notice && isLoggedIn){
     const n = el("rec-notice");
-    n.textContent = data.recommended_notice;
-    n.style.display = "block";
+    if (n){ n.textContent = data.recommended_notice; n.style.display = "block"; }
   }else{
-    el("rec-notice").style.display = "none";
+    const n = el("rec-notice");
+    if (n) n.style.display = "none";
   }
 
   if(isLoggedIn){
     try{
-      const fr = await fetch(API_FOLLOWED, {headers:{Authorization:`Bearer ${token}`}});
+      const fr = await fetch(API_FOLLOWED, {headers:{Authorization:"Bearer "+token}});
       if(fr.ok){
         const fl = await fr.json();
         renderGrid("follow-list", (fl||[]).slice(0,6)); // 6개(3x2)
@@ -183,13 +333,14 @@ async function loadHomeSections(){
     latestPage,
     hasPrev,
     hasNext,
-    ()=>{ if(hasPrev){ latestPage--; loadHomeSections(); } },
-    ()=>{ if(hasNext){ latestPage++; loadHomeSections(); } }
+    function(){ if(hasPrev){ latestPage--; loadHomeSections(); } },
+    function(){ if(hasNext){ latestPage++; loadHomeSections(); } }
   );
 }
 
 // ===== Search flow =====
-async function runSearch(page=1){
+async function runSearch(page){
+  if (page === undefined) page = 1;
   searchActive = true;
   el("home-sections").style.display = "none";
   el("search-area").style.display = "block";
@@ -232,11 +383,10 @@ async function runSearch(page=1){
   if(matched.length===0){
     el("search-grid").innerHTML = "";
     el("search-empty").style.display = "block";
-    el("search-empty").textContent = q ? `‘${q}’와(과) 일치하는 챌린지가 없습니다.` : "검색어와 일치하는 챌린지가 없습니다.";
+    el("search-empty").textContent = q ? '‘'+q+'’와(과) 일치하는 챌린지가 없습니다.' : "검색어와 일치하는 챌린지가 없습니다.";
   }else{
     el("search-empty").style.display = "none";
-    // ✅ 검색 결과도 4열에 맞춰 최대 8개(4×2)
-    renderGrid("search-grid", matched.slice(0,8));
+    renderGrid("search-grid", matched.slice(0,8)); // 4×2
   }
 
   if(rec.length===0){
@@ -244,7 +394,6 @@ async function runSearch(page=1){
     el("rec-empty").style.display = "block";
   }else{
     el("rec-empty").style.display = "none";
-    // 이미 ‘이런 챌린지는 어떠세요?’도 4열×2로 8개
     renderGrid("rec-grid", rec.slice(0,8));
   }
 
@@ -255,37 +404,55 @@ async function runSearch(page=1){
     page,
     hasPrev,
     hasNext,
-    ()=>{ if(hasPrev){ searchPage = page-1; runSearch(searchPage); } },
-    ()=>{ if(hasNext){ searchPage = page+1; runSearch(searchPage); } }
+    function(){ if(hasPrev){ searchPage = page-1; runSearch(searchPage); } },
+    function(){ if(hasNext){ searchPage = page+1; runSearch(searchPage); } }
   );
 }
 
-// ===== Events =====
+// ===== Events & Init =====
 function setupSearchForm(){
-  el("search-form").addEventListener("submit", (e)=>{
-    e.preventDefault();
-    searchPage = 1;
-    runSearch(1);
-  });
-  el("search-reset").addEventListener("click", ()=>{
-    el("search-input").value = "";
-    el("f-status").value = "recruiting";
-    el("f-sf").value = "";
-    el("f-st").value = "";
-    el("f-ef").value = "";
-    el("f-et").value = "";
-    el("f-sortby").value = "created_at";
-    el("f-sortdir").value = "desc";
-    searchActive = false;
-    el("search-area").style.display = "none";
-    el("home-sections").style.display = "block";
-    loadHomeSections();
-  });
+  const form = el("search-form");
+  if (form){
+    form.addEventListener("submit", function(e){
+      e.preventDefault();
+      searchPage = 1;
+      runSearch(1);
+    });
+  }
+  const reset = el("search-reset");
+  if (reset){
+    reset.addEventListener("click", function(){
+      el("search-input").value = "";
+      el("f-status").value = "recruiting";
+      el("f-sf").value = "";
+      el("f-st").value = "";
+      el("f-ef").value = "";
+      el("f-et").value = "";
+      el("f-sortby").value = "created_at";
+      el("f-sortdir").value = "desc";
+      searchActive = false;
+      el("search-area").style.display = "none";
+      el("home-sections").style.display = "block";
+      loadHomeSections();
+    });
+  }
 }
 
-// ===== Init =====
-document.addEventListener("DOMContentLoaded", ()=>{
-  setupProfile();
+document.addEventListener("DOMContentLoaded", function(){
+  // 비로그인 시 생성 버튼 → 로그인 유도
+  const btn = document.getElementById("create-challenge-btn");
+  if (btn) {
+    btn.addEventListener("click", function(e){
+      const t = localStorage.getItem("access_token");
+      if (!t) {
+        e.preventDefault();
+        alert("로그인이 필요합니다 🙏");
+        location.href = "/login";
+      }
+    });
+  }
+
+  initProfileUI();      // ✅ 프로필 UI 초기화(클릭+호버)
   setupFilters();
   setupSearchForm();
   loadHomeSections();
