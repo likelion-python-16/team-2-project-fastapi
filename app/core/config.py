@@ -19,7 +19,6 @@ class Settings(BaseSettings):
     project_description: str = "팀프로젝트 FastAPI 백엔드"
     id_fingerprint_secret: str
 
-
     # NAVER Cloud Platform - Maps
     naver_maps_client_id: str = os.getenv("NAVER_MAPS_CLIENT_ID", "")
     naver_maps_client_secret: str = os.getenv("NAVER_MAPS_CLIENT_SECRET", "")
@@ -57,6 +56,7 @@ class Settings(BaseSettings):
     aws_secret_access_key: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
     s3_bucket: str = os.getenv("S3_BUCKET", "")
 
+    # CORS
     allowed_origins: list[str] = [
         "http://localhost:3000",
         "http://localhost:8080",
@@ -65,6 +65,22 @@ class Settings(BaseSettings):
         "http://54.180.237.228:3000",
         "http://54.180.237.228:8080",
     ]
+
+    # ---------- 메일/링크 설정 ----------
+    mail_from: str = os.getenv("MAIL_FROM", "no-reply@example.com")
+    smtp_host: str = os.getenv("SMTP_HOST", "")
+    smtp_port: int = int(os.getenv("SMTP_PORT", "465"))
+    smtp_user: str = os.getenv("SMTP_USER", "")
+    smtp_pass: str = os.getenv("SMTP_PASS", "")
+
+    verification_link_base: str = os.getenv("VERIFICATION_LINK_BASE", "http://localhost:8001/api/v1")
+    verify_success_url: str = os.getenv("VERIFY_SUCCESS_URL", "http://localhost:8001/verify/success")
+    verify_fail_url: str = os.getenv("VERIFY_FAIL_URL", "http://localhost:8001/verify/fail")
+    email_token_expire_minutes: int = int(os.getenv("EMAIL_TOKEN_EXPIRE_MINUTES", "30"))
+
+    # 링크 베이스
+    api_base_url: str = os.getenv("API_BASE_URL", "http://localhost:8001/api/v1")
+    front_base_url: str = os.getenv("FRONT_BASE_URL", "http://localhost:8000")
 
     @property
     def database_url(self) -> str:
@@ -128,6 +144,7 @@ def get_settings() -> Settings:
 
 settings = get_settings()
 
+# (선택) 기존 별칭
 DATABASE_URL = settings.database_url
 JWT_SECRET = settings.jwt_secret
 FERNET_KEY = settings.fernet_key

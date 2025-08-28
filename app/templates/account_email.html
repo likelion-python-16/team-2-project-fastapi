@@ -1,0 +1,72 @@
+{% extends "final.html" %}
+{% block title %}이메일 수정 - Team Project{% endblock %}
+{% block content %}
+<div class="max-w-[480px] mx-auto py-10">
+  <div class="kt-card">
+    <div class="kt-card-content p-8">
+      <h3 class="text-lg font-medium mb-4">이메일 수정</h3>
+
+      <div id="alertContainer" class="hidden"></div>
+
+      <div class="flex flex-col gap-3">
+        <label class="kt-form-label">아이디 또는 현재 이메일</label>
+        <input class="kt-input" id="login" placeholder="아이디 또는 이메일" />
+
+        <label class="kt-form-label">현재 비밀번호</label>
+        <input class="kt-input" id="currentPassword" type="password" placeholder="현재 비밀번호" />
+
+        <label class="kt-form-label">새 이메일</label>
+        <input class="kt-input" id="newEmail" placeholder="example@domain.com" />
+      </div>
+
+      <button class="kt-btn kt-btn-primary mt-6" id="btnUpdate">이메일 변경 및 인증메일 발송</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function showAlert(message, type) {
+  const el = document.getElementById('alertContainer');
+  const css = type === 'error' ? 'kt-alert-danger' : 'kt-alert-success';
+  el.innerHTML = `
+    <div class="kt-alert ${css} p-3 rounded-lg flex items-center gap-2">
+      <i class="ki-filled ${type==='error'?'ki-information-2':'ki-check'}"></i>
+      <span class="text-sm">${message}</span>
+    </div>`;
+  el.classList.remove('hidden');
+}
+
+document.getElementById('btnUpdate').addEventListener('click', async ()=>{
+  const login = (document.getElementById('login').value||'').trim().toLowerCase();
+  const current_password = (document.getElementById('currentPassword').value||'');
+  const new_email = (document.getElementById('newEmail').value||'').trim().toLowerCase();
+
+  if (!login || !current_password || !new_email) {
+    showAlert('모든 항목을 입력해 주세요.', 'error'); return;
+  }
+
+  let ok = false, msg = '변경에 실패했습니다.';
+  const endpoints = ['/api/v1/auth/update-email', '/auth/update-email'];
+  for (const url of endpoints) {
+    try {
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ login, current_password, new_email })
+      });
+      const j = await r.json().catch(()=> ({}));
+      if (r.ok) { ok = true; msg = j.message || '이메일이 변경되었습니다.'; break; }
+      msg = j.detail || j.message || msg;
+    } catch(_) {}
+  }
+  showAlert(msg, ok ? 'success' : 'error');
+  if (ok) {
+    try { localStorage.setItem('last_login', login); } catch(_) {}
+    setTimeout(() => {
+      const q = new URLSearchParams({ email_changed: '1', sent_to: new_email });
+      window.location.href = '/login?' + q.toString();
+    }, 500);
+  }
+});
+</script>
+{% endblock %}

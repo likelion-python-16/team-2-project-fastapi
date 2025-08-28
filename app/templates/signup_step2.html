@@ -8,25 +8,21 @@
       <div class="text-center mb-2.5">
         <h3 class="text-lg font-medium text-mono mb-2.5">📋 개인정보 입력</h3>
 
-        <!-- 스텝 표시: 한 줄 유지 + 크기/간격 step1과 동일 -->
+        <!-- 스텝 표시 -->
         <div class="flex justify-center items-center gap-1 text-sm text-muted-foreground mb-4 whitespace-nowrap">
-          <!-- 1단계: 완료(초록 체크) -->
+          <!-- 1단계: 완료 -->
           <div class="flex items-center gap-2">
             <span class="flex items-center justify-center w-7 h-7 rounded-full bg-green-500 text-white font-bold text-sm leading-none">✓</span>
             <span>기본 정보</span>
           </div>
-
           <span>→</span>
-
-          <!-- 2단계: 진행중(파랑 원) -->
+          <!-- 2단계: 진행중 -->
           <div class="flex items-center gap-2">
             <span class="flex items-center justify-center w-7 h-7 rounded-full bg-primary text-primary-foreground font-bold text-sm leading-none">2</span>
             <span>개인 정보</span>
           </div>
-
           <span>→</span>
-
-          <!-- 3단계: 대기(회색) -->
+          <!-- 3단계: 대기 -->
           <div class="flex items-center gap-2 text-muted-foreground/50">
             <span class="flex items-center justify-center w-7 h-7 rounded-full bg-muted text-muted-foreground font-bold text-sm leading-none">3</span>
             <span>프로필 설정</span>
@@ -63,20 +59,23 @@
         <input class="kt-input" id="region_active" name="region_active" placeholder="예: 서울특별시" type="text"/>
       </div>
 
+      <!-- 버튼: 이전 / 다음 -->
       <div class="flex gap-3">
-        <button class="kt-btn kt-btn-light flex justify-center grow" type="button" id="btnSkip">건너뛰기</button>
-        <button class="kt-btn kt-btn-primary flex justify-center grow" id="submitBtn" type="submit">다음 단계</button>
+        <button type="button" id="btnPrev" class="kt-btn kt-btn-light flex-1">이전 단계</button>
+        <button type="submit" id="submitBtn" class="kt-btn kt-btn-primary flex-1">다음 단계</button>
       </div>
 
+      <!-- 안내문 + 건너뛰기 -->
       <div class="text-center text-xs text-muted-foreground mt-2">
-        💡 나중에 프로필에서 언제든 수정할 수 있습니다
+        💡 나중에 프로필에서 언제든 수정할 수 있습니다 
+        <a href="#" id="linkSkip" class="text-primary font-medium">건너뛰기</a>
       </div>
     </form>
   </div>
 </div>
 
 <script>
-  // ---- draft helpers (step1에서 사용한 구조와 동일) ----
+  // ---- draft helpers (step1과 동일) ----
   const KEY = 'signupDraft';
   function getDraft() {
     try { return JSON.parse(localStorage.getItem(KEY) || '{}'); }
@@ -95,19 +94,28 @@
     if (!ok) window.location.href = '/signup';
   })();
 
-  // 제출/건너뛰기
   document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('personalInfoForm').addEventListener('submit', (e) => {
+    const $ = id => document.getElementById(id);
+
+    // 다음 단계 (폼 제출)
+    $('personalInfoForm').addEventListener('submit', (e) => {
       e.preventDefault();
       mergeDraft({
-        gender: document.getElementById('gender').value || null,
-        region_living: document.getElementById('region_living').value || '',
-        region_active: document.getElementById('region_active').value || ''
+        gender: $('gender').value || null,
+        region_living: $('region_living').value || '',
+        region_active: $('region_active').value || ''
       });
       window.location.href = '/signup/step3';
     });
 
-    document.getElementById('btnSkip').addEventListener('click', () => {
+    // 이전 단계
+    $('btnPrev').addEventListener('click', () => {
+      window.location.href = '/signup';  // step1으로 이동
+    });
+
+    // 건너뛰기
+    $('linkSkip').addEventListener('click', (e) => {
+      e.preventDefault();
       if (confirm('개인정보 입력을 건너뛰시겠습니까? 나중에 프로필에서 입력할 수 있습니다.')) {
         window.location.href = '/signup/step3';
       }
@@ -115,7 +123,7 @@
   });
 </script>
 
-<!-- 배경 이미지는 JS로 적용(기존 규칙 유지) -->
+<!-- 배경 이미지 -->
 <script>
 document.addEventListener('DOMContentLoaded', function () {
   const el = document.getElementById('pageBg');

@@ -12,16 +12,13 @@
         </div>
       </div>
 
-      <!-- 단일 알림 배너 -->
       <div id="alertContainer" class="hidden"></div>
 
-      <!-- 아이디 -->
       <div class="flex flex-col gap-1">
         <label class="kt-form-label font-normal text-mono">아이디</label>
-        <input class="kt-input" id="username" name="username" placeholder="아이디를 입력하세요" autocomplete="username" required />
+        <input class="kt-input" id="username" name="username" placeholder="아이디 또는 이메일" autocomplete="username" required />
       </div>
 
-      <!-- 비밀번호 -->
       <div class="flex flex-col gap-1">
         <div class="flex items-center justify-between gap-1">
           <label class="kt-form-label font-normal text-mono">비밀번호</label>
@@ -36,13 +33,11 @@
         </div>
       </div>
 
-      <!-- 로그인 상태 유지 -->
       <label class="kt-label">
         <input class="kt-checkbox kt-checkbox-sm" id="rememberMe" type="checkbox" value="1" />
         <span class="kt-checkbox-label">로그인 상태 유지</span>
       </label>
 
-      <!-- 제출 -->
       <button class="kt-btn kt-btn-primary flex justify-center" id="btnSignIn" type="submit">
         <span id="btnText">로그인</span>
         <span id="btnLoading" class="hidden"><i class="ki-filled ki-spinner animate-spin me-2"></i>로그인 중...</span>
@@ -51,7 +46,6 @@
   </div>
 </div>
 
-<!-- 배경 이미지 JS로 적용 -->
 <script>
 document.addEventListener('DOMContentLoaded', function () {
   const el = document.getElementById('pageBg');
@@ -60,10 +54,7 @@ document.addEventListener('DOMContentLoaded', function () {
   el.style.backgroundPosition = 'center';
   el.style.backgroundRepeat = 'no-repeat';
 });
-</script>
 
-<script>
-/* ===== 알림 (하나의 배너만 사용) ===== */
 function showAlert(message, type) {
   const el = document.getElementById('alertContainer');
   const css = type === 'error' ? 'kt-alert-danger' : 'kt-alert-success';
@@ -75,7 +66,22 @@ function showAlert(message, type) {
   el.classList.remove('hidden');
 }
 
-/* ===== 비밀번호 토글 ===== */
+// 이메일 변경 후 리다이렉트되어 온 경우 안내 배너 표시
+(function showEmailChangedNotice(){
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('email_changed') === '1') {
+      const sentTo = params.get('sent_to') || '';
+      const msg = `이메일이 변경되었고 인증 메일을 ${sentTo ? sentTo + '로 ' : ''}보냈습니다. 스팸함도 확인해 주세요.`;
+      showAlert(msg, 'success');
+      // 한번만 보이도록 쿼리스트링 제거
+      const url = new URL(window.location.href);
+      url.search = '';
+      window.history.replaceState({}, '', url.toString());
+    }
+  } catch (_) {}
+})();
+
 (function pwToggle(){
   const btn = document.getElementById('btnTogglePw');
   const input = document.getElementById('password');
@@ -89,15 +95,15 @@ function showAlert(message, type) {
   });
 })();
 
-/* ===== 로그인 제출 ===== */
 document.getElementById('signinForm').addEventListener('submit', async (e)=>{
   e.preventDefault();
   const btn = document.getElementById('btnSignIn');
   const btnText = document.getElementById('btnText');
   const btnLoading = document.getElementById('btnLoading');
 
-  const username = (document.getElementById('username').value || '').trim();
+  const username = (document.getElementById('username').value || '').trim().toLowerCase();
   const password = (document.getElementById('password').value || '');
+  try { localStorage.setItem('last_login', username); } catch(_) {}
 
   if (!username || !password) {
     showAlert('아이디와 비밀번호를 입력해 주세요.', 'error');
@@ -106,24 +112,92 @@ document.getElementById('signinForm').addEventListener('submit', async (e)=>{
 
   btn.disabled = true; btnText.classList.add('hidden'); btnLoading.classList.remove('hidden');
 
-  // 환경별 엔드포인트 폴백: /api/v1/auth/login → /auth/login
   const endpoints = ['/api/v1/auth/login', '/auth/login'];
-  let ok = false, data = null;
+  let ok = false, data = null, lastStatus = 0, lastDetail = null;
 
   for (const url of endpoints) {
     try {
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // 백엔드에서 login 필드로 아이디/이메일 겸용 받는 경우가 많아 login 사용
         body: JSON.stringify({ login: username, password })
       });
-      if (res.ok) { data = await res.json().catch(()=> ({})); ok = true; break; }
+      lastStatus = res.status;
+      let body = null; try { body = await res.json(); } catch (_) {}
+      if (res.ok) { data = body; ok = true; break; }
+      lastDetail = body && (body.detail || body.message || body);
+      if (res.status === 403) break;
     } catch (_) {}
   }
 
-  if (!ok || !data) {
-    showAlert('로그인에 실패했습니다. 아이디 또는 비밀번호를 확인해 주세요.', 'error');
+  if (!ok) {
+    const isUnverified =
+      lastStatus === 403 && lastDetail &&
+      (lastDetail.code === 'EMAIL_NOT_VERIFIED' ||
+       lastDetail === '이메일 인증이 필요합니다.' ||
+       (typeof lastDetail === 'string' && lastDetail.includes('이메일 인증')));
+
+    if (isUnverified) {
+      const alert = document.getElementById('alertContainer');
+      alert.innerHTML = `
+        <div class="kt-alert kt-alert-danger p-3 rounded-lg flex flex-col gap-3">
+          <div class="flex items-center gap-2">
+            <i class="ki-filled ki-information-2"></i>
+            <span class="text-sm">이메일 인증이 필요합니다.
+              <span id="remainText" class="ms-1 text-xs text-muted-foreground"></span>
+            </span>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="text-sm text-muted-foreground flex-1">스팸함에도 수신한 이메일이 없다면 재전송 버튼을 눌러주세요.</div>
+            <button class="kt-btn kt-btn-sm kt-btn-primary" id="btnResend">재전송</button>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="text-sm text-muted-foreground flex-1">다른 이메일로 수정하고 인증 이메일을 받고 싶다면 이메일 수정 버튼을 눌러주세요.</div>
+            <a class="kt-btn kt-btn-sm kt-btn-primary" href="/account/email">이메일 수정</a>
+          </div>
+        </div>`;
+      alert.classList.remove('hidden');
+
+      // 남은 시간 표시 (login 파라미터 사용)
+      try {
+        const r = await fetch(`/api/v1/auth/verify-remaining?login=${encodeURIComponent(username)}`);
+        const j = await r.json();
+        const s0 = (j && j.seconds_left) ? j.seconds_left : 0;
+        const el = document.getElementById('remainText');
+        if (s0 > 0) {
+          let left = s0;
+          const tick = () => {
+            const m = Math.floor(left/60), sec = left%60;
+            el.textContent = `(남은 시간: ${m}분 ${sec}초)`;
+            if (left > 0) { left--; setTimeout(tick, 1000); }
+          };
+          tick();
+        } else {
+          el.textContent = '';
+        }
+      } catch(_) {}
+
+      // 재전송 (아이디/이메일 값 그대로 보냄)
+      document.getElementById('btnResend').addEventListener('click', async ()=>{
+        const resendEndpoints = ['/api/v1/auth/send-verification-by-login', '/auth/send-verification-by-login'];
+        let sent = false;
+        for (const url of resendEndpoints) {
+          try {
+            const r = await fetch(url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ login: username })
+            });
+            if (r.ok) { sent = true; break; }
+          } catch (_) {}
+        }
+        if (sent) showAlert('인증 메일이 재전송되었습니다. 메일함을 확인해 주세요.', 'success');
+        else showAlert('재전송에 실패했습니다. 잠시 후 다시 시도해 주세요.', 'error');
+      });
+
+    } else {
+      showAlert('로그인에 실패했습니다. 아이디 또는 비밀번호를 확인해 주세요.', 'error');
+    }
   } else {
     if (data.access_token) localStorage.setItem('access_token', data.access_token);
     if (data.refresh_token) localStorage.setItem('refresh_token', data.refresh_token);

@@ -1,4 +1,3 @@
-# app/security.py
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Union, TYPE_CHECKING
 from passlib.context import CryptContext
@@ -14,21 +13,17 @@ from app.utils.logging import logger
 from app.core.database import get_db
 import hmac, hashlib, re
 
-# 타입 힌트 전용 (런타임 임포트 금지)
 if TYPE_CHECKING:
     from app.models.user import User  # noqa: F401
 
-# -------------------------------
-# 기본 설정 & 유틸
-# -------------------------------
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 SECRET_KEY = settings.jwt_secret
 ALGORITHM = settings.jwt_algorithm
 ACCESS_TOKEN_EXPIRE_MINUTES = settings.jwt_access_token_expire_minutes
 
-# 로그인 토큰 발급 엔드포인트 경로에 맞추세요
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+# ★ 실제 토큰 발급 엔드포인트 경로로 맞춤
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 def hash_password(password: str) -> str:
     if not password:
@@ -175,7 +170,6 @@ def id_fingerprint(plain_id: str) -> Optional[str]:
     ).hexdigest()
     return mac
 
-# (테스트용) 인메모리 리프레시 토큰 블랙리스트
 REVOKED_REFRESH_TOKENS = set()
 
 def revoke_refresh_token(token: str) -> None:
@@ -184,11 +178,7 @@ def revoke_refresh_token(token: str) -> None:
 def is_refresh_token_revoked(token: str) -> bool:
     return token in REVOKED_REFRESH_TOKENS
 
-# -------------------------------
-# 의존성: 현재 사용자 가져오기 (지연 임포트로 순환 방지)
-# -------------------------------
 def _extract_user_identifier(payload: dict) -> Optional[Union[int, str]]:
-    """일반적으로 'sub'에서 사용자 식별자를 꺼냄"""
     if not payload:
         return None
     sub = payload.get("sub")
@@ -197,17 +187,13 @@ def _extract_user_identifier(payload: dict) -> Optional[Union[int, str]]:
     try:
         return int(sub)
     except (TypeError, ValueError):
-        return sub  # username/email 등일 수 있음
+        return sub
 
 def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    """
-    Authorization: Bearer <token> 기반 인증 사용자 반환.
-    여기서만 User 클래스를 지연 임포트하여 순환 임포트를 피합니다.
-    """
-    from app.models.user import User  # 지연 임포트 (중요)
+    from app.models.user import User
 
     credentials_exc = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -246,7 +232,6 @@ def get_current_user_optional(
     token: Optional[str] = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    """토큰이 유효하면 User, 아니면 None 반환 (공개 엔드포인트에서 선택적 사용)"""
     try:
         if not token:
             return None
@@ -257,7 +242,6 @@ def get_current_user_optional(
         if user_ident is None:
             return None
 
-        # 지연 임포트
         from app.models.user import User  # noqa: WPS433
 
         if isinstance(user_ident, int):
@@ -270,3 +254,8 @@ def get_current_user_optional(
             return None
     except Exception:
         return None
+    
+def require_verified_user(current_user = Depends(get_current_user)):
+    if not getattr(current_user, "email_verified", False):
+        raise HTTPException(status_code=403, detail="이메일 인증이 필요합니다")
+    return current_user

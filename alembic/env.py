@@ -31,6 +31,7 @@ from app.models.challenge_embedding import ChallengeEmbedding
 from app.models.report import Report, ReportProof, PenaltyHistory
 from app.models.chat import ChatRoom, ChatMessage, ChatParticipant
 from app.models.round_manager  import RoundManager
+from app.models.email_verification import EmailVerification
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
