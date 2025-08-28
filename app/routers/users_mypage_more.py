@@ -6,8 +6,8 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy import select, and_, func, desc, true
 from sqlalchemy.orm import Session
 
-from app.db.session import get_db
-from app.deps.auth import get_current_user
+from app.core.database import get_db
+from app.dependencies.auth import get_current_user
 from app.deps.pagination import pagination_params
 
 from app.models.user import User

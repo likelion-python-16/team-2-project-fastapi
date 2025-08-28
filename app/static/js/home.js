@@ -68,8 +68,15 @@ function setupProfile(){
   const dd = el("profile-dd");
   const menu = el("profile-menu");
   if(isLoggedIn){
+    const mypageUrl = (()=>{
+      try{
+        const {protocol, hostname, port} = window.location;
+        if(port === "8001") return "/mypage"; // 같은 포트면 상대경로로
+        return `${protocol}//${hostname}:8001/mypage`;
+      }catch(_){ return "http://localhost:8001/mypage"; }
+    })();
     menu.innerHTML = `
-      <div class="dropdown-item"><span>마이페이지</span></div>
+      <a class="dropdown-item" href="${mypageUrl}">마이페이지</a>
       <div class="divider"></div>
       <div id="logout-btn" class="dropdown-item"><span>로그아웃</span></div>
     `;
@@ -81,6 +88,7 @@ function setupProfile(){
   }
   trigger.addEventListener("click", ()=> dd.classList.toggle("open"));
   document.addEventListener("click", (e)=>{ if(!dd.contains(e.target)) dd.classList.remove("open"); });
+  // 마이페이지는 앵커 링크로 처리하여 JS 바인딩 없이도 이동
   const lo = el("logout-btn");
   if(lo){ lo.addEventListener("click", ()=>{ localStorage.removeItem("access_token"); location.reload(); }); }
   el("home-logo").addEventListener("click", ()=>{

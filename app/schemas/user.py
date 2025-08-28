@@ -1,5 +1,5 @@
 # app/schemas/user.py
-from typing import Optional, Literal, List
+from typing import Optional, Literal, List, Dict, Any
 from datetime import datetime
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
 
@@ -35,6 +35,9 @@ class UserOut(BaseModel):
     manner_score: Optional[float] = None
     total_points: Optional[int] = None
 
+    # --- 신규: 사용자 환경설정(JSON) ---
+    preferences: Optional[Dict[str, Any]] = None
+
 # ▶ 내 정보 상세 응답(/users/me 전용)
 class MeOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -55,6 +58,9 @@ class MeOut(BaseModel):
     total_points: int = 0
     is_active: bool
 
+    # --- 신규: 사용자 환경설정(JSON) ---
+    preferences: Optional[Dict[str, Any]] = None
+
 # ▶ 내 정보 수정 요청(/users/me PATCH)
 class MeUpdateIn(BaseModel):
     # 수정 가능 필드만
@@ -66,6 +72,13 @@ class MeUpdateIn(BaseModel):
     phone_number: Optional[str] = Field(None, max_length=20)
     introduction: Optional[str] = Field(None, max_length=1000)
     profile_image: Optional[str] = None
+
+    # --- 신규: 환경설정(JSON) ---
+    # 서버에서 merge 업데이트를 지원한다면 부분 키만 보내도 됩니다.
+    preferences: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="사용자 환경설정(JSON). 부분 키만 보내면 서버에서 병합 처리 권장."
+    )
 
 # ▶ 요약 카드/팔로우 리스트 등
 class UserBrief(BaseModel):

@@ -16,6 +16,8 @@ from app.models.challenge_round import ChallengeRound
 from app.models.round_manager import RoundManager
 from app.models.attendance import RoundAttendance
 from app.models.tag import Tag, ChallengeTag
+from app.models.user import User
+from app.models.challenge import Challenge
 
 # Schemas
 from app.schemas.challenge import (
@@ -317,6 +319,32 @@ def list_challenges(db: Session = Depends(get_db)):
 @router.get("/active", response_model=List[ChallengeResponseWithTags])
 def get_active_challenges(db: Session = Depends(get_db)):
     rows = db.query(Challenge).filter(Challenge.status == "active").all()
+    return [_with_tags(db, ch) for ch in rows]
+
+
+# -----------------------------
+# Public: 특정 사용자가 만든 챌린지 목록
+# -----------------------------
+@router.get("/user/{user_id}", response_model=List[ChallengeResponseWithTags])
+def get_user_challenges(
+    user_id: int,
+    db: Session = Depends(get_db),
+):
+    # 공개 설정 확인
+    u = db.query(User).filter(User.id == user_id).first()
+    if not u:
+        return []
+    prefs = getattr(u, 'preferences', None) or {}
+    vis = (prefs.get('visibility') or {}) if isinstance(prefs, dict) else {}
+    if vis.get('challenges') is False:
+        return []
+
+    rows = (
+        db.query(Challenge)
+        .filter(Challenge.creator_id == user_id)
+        .order_by(desc(Challenge.created_at), desc(Challenge.id))
+        .all()
+    )
     return [_with_tags(db, ch) for ch in rows]
 
 @router.get("/status/{status}", response_model=List[ChallengeResponseWithTags])

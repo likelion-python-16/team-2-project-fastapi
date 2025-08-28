@@ -11,6 +11,7 @@ class Tag(Base, TimestampMixin):
     """
     태그 마스터
     - tag: 실제 태그 텍스트 (UNIQUE, NOT NULL)
+    - icon_url: 태그 아이콘 (optional)
     - embedding: 벡터/임베딩(JSON) 저장 가능
     - embedding_updated_at: 임베딩 최신화 시각
     """
@@ -20,6 +21,7 @@ class Tag(Base, TimestampMixin):
     tag = Column(String(255), nullable=False, unique=True)
     icon_url = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+
     embedding = Column(JSON, nullable=True)
     embedding_model = Column(String(100), nullable=True)
     embedding_updated_at = Column(DateTime, nullable=True)
@@ -34,8 +36,7 @@ class Tag(Base, TimestampMixin):
     )
 
 
-# --- removed duplicate class block ---
-class ChallengeTag(Base):
+class ChallengeTag(Base, TimestampMixin):
     """
     챌린지-태그 연결(다대다 조인 테이블)
     - (tag_id, challenge_id) 유니크
@@ -58,14 +59,24 @@ class ChallengeTag(Base):
     )
 
 
-# --- removed duplicate class block ---
-class UserTag(Base):
-    __tablename__ = "user_tag"
-    id = Column(Integer, primary_key=True)
+class UserTag(Base, TimestampMixin):
+    """
+    사용자-태그 연결(다대다 조인 테이블)
+    - (user_id, tag_id) 유니크
+    """
+    __tablename__ = "user_tags"
+    
+    id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     tag_id = Column(Integer, ForeignKey("tags.id", ondelete="CASCADE"), nullable=False)
+    selected_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
+    # 관계
     user = relationship("User", back_populates="user_tags")
     tag = relationship("Tag", back_populates="user_tags")
 
-    __table_args__ = (UniqueConstraint('user_id','tag_id', name='uq_user_tag'),)
+    __table_args__ = (
+        UniqueConstraint("user_id", "tag_id", name="uq_user_tag"),
+        Index("ix_user_tag_user", "user_id"),
+        Index("ix_user_tag_tag", "tag_id"),
+    )

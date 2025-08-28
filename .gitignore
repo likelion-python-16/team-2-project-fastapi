@@ -14,14 +14,18 @@ venv.bak/
 
 # FastAPI
 .env
-.env.production
+.env.*
+!.env.example
+.python-version
 
 # Database
 *.db
 *.sqlite3
+*.sqlite
 
 # Docker
-.dockerignore
+
+# .dockerignore는 보통 커밋 대상이므로 제외하지 않음
 
 # IDE
 .vscode/
@@ -37,10 +41,25 @@ Thumbs.db
 *.log
 logs/
 
-# Test
+# Test / Coverage / Caches
 .pytest_cache/
 .coverage
+.coverage*
+coverage.xml
 htmlcov/
+.mypy_cache/
+.ruff_cache/
+.pytype/
+.pyrightcache/
+
+# Local data/uploads/backups
+data/
+app/static/pictures/
+backup_*.sql
+
+# Local docker overrides (do not publish)
+docker-compose.local.yml
+docker-compose.override.yml
 
 # EC2 키파일
 *.pem
@@ -54,6 +73,9 @@ app/static/assets/**/js/layouts/*
 # 중첩된 프로젝트 폴더 무시
 team-2-project-fastapi/
 openapi.json
-backup_2025-08-18_1517.sql
-.gitignore
-team-2-project-fastapi/
+
+# Frontend / Bundles
+node_modules/
+dist/
+build/
+*.map
