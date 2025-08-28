@@ -1,8 +1,8 @@
-"""init schema (after gender enum)
+"""아
 
-Revision ID: 28cebf81243d
-Revises: 
-Create Date: 2025-08-17 17:30:07.805860
+Revision ID: d260b37a7a41
+Revises: 3aa1149d06f0
+Create Date: 2025-08-26 07:43:21.780004
 
 """
 from typing import Sequence, Union
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '28cebf81243d'
-down_revision: Union[str, Sequence[str], None] = None
+revision: str = 'd260b37a7a41'
+down_revision: Union[str, Sequence[str], None] = '3aa1149d06f0'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

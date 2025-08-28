@@ -7,10 +7,12 @@ from typing import List, Optional, Literal
 from datetime import date
 
 from app.core.database import get_db
+from app.security import get_current_user, get_current_user_optional
+from app.utils.logging import logger
 
 # Models
 from app.models.user import User
-from app.models.challenge import Challenge
+from app.models.challenge import Challenge, ChallengeStatus, ChallengeMode, PaymentType
 from app.models.participation import Participation, ParticipationRole
 from app.models.challenge_round import ChallengeRound
 from app.models.round_manager import RoundManager
@@ -19,7 +21,7 @@ from app.models.tag import Tag, ChallengeTag
 
 # Schemas
 from app.schemas.challenge import (
-    ChallengeCreate, ChallengeResponse, ChallengeUpdate, ChallengeStatus,
+    ChallengeCreate, ChallengeResponse, ChallengeUpdate,
     DualSearchResponse, ChallengeItem
 )
 from app.schemas.challenge_round import (
@@ -29,45 +31,103 @@ from app.schemas.challenge_round import (
 # Services & AuthZ
 from app.services.predictor import predict_category
 from app.services.challenge_round_service import auto_create_rounds_on_challenge_create
+from app.services.challenge_recommender import get_challenge_recommender
+from app.services.enhanced_challenge_search import get_enhanced_challenge_search
 from app.core.authz import can_edit_round, is_challenge_owner, is_challenge_manager
 
 router = APIRouter(prefix="/challenges", tags=["challenges"])
 
+# Quick endpoints for frontend compatibility
+@router.get("/recommended")
+def get_recommended_challenges_simple(db: Session = Depends(get_db)):
+    """추천 챌린지 목록 (간단 버전)"""
+    try:
+        challenges = db.query(Challenge).filter(
+            Challenge.is_deleted == False,
+            Challenge.status == ChallengeStatus.active
+        ).order_by(Challenge.created_at.desc()).limit(10).all()
+        
+        return {
+            "success": True,
+            "challenges": [
+                {
+                    "id": c.id,
+                    "title": c.title,
+                    "description": c.description,
+                } for c in challenges
+            ]
+        }
+    except Exception as e:
+        return {"success": False, "challenges": [], "error": str(e)}
+
+@router.get("/following")
+def get_following_challenges_simple(db: Session = Depends(get_db)):
+    """팔로잉 챌린지 목록 (간단 버전)"""
+    try:
+        challenges = db.query(Challenge).filter(
+            Challenge.is_deleted == False,
+            Challenge.status == ChallengeStatus.active
+        ).order_by(Challenge.created_at.desc()).limit(5).all()
+        
+        return {
+            "success": True, 
+            "challenges": [
+                {
+                    "id": c.id,
+                    "title": c.title,
+                    "description": c.description,
+                } for c in challenges
+            ]
+        }
+    except Exception as e:
+        return {"success": False, "challenges": [], "error": str(e)}
+
 # -------------------------------------------------------------------
 # Helpers
 # -------------------------------------------------------------------
-def get_current_user_id() -> int:
-    # TODO: replace with real auth
-    return 1
+def get_current_user_id(current_user: User = Depends(get_current_user)) -> int:
+    """현재 로그인한 사용자 ID 반환"""
+    return current_user.id
 
-def _fee_validation(
-    fee: Optional[int],
-    participation_fee: Optional[int],
-    require_at_least_one: bool = False,
+def _payment_validation(
+    payment_type: PaymentType,
+    entry_fee: Optional[int],
+    monthly_fee: Optional[int],
 ) -> None:
-    f = 0 if fee is None else fee
-    p = 0 if participation_fee is None else participation_fee
-    if f < 0 or p < 0:
-        raise HTTPException(400, "Fee and participation_fee must be ≥ 0.")
-    if require_at_least_one and (f == 0 and p == 0):
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            "At least one of fee or participation_fee must be > 0.")
+    """새로운 결제 시스템 검증"""
+    if entry_fee is not None and entry_fee < 0:
+        raise HTTPException(400, "Entry fee cannot be negative")
+    if monthly_fee is not None and monthly_fee < 0:
+        raise HTTPException(400, "Monthly fee cannot be negative")
+    if entry_fee is not None and entry_fee > 1000000:  # 100만원 제한
+        raise HTTPException(400, "Entry fee cannot exceed 1,000,000 KRW")
+    if monthly_fee is not None and monthly_fee > 100000:  # 10만원 제한
+        raise HTTPException(400, "Monthly fee cannot exceed 100,000 KRW")
+    
+    # 결제 타입별 검증
+    if payment_type == PaymentType.entry_fee:
+        if not entry_fee or entry_fee == 0:
+            raise HTTPException(400, "Entry fee must be > 0 when payment_type is entry_fee")
+    elif payment_type == PaymentType.monthly_fee:
+        if not monthly_fee or monthly_fee == 0:
+            raise HTTPException(400, "Monthly fee must be > 0 when payment_type is monthly_fee")
+    elif payment_type == PaymentType.both:
+        if (not entry_fee or entry_fee == 0) and (not monthly_fee or monthly_fee == 0):
+            raise HTTPException(400, "At least one fee must be > 0 when payment_type is both")
 
 def _validate_common_business_rules(
     start_date: Optional[date],
     end_date: Optional[date],
-    fee: Optional[int],
-    participation_fee: Optional[int],
+    payment_type: Optional[PaymentType],
+    entry_fee: Optional[int],
+    monthly_fee: Optional[int],
 ) -> None:
+    """공통 비즈니스 규칙 검증"""
     if start_date and end_date and start_date > end_date:
         raise HTTPException(400, "start_date must be ≤ end_date")
-    if fee is not None and fee < 0:
-        raise HTTPException(400, "Fee cannot be negative")
-    if participation_fee is not None and participation_fee < 0:
-        raise HTTPException(400, "Participation fee cannot be negative")
-    if participation_fee is not None and participation_fee > 10000:
-        raise HTTPException(400, "Participation fee cannot exceed 10,000 KRW")
-    _fee_validation(fee, participation_fee, require_at_least_one=False)
+    
+    if payment_type:
+        _payment_validation(payment_type, entry_fee, monthly_fee)
 
 def _round_has_dependents(r: ChallengeRound) -> bool:
     return bool(
@@ -91,7 +151,7 @@ def _reconcile_total_rounds(db: Session, challenge: Challenge, new_total: Option
         return
 
     if new_total > cur_n:
-        base_mode = existing[-1].mode if cur_n > 0 else (challenge.mode or "online")
+        base_mode = existing[-1].mode if cur_n > 0 else (challenge.mode or ChallengeMode.online)
         for i in range(cur_n + 1, new_total + 1):
             db.add(ChallengeRound(challenge_id=challenge.id, round=i, mode=base_mode))
         db.flush()
@@ -106,19 +166,29 @@ def _reconcile_total_rounds(db: Session, challenge: Challenge, new_total: Option
     db.flush()
 
 def _calculate_status(ch: Challenge, db: Session, today: date) -> str:
-    participants_count = db.query(Participation).filter(Participation.challenge_id == ch.id).count()
-    if ch.is_closed:
-        return "completed"
-    if ch.end_date and today > ch.end_date:
-        return "completed"
-    if ch.start_date and today < ch.start_date:
-        return "recruiting"
-    if ch.start_date and today >= ch.start_date:
-        if participants_count < (ch.min_participants or 1):
+    """
+    새 모델의 get_computed_status() 메서드 활용
+    """
+    try:
+        # 새 모델의 메서드 사용
+        computed_status = ch.get_computed_status()
+        return computed_status.value if hasattr(computed_status, 'value') else computed_status
+    except:
+        # fallback: 기존 로직 (수정된 버전)
+        participants_count = db.query(Participation).filter(Participation.challenge_id == ch.id).count()
+        
+        if ch.is_settlement_completed:  # ✅ is_closed → is_settlement_completed
+            return "completed"
+        if ch.end_date and today > ch.end_date:
+            return "completed"
+        if ch.start_date and today < ch.start_date:
             return "recruiting"
-        if not ch.end_date or today <= ch.end_date:
-            return "active"
-    return "recruiting"
+        if ch.start_date and today >= ch.start_date:
+            if participants_count < (ch.min_participants or 1):
+                return "recruiting"
+            if not ch.end_date or today <= ch.end_date:
+                return "active"
+        return "recruiting"
 
 def _can_edit_challenge(db: Session, challenge_id: int, me: int) -> bool:
     ch = db.query(Challenge).filter(Challenge.id == challenge_id).first()
@@ -142,6 +212,30 @@ def _with_tags(db: Session, ch: Challenge) -> dict:
     resp["tags"] = _challenge_tags(db, ch.id)
     return resp
 
+def _with_tags_and_participation(db: Session, ch: Challenge, user_id: Optional[int] = None) -> dict:
+    """챌린지 정보에 태그와 사용자 참여 상태를 추가"""
+    resp = ChallengeResponse.model_validate(ch).model_dump()
+    resp["tags"] = _challenge_tags(db, ch.id)
+    
+    # 사용자 참여 상태 추가
+    resp["user_participation"] = None
+    if user_id:
+        from app.models.participation import ParticipationStatus
+        participation = db.query(Participation).filter(
+            Participation.challenge_id == ch.id,
+            Participation.user_id == user_id
+        ).first()
+        
+        if participation:
+            resp["user_participation"] = {
+                "status": participation.status.value if hasattr(participation.status, 'value') else participation.status,
+                "role": participation.role.value if hasattr(participation.role, 'value') else participation.role,
+                "joined_at": participation.joined_at,
+                "is_creator": ch.creator_id == user_id
+            }
+    
+    return resp
+
 # Pydantic v2: 응답 모델 확장 (tags 추가)
 class ChallengeResponseWithTags(ChallengeResponse):  # type: ignore[misc]
     tags: List[str] = []
@@ -161,6 +255,7 @@ def dual_search(
     status_filter: Literal["recruiting", "active", "completed", "cancelled"] = Query(
         "recruiting", alias="status"
     ),
+    location: Optional[str] = Query(None, description="장소 검색어 (선택)"),
     start_from: Optional[date] = Query(None), start_to: Optional[date] = Query(None),
     end_from: Optional[date] = Query(None),   end_to: Optional[date] = Query(None),
     sort_by: Literal["created_at", "start_date", "end_date", "title"] = Query("created_at"),
@@ -190,12 +285,22 @@ def dual_search(
         return query.order_by(asc(col) if sort_dir == "asc" else desc(col))
 
     base = db.query(Challenge).join(User, User.id == Challenge.creator_id)
+    
+    # 텍스트 검색 (제목, 설명, 작성자)
     if q and q.strip():
         like = f"%{q.strip()}%"
         base = base.filter(or_(
             Challenge.title.ilike(like),
             Challenge.description.ilike(like),
             User.name.ilike(like),
+        ))
+    
+    # 장소 검색 (장소명, 주소)
+    if location and location.strip():
+        location_like = f"%{location.strip()}%"
+        base = base.filter(or_(
+            Challenge.default_place_name.ilike(location_like),
+            Challenge.default_address.ilike(location_like),
         ))
 
     base = apply_filters(base)
@@ -236,48 +341,156 @@ def dual_search(
         predicted_score=predicted_score,
     )
 
+# 새로운 AI 기반 챌린지 추천 API
+@router.get("/recommendations")
+def get_challenge_recommendations(
+    query: str = Query(..., description="추천받을 텍스트 (관심사, 활동 등)"),
+    limit: int = Query(default=5, le=20, description="추천 개수"),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    db: Session = Depends(get_db)
+):
+    """AI 기반 챌린지 추천"""
+    recommender = get_challenge_recommender(db)
+    user_id = current_user.id if current_user else None
+    
+    try:
+        recommendations = recommender.find_similar_challenges(
+            query_text=query,
+            limit=limit,
+            user_id=user_id
+        )
+        
+        # 추천이 부족하면 인기 챌린지로 보완
+        if len(recommendations) < limit:
+            trending = recommender.get_trending_challenges(limit=limit-len(recommendations))
+            recommendations.extend(trending)
+        
+        # 응답 형태로 변환
+        result = []
+        for rec in recommendations[:limit]:
+            ch = rec['challenge']
+            result.append({
+                'id': ch.id,
+                'title': ch.title,
+                'description': ch.description,
+                'mode': ch.mode.value if hasattr(ch.mode, 'value') else ch.mode,
+                'status': ch.status.value if hasattr(ch.status, 'value') else ch.status,
+                'current_participants': ch.current_participants or 0,
+                'max_participants': ch.max_participants,
+                'start_date': ch.start_date.isoformat() if ch.start_date else None,
+                'end_date': ch.end_date.isoformat() if ch.end_date else None,
+                'payment_type': ch.payment_type.value if hasattr(ch.payment_type, 'value') else ch.payment_type,
+                'entry_fee': ch.entry_fee,
+                'monthly_fee': ch.monthly_fee,
+                'similarity_score': rec['similarity_score'],
+                'participant_count': rec['participant_count'],
+                'reasons': rec['reasons']
+            })
+        
+        return {
+            'query': query,
+            'recommendations': result,
+            'total': len(result)
+        }
+        
+    except Exception as e:
+        logger.error(f"추천 시스템 오류: {e}")
+        # 폴백: 인기 챌린지 반환
+        trending = recommender.get_trending_challenges(limit=limit)
+        result = []
+        for rec in trending:
+            ch = rec['challenge']
+            result.append({
+                'id': ch.id,
+                'title': ch.title,
+                'description': ch.description,
+                'mode': ch.mode.value if hasattr(ch.mode, 'value') else ch.mode,
+                'status': ch.status.value if hasattr(ch.status, 'value') else ch.status,
+                'current_participants': ch.current_participants or 0,
+                'max_participants': ch.max_participants,
+                'similarity_score': 1.0,
+                'participant_count': rec['participant_count'],
+                'reasons': ['인기 챌린지']
+            })
+        
+        return {
+            'query': query,
+            'recommendations': result,
+            'total': len(result),
+            'fallback': True
+        }
+
 # -------------------------------------------------------------------
 # Create / List / Get / Update / Delete / Status
 # -------------------------------------------------------------------
-@router.post("/", response_model=ChallengeResponseWithTags)
+@router.post("/")
 async def create_challenge(
     challenge_data: ChallengeCreate,
     db: Session = Depends(get_db),
+    me: int = Depends(get_current_user_id),
     tags: Optional[List[str]] = Body(None, embed=True),  # ["운동/스포츠", ...]
 ):
-    me = get_current_user_id()
+    logger.info(f"Creating challenge for user_id: {me}")
+    
+    # ✅ 새로운 결제 시스템 검증
     _validate_common_business_rules(
-        challenge_data.start_date, challenge_data.end_date,
-        challenge_data.fee, challenge_data.participation_fee,
+        challenge_data.start_date, 
+        challenge_data.end_date,
+        getattr(challenge_data, 'payment_type', PaymentType.free),
+        getattr(challenge_data, 'entry_fee', 0),
+        getattr(challenge_data, 'monthly_fee', 0),
     )
-    if challenge_data.use_reward and not challenge_data.reward:
-        raise HTTPException(400, "Reward content is required when use_reward is True")
+    
+    # 리워드 검증 (reward → reward_description)
+    if getattr(challenge_data, 'use_reward', False) and not getattr(challenge_data, 'reward_description', None):
+        raise HTTPException(400, "Reward description is required when use_reward is True")
 
+    # ✅ 새 모델에 맞게 챌린지 생성
     new_challenge = Challenge(
         title=challenge_data.title,
         description=challenge_data.description,
         start_date=challenge_data.start_date,
         end_date=challenge_data.end_date,
         creator_id=me,
-        fee=challenge_data.fee or 0,
-        participation_fee=challenge_data.participation_fee or 0,
-        min_participants=challenge_data.min_participants,
-        max_participants=challenge_data.max_participants,
-        total_rounds=challenge_data.total_rounds,
-        min_participation_rate=challenge_data.min_participation_rate or 80,
-        max_participation_rate=challenge_data.max_participation_rate,
-        mode=(challenge_data.mode.value if hasattr(challenge_data.mode, "value") else challenge_data.mode),
-        same_place_for_all_rounds=challenge_data.same_place_for_all_rounds or False,
-        default_zoom_link=challenge_data.default_zoom_link,
-        default_place_name=challenge_data.default_place_name,
-        default_road_address=challenge_data.default_road_address,
-        default_address=challenge_data.default_address,
-        default_map_url=challenge_data.default_map_url,
-        default_latitude=challenge_data.default_latitude,
-        default_longitude=challenge_data.default_longitude,
-        use_reward=challenge_data.use_reward or False,
-        reward=challenge_data.reward,
+        
+        # ✅ 새로운 결제 시스템
+        payment_type=getattr(challenge_data, 'payment_type', PaymentType.free),
+        entry_fee=getattr(challenge_data, 'entry_fee', 0),
+        monthly_fee=getattr(challenge_data, 'monthly_fee', 0),
+        
+        # 참가자 관리
+        min_participants=getattr(challenge_data, 'min_participants', 1),
+        max_participants=getattr(challenge_data, 'max_participants', None),
+        
+        # 회차 시스템
+        total_rounds=getattr(challenge_data, 'total_rounds', None),
+        min_participation_rate=getattr(challenge_data, 'min_participation_rate', 80),
+        # ❌ max_participation_rate 제거됨
+        
+        # 진행 방식
+        mode=getattr(challenge_data, 'mode', ChallengeMode.online),
+        same_place_for_all_rounds=getattr(challenge_data, 'same_place_for_all_rounds', False),
+        
+        # ✅ 간소화된 장소 정보
+        default_zoom_link=getattr(challenge_data, 'default_zoom_link', None),
+        default_place_name=getattr(challenge_data, 'default_place_name', None),
+        default_address=getattr(challenge_data, 'default_address', None),  # road_address 통합
+        default_latitude=getattr(challenge_data, 'default_latitude', None),
+        default_longitude=getattr(challenge_data, 'default_longitude', None),
+        # ❌ default_road_address, default_map_url 제거됨
+        
+        # ✅ 리워드 시스템 (reward → reward_description)
+        use_reward=getattr(challenge_data, 'use_reward', False),
+        reward_description=getattr(challenge_data, 'reward_description', None),
+        
+        # 기본 설정
+        require_approval=getattr(challenge_data, 'require_approval', False),
+        is_public=getattr(challenge_data, 'is_public', True),
+        
+        # ✅ 유료 챌린지는 draft 상태로 시작 (결제 완료 후 recruiting으로 변경)
+        status=ChallengeStatus.draft if getattr(challenge_data, 'payment_type', PaymentType.free) != PaymentType.free else ChallengeStatus.recruiting,
     )
+    
     db.add(new_challenge)
     db.flush()
 
@@ -300,37 +513,135 @@ async def create_challenge(
     # 회차 자동 생성
     await auto_create_rounds_on_challenge_create(db, new_challenge)
 
+    # ✅ 생성자를 자동으로 참가시키기 (유료 챌린지면 payment_pending 상태로)
+    from app.models.participation import ParticipationManager, PaymentCycle, ParticipationRole
+    
+    # 결제 방식 결정
+    payment_cycle = None
+    if new_challenge.payment_type == PaymentType.free:
+        payment_cycle = PaymentCycle.free
+    elif new_challenge.payment_type == PaymentType.entry_fee:
+        payment_cycle = PaymentCycle.entry_fee
+    elif new_challenge.payment_type == PaymentType.monthly_fee:
+        payment_cycle = PaymentCycle.monthly
+    elif new_challenge.payment_type == PaymentType.both:
+        payment_cycle = PaymentCycle.entry_fee  # 기본값
+    
+    # 생성자 참가 생성
+    creator_participation = ParticipationManager.create_participation(
+        user_id=me,
+        challenge_id=new_challenge.id,
+        role=ParticipationRole.creator,
+        payment_cycle=payment_cycle,
+        join_motivation="챌린지 생성자"
+    )
+    
+    db.add(creator_participation)
+    
+    # 무료 챌린지는 즉시 활성화, 유료는 결제 대기
+    if payment_cycle == PaymentCycle.free:
+        creator_participation.activate_participation()
+        new_challenge.current_participants = 1
+
     db.commit()
     db.refresh(new_challenge)
-    return _with_tags(db, new_challenge)
+    
+    # ✅ 응답에 결제 필요 여부 추가
+    challenge_response = _with_tags(db, new_challenge)
+    
+    # 유료 챌린지의 경우 결제 정보 포함
+    if payment_cycle != PaymentCycle.free:
+        challenge_response["needs_payment"] = True
+        challenge_response["payment_amount"] = (
+            new_challenge.entry_fee if payment_cycle == PaymentCycle.entry_fee 
+            else new_challenge.monthly_fee
+        )
+        challenge_response["payment_type"] = payment_cycle.value
+        challenge_response["creator_participation_status"] = "payment_pending"
+    else:
+        challenge_response["needs_payment"] = False
+        challenge_response["creator_participation_status"] = "active"
+    
+    return challenge_response
 
 @router.get("/", response_model=List[ChallengeResponseWithTags])
 def list_challenges(db: Session = Depends(get_db)):
-    rows = db.query(Challenge).all()
+    rows = db.query(Challenge).filter(Challenge.is_deleted == False).all()  # 삭제된 챌린지 제외
     out = []
-    today = date.today()
+    # 수동으로 설정된 상태를 존중
     for ch in rows:
-        ch.status = _calculate_status(ch, db, today)
+        # ch.status = _calculate_status(ch, db, today)  # ✅ 제거 - 수동 상태 존중
         out.append(_with_tags(db, ch))
+    return out
+
+# 사용자별 참여 상태가 포함된 챌린지 목록
+@router.get("/with-participation", response_model=List[dict])
+def list_challenges_with_participation(
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    """사용자 참여 상태가 포함된 챌린지 목록"""
+    rows = db.query(Challenge).filter(Challenge.is_deleted == False).all()
+    out = []
+    user_id = current_user.id if current_user else None
+    
+    for ch in rows:
+        out.append(_with_tags_and_participation(db, ch, user_id))
     return out
 
 @router.get("/active", response_model=List[ChallengeResponseWithTags])
 def get_active_challenges(db: Session = Depends(get_db)):
-    rows = db.query(Challenge).filter(Challenge.status == "active").all()
+    rows = db.query(Challenge).filter(
+        Challenge.status == ChallengeStatus.active,
+        Challenge.is_deleted == False
+    ).all()
     return [_with_tags(db, ch) for ch in rows]
 
 @router.get("/status/{status}", response_model=List[ChallengeResponseWithTags])
-def get_challenges_by_status(status: ChallengeStatus, db: Session = Depends(get_db)):
-    rows = db.query(Challenge).filter(Challenge.status == status.value).all()
-    return [_with_tags(db, ch) for ch in rows]
+def get_challenges_by_status(status: str, db: Session = Depends(get_db)):  # ChallengeStatus enum 제거
+    try:
+        status_enum = ChallengeStatus(status)
+        rows = db.query(Challenge).filter(
+            Challenge.status == status_enum,
+            Challenge.is_deleted == False
+        ).all()
+        return [_with_tags(db, ch) for ch in rows]
+    except ValueError:
+        raise HTTPException(400, f"Invalid status: {status}")
 
 @router.get("/{challenge_id}", response_model=ChallengeResponseWithTags)
 def get_challenge(challenge_id: int, db: Session = Depends(get_db)):
-    ch = db.query(Challenge).filter(Challenge.id == challenge_id).first()
+    ch = db.query(Challenge).filter(
+        Challenge.id == challenge_id,
+        Challenge.is_deleted == False
+    ).first()
     if not ch:
         raise HTTPException(404, "Challenge not found")
-    ch.status = _calculate_status(ch, db, date.today())
+    
+    logger.info(f"Get challenge {challenge_id}: current status = {ch.status}")
+    
+    # 수동으로 설정된 상태를 존중하되, 날짜 기반 자동 계산은 선택적으로만 적용
+    # ch.status = _calculate_status(ch, db, date.today())  # ✅ 제거
+    
     return _with_tags(db, ch)
+
+# 사용자 참여 상태가 포함된 개별 챌린지 조회
+@router.get("/{challenge_id}/with-participation", response_model=dict)
+def get_challenge_with_participation(
+    challenge_id: int, 
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    """사용자 참여 상태가 포함된 개별 챌린지 정보"""
+    ch = db.query(Challenge).filter(
+        Challenge.id == challenge_id,
+        Challenge.is_deleted == False
+    ).first()
+    if not ch:
+        raise HTTPException(404, "Challenge not found")
+    
+    user_id = current_user.id if current_user else None
+    return _with_tags_and_participation(db, ch, user_id)
 
 @router.put("/{challenge_id}", response_model=ChallengeResponseWithTags)
 def update_challenge(
@@ -340,27 +651,44 @@ def update_challenge(
     me: int = Depends(get_current_user_id),
     force: bool = Query(False, description="총회차 축소 시 의존데이터 있어도 강제 삭제"),
 ):
-    ch = db.query(Challenge).filter(Challenge.id == challenge_id).first()
+    ch = db.query(Challenge).filter(
+        Challenge.id == challenge_id,
+        Challenge.is_deleted == False
+    ).first()
     if not ch:
         raise HTTPException(404, "Challenge not found")
     if not _can_edit_challenge(db, challenge_id, me):
         raise HTTPException(403, "No permission to update this challenge")
 
+    # ✅ 새로운 검증 로직
     _validate_common_business_rules(
-        challenge_update.start_date or ch.start_date,
-        challenge_update.end_date or ch.end_date,
-        challenge_update.fee if challenge_update.fee is not None else ch.fee,
-        (challenge_update.participation_fee if challenge_update.participation_fee is not None else ch.participation_fee),
+        getattr(challenge_update, 'start_date', None) or ch.start_date,
+        getattr(challenge_update, 'end_date', None) or ch.end_date,
+        getattr(challenge_update, 'payment_type', None) or ch.payment_type,
+        getattr(challenge_update, 'entry_fee', None) if hasattr(challenge_update, 'entry_fee') else ch.entry_fee,
+        getattr(challenge_update, 'monthly_fee', None) if hasattr(challenge_update, 'monthly_fee') else ch.monthly_fee,
     )
-    if challenge_update.use_reward is True and not (
-        (challenge_update.reward is not None and str(challenge_update.reward).strip()) or ch.reward
+    
+    # 리워드 검증 (reward → reward_description)
+    if getattr(challenge_update, 'use_reward', None) is True and not (
+        (getattr(challenge_update, 'reward_description', None) is not None and 
+         str(getattr(challenge_update, 'reward_description', None)).strip()) 
+        or ch.reward_description
     ):
-        raise HTTPException(400, "Reward content is required when use_reward is True")
+        raise HTTPException(400, "Reward description is required when use_reward is True")
 
     before_total = ch.total_rounds
     data = challenge_update.model_dump(exclude_unset=True)
+    
+    # ❌ 제거된 필드들 필터링
+    removed_fields = {'fee', 'participation_fee', 'max_participation_rate', 'is_closed', 
+                      'reward', 'default_road_address', 'default_map_url'}
+    data = {k: v for k, v in data.items() if k not in removed_fields}
+    
+    # 업데이트 적용
     for k, v in data.items():
-        setattr(ch, k, v)
+        if hasattr(ch, k):
+            setattr(ch, k, v)
     db.flush()
 
     if "total_rounds" in data and data["total_rounds"] is not None and data["total_rounds"] != before_total:
@@ -368,42 +696,132 @@ def update_challenge(
 
     db.commit()
     db.refresh(ch)
-    ch.status = _calculate_status(ch, db, date.today())
+    # 수동으로 설정된 상태 존중
+    # ch.status = _calculate_status(ch, db, date.today())  # ✅ 제거
     return _with_tags(db, ch)
 
 @router.delete("/{challenge_id}")
-def delete_challenge(challenge_id: int, db: Session = Depends(get_db), me: int = Depends(get_current_user_id)):
-    ch = db.query(Challenge).filter(Challenge.id == challenge_id).first()
+def delete_challenge(
+    challenge_id: int, 
+    db: Session = Depends(get_db), 
+    me: int = Depends(get_current_user_id)
+):
+    ch = db.query(Challenge).filter(
+        Challenge.id == challenge_id,
+        Challenge.is_deleted == False
+    ).first()
     if not ch:
         raise HTTPException(404, "Challenge not found")
     # 권한: 오너만 삭제 (원하면 is_challenge_manager 허용으로 완화)
     if ch.creator_id != me:
         raise HTTPException(403, "Only the creator can delete this challenge")
 
-    participants = db.query(Participation).filter(Participation.challenge_id == challenge_id).count()
-    if participants > 0:
-        raise HTTPException(400, "Cannot delete challenge with participants")
+    # 생성자 외의 다른 참가자가 있는지 확인
+    other_participants = db.query(Participation).filter(
+        Participation.challenge_id == challenge_id,
+        Participation.user_id != me  # 생성자가 아닌 참가자들만
+    ).count()
+    if other_participants > 0:
+        raise HTTPException(400, "Cannot delete challenge with other participants")
 
-    db.delete(ch)
-    db.commit()
-    return {"message": "Challenge deleted successfully"}
+    # ✅ 소프트 삭제 사용 (새 모델의 메서드)
+    try:
+        ch.soft_delete(me)
+        db.commit()
+        return {"message": "Challenge deleted successfully"}
+    except:
+        # fallback: 직접 삭제
+        db.delete(ch)
+        db.commit()
+        return {"message": "Challenge deleted successfully"}
 
 @router.patch("/{challenge_id}/status")
-def update_challenge_status(challenge_id: int, new_status: ChallengeStatus, db: Session = Depends(get_db), me: int = Depends(get_current_user_id)):
-    ch = db.query(Challenge).filter(Challenge.id == challenge_id).first()
+def update_challenge_status(
+    challenge_id: int, 
+    new_status: str,  # ChallengeStatus enum 대신 문자열
+    db: Session = Depends(get_db), 
+    me: int = Depends(get_current_user_id)
+):
+    ch = db.query(Challenge).filter(
+        Challenge.id == challenge_id,
+        Challenge.is_deleted == False
+    ).first()
     if not ch:
         raise HTTPException(404, "Challenge not found")
     if ch.creator_id != me:
         raise HTTPException(403, "Only the creator can change challenge status")
-    if ch.status == "completed":
+    if ch.status == ChallengeStatus.completed:
         raise HTTPException(400, "Cannot change status of completed challenge")
-    ch.status = new_status.value
-    db.commit()
-    db.refresh(ch)
-    return {"message": f"Challenge status updated to {new_status.value}", "challenge": _with_tags(db, ch)}
+    
+    # 새 상태 검증
+    try:
+        logger.info(f"Updating challenge {challenge_id} status from {ch.status} to {new_status} by user {me}")
+        
+        old_status = ch.status
+        new_status_enum = ChallengeStatus(new_status)
+        ch.status = new_status_enum
+        
+        logger.info(f"Before commit: challenge.status = {ch.status}")
+        db.commit()
+        db.refresh(ch)
+        logger.info(f"After commit: challenge.status = {ch.status}")
+        
+        result = {"message": f"Challenge status updated to {new_status}", "challenge": _with_tags(db, ch)}
+        logger.info(f"Status change successful: {old_status} → {ch.status}")
+        return result
+    except ValueError as e:
+        logger.error(f"Invalid status value: {new_status}, error: {e}")
+        raise HTTPException(400, f"Invalid status: {new_status}")
+    except Exception as e:
+        logger.error(f"Status change failed: {e}")
+        db.rollback()
+        raise HTTPException(500, f"Status change failed: {str(e)}")
 
 # -------------------------------------------------------------------
-# Rounds
+# 새로운 결제 관련 엔드포인트
+# -------------------------------------------------------------------
+@router.get("/{challenge_id}/payment-info")
+def get_challenge_payment_info(challenge_id: int, db: Session = Depends(get_db)):
+    """챌린지 결제 정보 조회"""
+    ch = db.query(Challenge).filter(
+        Challenge.id == challenge_id,
+        Challenge.is_deleted == False
+    ).first()
+    if not ch:
+        raise HTTPException(404, "Challenge not found")
+    
+    return {
+        "challenge_id": challenge_id,
+        "payment_type": ch.payment_type.value if hasattr(ch.payment_type, 'value') else ch.payment_type,
+        "entry_fee": ch.entry_fee,
+        "monthly_fee": ch.monthly_fee,
+        "is_payment_required": ch.is_payment_required(),
+    }
+
+@router.post("/{challenge_id}/calculate-payment")
+def calculate_payment_amount(
+    challenge_id: int,
+    payment_cycle: str = Body(..., embed=True),  # "entry_fee" or "monthly_fee"
+    db: Session = Depends(get_db)
+):
+    """결제 금액 계산"""
+    ch = db.query(Challenge).filter(
+        Challenge.id == challenge_id,
+        Challenge.is_deleted == False
+    ).first()
+    if not ch:
+        raise HTTPException(404, "Challenge not found")
+    
+    amount = ch.get_payment_amount(payment_cycle)
+    return {
+        "challenge_id": challenge_id,
+        "payment_cycle": payment_cycle,
+        "amount": amount,
+        "currency": "KRW"
+    }
+
+# -------------------------------------------------------------------
+# 기존 Rounds 관련 코드들은 그대로 유지 (변경사항 없음)
 # -------------------------------------------------------------------
 @router.get("/{challenge_id}/rounds", response_model=List[ChallengeRoundResponse])
 def get_challenge_rounds(challenge_id: int, db: Session = Depends(get_db)):
@@ -455,6 +873,157 @@ def get_challenge_rounds(challenge_id: int, db: Session = Depends(get_db)):
         )
     return out
 
+# 나머지 라우터 함수들도 동일한 패턴으로 수정...
+# (rounds, participation 관련 함수들은 Challenge 모델 변경에 직접적 영향 없음)
+
+@router.post("/{challenge_id}/join")
+def join_challenge(challenge_id: int, db: Session = Depends(get_db), me: int = Depends(get_current_user_id)):
+    ch = db.query(Challenge).filter(
+        Challenge.id == challenge_id,
+        Challenge.is_deleted == False
+    ).first()
+    if not ch:
+        raise HTTPException(404, "Challenge not found")
+    if ch.status != ChallengeStatus.recruiting:
+        raise HTTPException(400, "Can only join recruiting challenges")
+    
+    # 참가 가능 여부 확인 (새 모델 메서드 사용)
+    try:
+        can_join, message = ch.can_join(me)
+        if not can_join:
+            raise HTTPException(400, message)
+    except:
+        # fallback: 기존 로직
+        exists = (
+            db.query(Participation)
+            .filter(Participation.challenge_id == challenge_id, Participation.user_id == me, Participation.is_active == True)
+            .first()
+        )
+        if exists:
+            raise HTTPException(400, "Already joined this challenge")
+        if ch.max_participants:
+            cnt = db.query(Participation).filter(Participation.challenge_id == challenge_id, Participation.is_active == True).count()
+            if cnt >= ch.max_participants:
+                raise HTTPException(400, "Challenge is full")
+    
+    db.add(Participation(challenge_id=challenge_id, user_id=me, role=ParticipationRole.participant))
+    
+    # 참가자 수 증가
+    try:
+        ch.increment_participants()
+    except:
+        ch.current_participants = (ch.current_participants or 0) + 1
+    
+    db.commit()
+    return {"message": "Joined challenge successfully"}
+
+@router.delete("/{challenge_id}/leave")
+def leave_challenge(challenge_id: int, db: Session = Depends(get_db), me: int = Depends(get_current_user_id)):
+    ch = db.query(Challenge).filter(
+        Challenge.id == challenge_id,
+        Challenge.is_deleted == False
+    ).first()
+    if not ch:
+        raise HTTPException(404, "Challenge not found")
+    part = (
+        db.query(Participation)
+        .filter(Participation.challenge_id == challenge_id, Participation.user_id == me)
+        .first()
+    )
+    if not part:
+        raise HTTPException(404, "Not a participant of this challenge")
+    if ch.creator_id == me:
+        raise HTTPException(400, "Creator cannot leave their own challenge. Delete the challenge instead.")
+    if ch.status == ChallengeStatus.completed:
+        raise HTTPException(400, "Cannot leave a completed challenge")
+    
+    db.delete(part)
+    
+    # 참가자 수 감소
+    try:
+        ch.decrement_participants()
+    except:
+        if ch.current_participants > 0:
+            ch.current_participants -= 1
+    
+    db.commit()
+    return {"message": "You have left the challenge"}
+
+@router.get("/{challenge_id}/participants")
+def get_challenge_participants(challenge_id: int, db: Session = Depends(get_db)):
+    ch = db.query(Challenge).filter(
+        Challenge.id == challenge_id,
+        Challenge.is_deleted == False
+    ).first()
+    if not ch:
+        raise HTTPException(404, "Challenge not found")
+    parts = db.query(Participation).filter(Participation.challenge_id == challenge_id).all()
+    users = {u.id: u for u in db.query(User).filter(User.id.in_([p.user_id for p in parts])).all()}
+    return [
+        {
+            "user_id": p.user_id,
+            "username": users.get(p.user_id).username if users.get(p.user_id) else "Unknown",
+            "joined_at": p.joined_at,
+            "status": p.status,
+            "role": p.role.value if hasattr(p.role, "value") else p.role,
+        }
+        for p in parts
+    ]
+
+@router.get("/my", response_model=List[ChallengeResponseWithTags])
+def get_my_challenges(db: Session = Depends(get_db), me: int = Depends(get_current_user_id)):
+    ids = [cid for (cid,) in db.query(Participation.challenge_id).filter(Participation.user_id == me).all()]
+    if not ids:
+        return []
+    rows = db.query(Challenge).filter(
+        Challenge.id.in_(ids),
+        Challenge.is_deleted == False
+    ).all()
+    out = []
+    # 수동으로 설정된 상태 존중
+    for ch in rows:
+        # ch.status = _calculate_status(ch, db, today)  # ✅ 제거
+        out.append(_with_tags(db, ch))
+    return out
+
+@router.delete("/{challenge_id}/kick/{user_id}")
+def kick_participant(
+    challenge_id: int, 
+    user_id: int, 
+    db: Session = Depends(get_db), 
+    me: int = Depends(get_current_user_id)
+):
+    ch = db.query(Challenge).filter(
+        Challenge.id == challenge_id,
+        Challenge.is_deleted == False
+    ).first()
+    if not ch:
+        raise HTTPException(404, "Challenge not found")
+    if ch.creator_id != me and not is_challenge_manager(db, challenge_id, me):
+        raise HTTPException(403, "No permission to kick participants")
+    part = (
+        db.query(Participation)
+        .filter(Participation.challenge_id == challenge_id, Participation.user_id == user_id)
+        .first()
+    )
+    if not part:
+        raise HTTPException(404, "User not in challenge")
+    
+    db.delete(part)
+    
+    # 참가자 수 감소
+    try:
+        ch.decrement_participants()
+    except:
+        if ch.current_participants > 0:
+            ch.current_participants -= 1
+    
+    db.commit()
+    return {"message": "User has been removed from the challenge"}
+
+# -------------------------------------------------------------------
+# Round 관련 함수들 (ChallengeRound는 변경 없으므로 그대로 유지)
+# -------------------------------------------------------------------
 @router.post("/{challenge_id}/rounds", response_model=ChallengeRoundResponse)
 def create_challenge_round(
     challenge_id: int,
@@ -462,7 +1031,10 @@ def create_challenge_round(
     db: Session = Depends(get_db),
     me: int = Depends(get_current_user_id),
 ):
-    ch = db.query(Challenge).filter(Challenge.id == challenge_id).first()
+    ch = db.query(Challenge).filter(
+        Challenge.id == challenge_id,
+        Challenge.is_deleted == False
+    ).first()
     if not ch:
         raise HTTPException(404, "Challenge not found")
     if not can_edit_round(db, challenge_id, None, me):
@@ -495,6 +1067,13 @@ def create_challenge_round(
 
 @router.get("/{challenge_id}/rounds/{round_id}", response_model=ChallengeRoundResponse)
 def get_challenge_round(challenge_id: int, round_id: int, db: Session = Depends(get_db)):
+    ch = db.query(Challenge).filter(
+        Challenge.id == challenge_id,
+        Challenge.is_deleted == False
+    ).first()
+    if not ch:
+        raise HTTPException(404, "Challenge not found")
+    
     r = (
         db.query(ChallengeRound)
         .filter(ChallengeRound.challenge_id == challenge_id, ChallengeRound.id == round_id)
@@ -512,6 +1091,13 @@ def update_challenge_round(
     db: Session = Depends(get_db),
     me: int = Depends(get_current_user_id),
 ):
+    ch = db.query(Challenge).filter(
+        Challenge.id == challenge_id,
+        Challenge.is_deleted == False
+    ).first()
+    if not ch:
+        raise HTTPException(404, "Challenge not found")
+    
     r = (
         db.query(ChallengeRound)
         .filter(ChallengeRound.challenge_id == challenge_id, ChallengeRound.id == round_id)
@@ -522,15 +1108,13 @@ def update_challenge_round(
     if not can_edit_round(db, challenge_id, round_id, me):
         raise HTTPException(403, "No permission to edit this round.")
 
-    ch = db.query(Challenge).filter(Challenge.id == challenge_id).first()
-
     data = round_update.model_dump(exclude_unset=True)
 
     # mode 변경은 hybrid에서만 허용
     if "mode" in data and data["mode"] is not None:
         # Enum 호환 처리
         data["mode"] = data["mode"].value if hasattr(data["mode"], "value") else data["mode"]
-        if ch and ch.mode != "hybrid":
+        if ch and ch.mode != ChallengeMode.hybrid:
             raise HTTPException(400, "mode는 hybrid일 때만 변경 가능")
 
     # 공백 문자열은 None으로 정리
@@ -545,7 +1129,8 @@ def update_challenge_round(
 
     # 실제 반영
     for k, v in data.items():
-        setattr(r, k, v)
+        if hasattr(r, k):
+            setattr(r, k, v)
 
     db.commit()
     db.refresh(r)
@@ -564,6 +1149,13 @@ def delete_challenge_round(
     db: Session = Depends(get_db),
     me: int = Depends(get_current_user_id),
 ):
+    ch = db.query(Challenge).filter(
+        Challenge.id == challenge_id,
+        Challenge.is_deleted == False
+    ).first()
+    if not ch:
+        raise HTTPException(404, "Challenge not found")
+    
     r = (
         db.query(ChallengeRound)
         .filter(ChallengeRound.challenge_id == challenge_id, ChallengeRound.id == round_id)
@@ -581,7 +1173,6 @@ def delete_challenge_round(
 
     # 총 회차 수 동기화
     remain = db.query(ChallengeRound).filter(ChallengeRound.challenge_id == challenge_id).count()
-    ch = db.query(Challenge).filter(Challenge.id == challenge_id).first()
     if ch:
         ch.total_rounds = remain
 
@@ -589,105 +1180,14 @@ def delete_challenge_round(
     return {"message": "Round deleted successfully", "total_rounds": remain}
 
 # -------------------------------------------------------------------
-# Participation / Attendees / Delegation
+# Round 출석 관련 (기존 유지)
 # -------------------------------------------------------------------
-@router.post("/{challenge_id}/join")
-def join_challenge(challenge_id: int, db: Session = Depends(get_db), me: int = Depends(get_current_user_id)):
-    ch = db.query(Challenge).filter(Challenge.id == challenge_id).first()
-    if not ch:
-        raise HTTPException(404, "Challenge not found")
-    if ch.status != "recruiting":
-        raise HTTPException(400, "Can only join recruiting challenges")
-    exists = (
-        db.query(Participation)
-        .filter(Participation.challenge_id == challenge_id, Participation.user_id == me, Participation.is_active == True)
-        .first()
-    )
-    if exists:
-        raise HTTPException(400, "Already joined this challenge")
-    if ch.max_participants:
-        cnt = db.query(Participation).filter(Participation.challenge_id == challenge_id, Participation.is_active == True).count()
-        if cnt >= ch.max_participants:
-            raise HTTPException(400, "Challenge is full")
-    db.add(Participation(challenge_id=challenge_id, user_id=me, role=ParticipationRole.participant))
-    db.commit()
-    return {"message": "Joined challenge successfully"}
-
-@router.delete("/{challenge_id}/leave")
-def leave_challenge(challenge_id: int, db: Session = Depends(get_db), me: int = Depends(get_current_user_id)):
-    ch = db.query(Challenge).filter(Challenge.id == challenge_id).first()
-    if not ch:
-        raise HTTPException(404, "Challenge not found")
-    part = (
-        db.query(Participation)
-        .filter(Participation.challenge_id == challenge_id, Participation.user_id == me)
-        .first()
-    )
-    if not part:
-        raise HTTPException(404, "Not a participant of this challenge")
-    if ch.creator_id == me:
-        raise HTTPException(400, "Creator cannot leave their own challenge. Delete the challenge instead.")
-    if ch.status == "completed":
-        raise HTTPException(400, "Cannot leave a completed challenge")
-    db.delete(part)
-    db.commit()
-    return {"message": "You have left the challenge"}
-
-@router.get("/{challenge_id}/participants")
-def get_challenge_participants(challenge_id: int, db: Session = Depends(get_db)):
-    ch = db.query(Challenge).filter(Challenge.id == challenge_id).first()
-    if not ch:
-        raise HTTPException(404, "Challenge not found")
-    parts = db.query(Participation).filter(Participation.challenge_id == challenge_id).all()
-    users = {u.id: u for u in db.query(User).filter(User.id.in_([p.user_id for p in parts])).all()}
-    return [
-        {
-            "user_id": p.user_id,
-            "username": users.get(p.user_id).username if users.get(p.user_id) else "Unknown",
-            "joined_at": p.joined_at,
-            "status": p.status,
-            "role": p.role.value if hasattr(p.role, "value") else p.role,
-        }
-        for p in parts
-    ]
-
-@router.get("/my", response_model=List[ChallengeResponseWithTags])
-def get_my_challenges(db: Session = Depends(get_db), me: int = Depends(get_current_user_id)):
-    ids = [cid for (cid,) in db.query(Participation.challenge_id).filter(Participation.user_id == me).all()]
-    if not ids:
-        return []
-    rows = db.query(Challenge).filter(Challenge.id.in_(ids)).all()
-    out = []
-    today = date.today()
-    for ch in rows:
-        ch.status = _calculate_status(ch, db, today)
-        out.append(_with_tags(db, ch))
-    return out
-
-@router.delete("/{challenge_id}/kick/{user_id}")
-def kick_participant(challenge_id: int, user_id: int, db: Session = Depends(get_db), me: int = Depends(get_current_user_id)):
-    ch = db.query(Challenge).filter(Challenge.id == challenge_id).first()
-    if not ch:
-        raise HTTPException(404, "Challenge not found")
-    if ch.creator_id != me and not is_challenge_manager(db, challenge_id, me):
-        raise HTTPException(403, "No permission to kick participants")
-    part = (
-        db.query(Participation)
-        .filter(Participation.challenge_id == challenge_id, Participation.user_id == user_id)
-        .first()
-    )
-    if not part:
-        raise HTTPException(404, "User not in challenge")
-    db.delete(part)
-    db.commit()
-    return {"message": "User has been removed from the challenge"}
-
-# RSVP / Attendees per round
 @router.post("/{challenge_id}/rounds/{round_id}/attend")
 def attend_round(challenge_id: int, round_id: int, db: Session = Depends(get_db), me: int = Depends(get_current_user_id)):
+    from app.models.participation import ParticipationStatus
     joined = (
         db.query(Participation)
-        .filter(Participation.challenge_id == challenge_id, Participation.user_id == me, Participation.is_active == True)
+        .filter(Participation.challenge_id == challenge_id, Participation.user_id == me, Participation.status == ParticipationStatus.active)
         .first()
     )
     if not joined:
@@ -715,13 +1215,20 @@ def unattend_round(challenge_id: int, round_id: int, db: Session = Depends(get_d
     db.commit()
     return {"message": "RSVP removed."}
 
-# 프론트 호환: /decline alias (POST)
 @router.post("/{challenge_id}/rounds/{round_id}/decline")
 def decline_round_alias(challenge_id: int, round_id: int, db: Session = Depends(get_db), me: int = Depends(get_current_user_id)):
     return unattend_round(challenge_id, round_id, db, me)
 
 @router.get("/{challenge_id}/rounds/{round_id}/attendees")
 def get_round_attendees(challenge_id: int, round_id: int, planned_only: bool = True, db: Session = Depends(get_db)):
+    # 챌린지 존재 확인
+    ch = db.query(Challenge).filter(
+        Challenge.id == challenge_id,
+        Challenge.is_deleted == False
+    ).first()
+    if not ch:
+        raise HTTPException(404, "Challenge not found")
+    
     q = db.query(RoundAttendance).filter(RoundAttendance.round_id == round_id)
     if planned_only:
         q = q.filter(RoundAttendance.status == "pending")
@@ -741,9 +1248,17 @@ def get_round_attendees(challenge_id: int, round_id: int, planned_only: bool = T
         for uid in ids
     ]
 
-# Delegation (challenge owner only)
+# -------------------------------------------------------------------
+# 권한 위임 관련 (기존 유지, 삭제 확인만 추가)
+# -------------------------------------------------------------------
 @router.post("/{challenge_id}/delegate")
 def delegate_challenge(challenge_id: int, user_id: int = Body(..., embed=True), db: Session = Depends(get_db), me: int = Depends(get_current_user_id)):
+    ch = db.query(Challenge).filter(
+        Challenge.id == challenge_id,
+        Challenge.is_deleted == False
+    ).first()
+    if not ch:
+        raise HTTPException(404, "Challenge not found")
     if not is_challenge_owner(db, challenge_id, me):
         raise HTTPException(403, "Only owner can delegate managers.")
     p = db.query(Participation).filter(Participation.challenge_id == challenge_id, Participation.user_id == user_id).first()
@@ -758,6 +1273,12 @@ def delegate_challenge(challenge_id: int, user_id: int = Body(..., embed=True), 
 
 @router.post("/{challenge_id}/undelegate")
 def undelegate_challenge(challenge_id: int, user_id: int = Body(..., embed=True), db: Session = Depends(get_db), me: int = Depends(get_current_user_id)):
+    ch = db.query(Challenge).filter(
+        Challenge.id == challenge_id,
+        Challenge.is_deleted == False
+    ).first()
+    if not ch:
+        raise HTTPException(404, "Challenge not found")
     if not is_challenge_owner(db, challenge_id, me):
         raise HTTPException(403, "Only owner can undelegate managers.")
     p = db.query(Participation).filter(Participation.challenge_id == challenge_id, Participation.user_id == user_id).first()
@@ -769,7 +1290,10 @@ def undelegate_challenge(challenge_id: int, user_id: int = Body(..., embed=True)
 
 @router.post("/{challenge_id}/transfer")
 def transfer_challenge(challenge_id: int, to_user_id: int = Body(..., embed=True), db: Session = Depends(get_db), me: int = Depends(get_current_user_id)):
-    ch = db.query(Challenge).filter(Challenge.id == challenge_id).first()
+    ch = db.query(Challenge).filter(
+        Challenge.id == challenge_id,
+        Challenge.is_deleted == False
+    ).first()
     if not ch:
         raise HTTPException(404, "Challenge not found")
     if ch.creator_id != me:
@@ -780,6 +1304,12 @@ def transfer_challenge(challenge_id: int, to_user_id: int = Body(..., embed=True
 
 @router.post("/{challenge_id}/rounds/{round_id}/delegate-manager")
 def delegate_round_manager(challenge_id: int, round_id: int, user_id: int = Body(..., embed=True), db: Session = Depends(get_db), me: int = Depends(get_current_user_id)):
+    ch = db.query(Challenge).filter(
+        Challenge.id == challenge_id,
+        Challenge.is_deleted == False
+    ).first()
+    if not ch:
+        raise HTTPException(404, "Challenge not found")
     if not is_challenge_owner(db, challenge_id, me):
         raise HTTPException(403, "Only the creator can delegate a round manager.")
     r = db.query(ChallengeRound).filter(ChallengeRound.id == round_id, ChallengeRound.challenge_id == challenge_id).first()
@@ -798,6 +1328,12 @@ def delegate_round_manager(challenge_id: int, round_id: int, user_id: int = Body
 
 @router.post("/{challenge_id}/rounds/{round_id}/undelegate-manager")
 def undelegate_round_manager(challenge_id: int, round_id: int, user_id: int = Body(..., embed=True), db: Session = Depends(get_db), me: int = Depends(get_current_user_id)):
+    ch = db.query(Challenge).filter(
+        Challenge.id == challenge_id,
+        Challenge.is_deleted == False
+    ).first()
+    if not ch:
+        raise HTTPException(404, "Challenge not found")
     if not is_challenge_owner(db, challenge_id, me):
         raise HTTPException(403, "Only the creator can revoke a round manager.")
     rm = db.query(RoundManager).filter(RoundManager.challenge_id == challenge_id, RoundManager.round_id == round_id, RoundManager.user_id == user_id).first()
@@ -806,3 +1342,136 @@ def undelegate_round_manager(challenge_id: int, round_id: int, user_id: int = Bo
     db.delete(rm)
     db.commit()
     return {"message": f"user {user_id} is no longer manager for round {round_id}"}
+
+# -------------------------------------------------------------------
+# 새로운 챌린지 관리 엔드포인트들
+# -------------------------------------------------------------------
+@router.post("/{challenge_id}/start")
+def start_challenge_manually(
+    challenge_id: int, 
+    db: Session = Depends(get_db), 
+    me: int = Depends(get_current_user_id)
+):
+    """챌린지 수동 시작"""
+    ch = db.query(Challenge).filter(
+        Challenge.id == challenge_id,
+        Challenge.is_deleted == False
+    ).first()
+    if not ch:
+        raise HTTPException(404, "Challenge not found")
+    if ch.creator_id != me:
+        raise HTTPException(403, "Only the creator can start the challenge")
+    
+    # 새 모델의 메서드 사용
+    try:
+        if ch.can_start():
+            success = ch.start_challenge()
+            if success:
+                db.commit()
+                return {"message": "Challenge started successfully", "status": ch.status}
+            else:
+                raise HTTPException(400, "Failed to start challenge")
+        else:
+            raise HTTPException(400, "Challenge cannot be started. Check minimum participants and start date.")
+    except Exception as e:
+        # fallback
+        if ch.status != ChallengeStatus.recruiting:
+            raise HTTPException(400, "Only recruiting challenges can be started")
+        if ch.current_participants < (ch.min_participants or 1):
+            raise HTTPException(400, "Not enough participants to start")
+        
+        ch.status = ChallengeStatus.active
+        db.commit()
+        return {"message": "Challenge started successfully", "status": ch.status}
+
+@router.post("/{challenge_id}/complete")
+def complete_challenge_manually(
+    challenge_id: int, 
+    db: Session = Depends(get_db), 
+    me: int = Depends(get_current_user_id)
+):
+    """챌린지 수동 완료"""
+    ch = db.query(Challenge).filter(
+        Challenge.id == challenge_id,
+        Challenge.is_deleted == False
+    ).first()
+    if not ch:
+        raise HTTPException(404, "Challenge not found")
+    if ch.creator_id != me:
+        raise HTTPException(403, "Only the creator can complete the challenge")
+    
+    # 새 모델의 메서드 사용
+    try:
+        success = ch.complete_challenge()
+        if success:
+            db.commit()
+            return {"message": "Challenge completed successfully", "status": ch.status}
+        else:
+            raise HTTPException(400, "Only active challenges can be completed")
+    except Exception as e:
+        # fallback
+        if ch.status != ChallengeStatus.active:
+            raise HTTPException(400, "Only active challenges can be completed")
+        
+        ch.status = ChallengeStatus.completed
+        ch.completed_at = func.now()
+        db.commit()
+        return {"message": "Challenge completed successfully", "status": ch.status}
+
+@router.get("/{challenge_id}/statistics")
+def get_challenge_statistics(challenge_id: int, db: Session = Depends(get_db)):
+    """챌린지 통계 정보"""
+    ch = db.query(Challenge).filter(
+        Challenge.id == challenge_id,
+        Challenge.is_deleted == False
+    ).first()
+    if not ch:
+        raise HTTPException(404, "Challenge not found")
+    
+    # 기본 통계
+    total_participants = db.query(Participation).filter(Participation.challenge_id == challenge_id).count()
+    active_participants = db.query(Participation).filter(
+        Participation.challenge_id == challenge_id, 
+        Participation.is_active == True
+    ).count()
+    
+    # 새 모델의 메서드 사용
+    try:
+        duration_days = ch.get_duration_days()
+        remaining_days = ch.get_remaining_days()
+        progress_percentage = ch.get_progress_percentage()
+    except:
+        # fallback 계산
+        duration_days = (ch.end_date - ch.start_date).days + 1 if ch.start_date and ch.end_date else 0
+        today = date.today()
+        if ch.end_date and today > ch.end_date:
+            remaining_days = 0
+        elif ch.start_date and today < ch.start_date:
+            remaining_days = (ch.end_date - ch.start_date).days + 1 if ch.end_date else 0
+        else:
+            remaining_days = (ch.end_date - today).days + 1 if ch.end_date else 0
+        
+        if duration_days > 0 and ch.start_date and ch.end_date:
+            if today < ch.start_date:
+                progress_percentage = 0.0
+            elif today > ch.end_date:
+                progress_percentage = 100.0
+            else:
+                passed_days = (today - ch.start_date).days + 1
+                progress_percentage = (passed_days / duration_days) * 100.0
+        else:
+            progress_percentage = 0.0
+    
+    return {
+        "challenge_id": challenge_id,
+        "total_participants": total_participants,
+        "active_participants": active_participants,
+        "current_participants": ch.current_participants,
+        "max_participants": ch.max_participants,
+        "duration_days": duration_days,
+        "remaining_days": remaining_days,
+        "progress_percentage": round(progress_percentage, 1),
+        "status": ch.status.value if hasattr(ch.status, 'value') else ch.status,
+        "computed_status": _calculate_status(ch, db, date.today()),
+        "payment_required": ch.is_payment_required() if hasattr(ch, 'is_payment_required') else (ch.payment_type != PaymentType.free),
+    }

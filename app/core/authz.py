@@ -1,3 +1,4 @@
+#core.autz.py
 from sqlalchemy.orm import Session
 from app.models.challenge import Challenge
 from app.models.participation import Participation, ParticipationRole

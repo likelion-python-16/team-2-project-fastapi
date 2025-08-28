@@ -7,10 +7,11 @@
     body{font-family:system-ui,apple-system,Segoe UI,Roboto,Arial;margin:16px}
     .row{display:flex;gap:16px}
     .col{flex:1}
-    .panel{border:1px solid #ddd;border-radius:8px;padding:12px;margin-bottom:20px}
+    .panel{border:1px solid #ddd;border-radius:8px;padding:12px;margin-bottom:20px;background:#fff}
     .muted{color:#666}
     .inline-controls label{display:inline-block;margin:6px 10px 6px 0}
     .inline-controls input[type="number"]{width:140px}
+    .inline-controls select{width:160px}
     textarea{width:100%;max-width:520px}
     .chip{display:inline-flex;align-items:center;gap:8px;border:1px solid #ddd;border-radius:999px;padding:6px 12px;font-size:13px;background:#fafafa;cursor:pointer;user-select:none}
     .chip.sel{background:#2563eb;border-color:#2563eb;color:#fff}
@@ -22,6 +23,25 @@
     #placeResults .item{padding:6px;border-bottom:1px solid #eee;cursor:pointer;border-radius:4px}
     #placeResults .item:hover{background:#f7f7f7}
     #placePreview{display:none;margin-top:10px}
+    .payment-type-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:8px 0}
+    .payment-option{border:1px solid #ddd;padding:8px;border-radius:6px;cursor:pointer;text-align:center;background:#fafafa}
+    .payment-option.selected{background:#2563eb;color:white;border-color:#2563eb}
+    .fee-inputs{margin-top:10px}
+    .fee-inputs.hidden{display:none}
+    
+    /* 결제 모달 스타일 */
+    .payment-modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);display:none;z-index:1000;align-items:center;justify-content:center}
+    .payment-modal-content{background:white;border-radius:16px;padding:32px;max-width:450px;width:90%;box-shadow:0 20px 40px rgba(0,0,0,0.1);animation:modalShow 0.3s ease}
+    @keyframes modalShow{from{opacity:0;transform:translateY(-20px)}to{opacity:1;transform:translateY(0)}}
+    .payment-modal h3{margin:0 0 20px;color:#111;font-size:20px;text-align:center}
+    .payment-info{background:#f8f9fa;border-radius:12px;padding:20px;margin:20px 0;border-left:4px solid #2563eb}
+    .payment-amount{font-size:28px;font-weight:bold;color:#2563eb;margin:12px 0;text-align:center}
+    .payment-buttons{display:flex;gap:12px;margin-top:24px}
+    .payment-btn{flex:1;padding:14px 20px;border-radius:10px;border:none;cursor:pointer;font-weight:600;font-size:14px;transition:all 0.2s}
+    .payment-btn.primary{background:#2563eb;color:white}
+    .payment-btn.secondary{background:#e5e7eb;color:#374151}
+    .payment-btn:hover.primary{background:#1d4ed8;transform:translateY(-1px)}
+    .payment-btn:hover.secondary{background:#d1d5db}
   </style>
 </head>
 <body>
@@ -30,7 +50,10 @@
 <div class="panel">
   <div class="row">
     <div class="col">
-      <label>Title <input id="title" placeholder="제목"></label><br>
+      <label>Title <input id="title" placeholder="제목"></label><br><br>
+      <label>Description<br>
+        <textarea id="description" rows="3" placeholder="챌린지에 대한 설명을 입력하세요"></textarea>
+      </label><br>
       <label>Start <input id="start" type="date"></label>
       <label>End <input id="end" type="date"></label><br>
       <label>Total rounds <input id="total" type="number" min="1" value="5"></label><br>
@@ -46,38 +69,51 @@
       <label><input type="checkbox" id="samePlace"> 모든 회차 동일 장소</label><br>
       <label>Default Zoom <input id="zoom" placeholder="https://..."></label><br>
 
-      <!-- 💳 결제/참가: 각자 입력(두 칸), 0 이상, 둘 다 양수 가능 -->
+      <!-- 💳 결제 설정 -->
       <div class="panel" style="margin:10px 0">
-        <h3 style="margin:0 0 8px">결제/참가 설정</h3>
+        <h3 style="margin:0 0 8px">결제 설정</h3>
 
-        <div class="inline-controls">
-          <label>회비(원)
-            <input id="fee" type="number" min="0" value="0" placeholder="예: 10000">
-          </label>
-          <label>참가비(원)
-            <input id="participation_fee" type="number" min="0" value="0" placeholder="예: 3000">
-          </label>
+        <label>결제 타입:</label>
+        <div class="payment-type-grid">
+          <div class="payment-option selected" onclick="selectPaymentType('free')" data-type="free">
+            <div><strong>무료</strong></div>
+            <div class="muted" style="font-size:11px">무료 참가</div>
+          </div>
+          <div class="payment-option" onclick="selectPaymentType('entry_fee')" data-type="entry_fee">
+            <div><strong>입장비</strong></div>
+            <div class="muted" style="font-size:11px">챌린지 시작 시 1회 결제</div>
+          </div>
+          <div class="payment-option" onclick="selectPaymentType('monthly')" data-type="monthly">
+            <div><strong>월 회비</strong></div>
+            <div class="muted" style="font-size:11px">매월 정기 결제</div>
+          </div>
         </div>
 
-        <!-- 요약/안내 영역 -->
-        <div id="priceSummary" class="muted" style="font-size:12px;margin-top:6px"></div>
-        <div id="priceNotice" class="muted" style="font-size:12px"></div>
-        <div id="priceError" class="muted" style="font-size:12px;color:#b91c1c"></div>
+        <!-- 입장비 입력 -->
+        <div id="entryFeeInput" class="fee-inputs hidden">
+          <label>입장비 (원)
+            <input id="entry_fee" type="number" min="1" max="1000000" placeholder="예: 10000">
+          </label>
+          <div class="muted" style="font-size:12px">참가 시 1회 결제 (최대 100만원)</div>
+        </div>
+
+        <!-- 월 회비 입력 -->
+        <div id="monthlyFeeInput" class="fee-inputs hidden">
+          <label>월 회비 (원)
+            <input id="monthly_fee" type="number" min="1" max="100000" placeholder="예: 5000">
+          </label>
+          <div class="muted" style="font-size:12px">매월 정기 결제 (최대 10만원)</div>
+        </div>
+
+        <!-- 결제 안내 -->
+        <div id="paymentNotice" class="muted" style="font-size:12px;margin-top:8px;padding:8px;background:#f8f9fa;border-radius:4px"></div>
 
         <hr style="border:none;border-top:1px solid #eee;margin:10px 0">
 
-        <!-- 합산 오해 방지 안내 -->
-        <ul class="muted" style="font-size:12px; margin:0; padding-left:16px; list-style:disc">
-          <li><b>회비</b>는 모임 전체/기간 기준의 공통 비용입니다.</li>
-          <li><b>참가비</b>는 회차별로 참가하는 인원에게 받는 비용입니다.</li>
-          <li>두 값은 <b>서로 다른 성격</b>이며 <b>합산 결제가 아닙니다</b> (운영 정책에 따라 정산 방식은 달라질 수 있어요).</li>
-          <li>두 금액 모두 <b>0 이상</b> 입력할 수 있으며, <b>둘 다 유료</b>로 설정해도 됩니다.</li>
-          <li><b>둘 다 0을 초과</b>할 경우 <b>강사님 포인트는 지급되지 않습니다.</b></li>
-        </ul>
-
-        <div class="inline-controls" style="margin-top:10px">
-          <label>최소 인원 <input id="min_participants" type="number" min="0" placeholder="예: 4"></label>
-          <label>최대 인원 <input id="max_participants" type="number" min="0" placeholder="예: 12"></label>
+        <div class="inline-controls">
+          <label>최소 인원 <input id="min_participants" type="number" min="1" value="1" placeholder="예: 4"></label>
+          <label>최대 인원 <input id="max_participants" type="number" min="1" placeholder="예: 12"></label>
+          <label>최소 참가율(%) <input id="min_participation_rate" type="number" min="0" max="100" value="80" placeholder="예: 80"></label>
         </div>
       </div>
 
@@ -86,7 +122,7 @@
         <h3 style="margin:0 0 8px">리워드</h3>
         <label><input type="checkbox" id="use_reward"> 리워드 사용</label><br>
         <label>리워드 내용<br>
-          <textarea id="reward" rows="3" placeholder="예: 모두 80% 이상 참여 시 배드민턴 셔틀콕 1통 제공"></textarea>
+          <textarea id="reward_description" rows="3" placeholder="예: 모두 80% 이상 참여 시 배드민턴 셔틀콕 1통 제공"></textarea>
         </label>
       </div>
 
@@ -99,10 +135,9 @@
         <div id="catGrid" class="grid"></div>
       </div>
 
-      <!-- 장소 검색 -->
+      <!-- 장소 -->
       <div class="panel" style="margin:10px 0">
         <h3 style="margin:0 0 8px">장소</h3>
-        <!-- 키워드 검색 + 지도 검색 -->
         <div class="row" style="align-items:center">
           <label class="col" style="display:flex; gap:8px; align-items:center">
             장소 검색
@@ -116,10 +151,8 @@
           장소명을 모를 때는 <b>지도 검색</b>을 눌러 지도에서 직접 선택하세요.
         </div>
 
-        <!-- 검색 결과 -->
         <div id="placeResults"></div>
 
-        <!-- 선택 미리보기 -->
         <div id="placePreview" class="panel">
           <div style="display:flex; gap:10px; align-items:flex-start">
             <img id="pv_img" alt="map preview" style="width:220px;height:140px;object-fit:cover;border-radius:6px;border:1px solid #eee">
@@ -137,12 +170,17 @@
 
       <!-- 실제 폼 값 -->
       <label>장소명 <input id="place"></label><br>
-      <label>도로명주소 <input id="road"></label><br>
-      <label>주소(지번) <input id="addr"></label><br>
-      <label>네이버지도 링크 <input id="mapurl" placeholder="네이버 지도 place url"></label><br>
+      <label>주소 <input id="addr"></label><br>
       <input id="lat" type="hidden">
       <input id="lng" type="hidden">
       <input id="placeId" type="hidden"><br>
+
+      <!-- 추가 설정 -->
+      <div class="panel" style="margin:10px 0">
+        <h3 style="margin:0 0 8px">추가 설정</h3>
+        <label><input type="checkbox" id="require_approval"> 참가 승인 필요</label><br>
+        <label><input type="checkbox" id="is_public" checked> 공개 챌린지</label><br>
+      </div>
 
       <button onclick="createChallenge()">Create</button>
       <span id="createStatus"></span>
@@ -150,11 +188,31 @@
   </div>
 </div>
 
-<!-- axios CDN -->
+<!-- 결제 확인 모달 -->
+<div id="paymentModal" class="payment-modal">
+  <div class="payment-modal-content">
+    <h3>🎉 챌린지 생성 완료!</h3>
+    <div class="payment-info">
+      <div style="margin-bottom:8px">챌린지: <strong id="modalChallengeName">-</strong></div>
+      <div style="margin-bottom:8px">결제 타입: <strong id="modalPaymentType">-</strong></div>
+      <div class="payment-amount" id="modalPaymentAmount">0원</div>
+    </div>
+    <div style="font-size:14px;color:#6b7280;line-height:1.5;text-align:center">
+      유료 챌린지 생성을 위해 참가비 결제가 필요합니다.<br>
+      결제 완료 후 챌린지 모집이 시작됩니다.<br>
+      <small style="color:#dc2626">결제하지 않으면 챌린지가 생성되지 않습니다.</small>
+    </div>
+    <div class="payment-buttons">
+      <button class="payment-btn secondary" onclick="cancelChallenge()">취소</button>
+      <button class="payment-btn primary" onclick="proceedWithPayment()">결제하고 생성</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 
-<!-- ✅ 토큰 검사 + axios Authorization 전역 세팅 -->
 <script>
+/* ===== JWT 파싱 & 전역 Authorization ===== */
 function parseJwt(token) {
   const base64Url = token.split('.')[1];
   const base64 = base64Url.replace(/-/g,'+').replace(/_/g,'/');
@@ -163,22 +221,18 @@ function parseJwt(token) {
   );
   return JSON.parse(json);
 }
-
 (function ensureAuth(){
   const t = localStorage.getItem('access_token');
   const goLogin = () => { alert('로그인이 필요합니다 🙏'); location.href='/login'; };
-
   if (!t) return goLogin();
   try {
     const { exp } = parseJwt(t);
-    if (Date.now() > exp * 1000) return goLogin();   // 만료
-    axios.defaults.headers.common['Authorization'] = `Bearer ${t}`;  // 전역 적용
-  } catch(e) {
-    return goLogin();
-  }
+    if (Date.now() > exp * 1000) return goLogin();
+    axios.defaults.headers.common['Authorization'] = `Bearer ${t}`;
+  } catch(e) { return goLogin(); }
 })();
 
-// 공통 GET 헬퍼 (axios)
+/* ===== 공통 GET 헬퍼 ===== */
 async function apiGet(url, params = {}) {
   try {
     const res = await axios.get(url, { params });
@@ -194,11 +248,38 @@ async function apiGet(url, params = {}) {
 </script>
 
 <script>
-/* ===== 인증 헤더 (개별 요청용) ===== */
-function authHeader(){
-  const token = localStorage.getItem("access_token");
-  return token ? { Authorization: `Bearer ${token}` } : {};
+/* ===== 결제 타입 선택/표시 ===== */
+let currentPaymentType = 'free';
+
+function selectPaymentType(type) {
+  currentPaymentType = type;
+  document.querySelectorAll('.payment-option').forEach(opt => opt.classList.remove('selected'));
+  document.querySelector(`[data-type="${type}"]`).classList.add('selected');
+
+  const entryInput = document.getElementById('entryFeeInput');
+  const monthlyInput = document.getElementById('monthlyFeeInput');
+  entryInput.classList.add('hidden'); monthlyInput.classList.add('hidden');
+  if (type === 'entry_fee') entryInput.classList.remove('hidden');
+  if (type === 'monthly')   monthlyInput.classList.remove('hidden');
+  updatePaymentNotice();
 }
+
+function updatePaymentNotice() {
+  const notice = document.getElementById('paymentNotice');
+  const entryFee = Number(document.getElementById('entry_fee').value || 0);
+  const monthlyFee = Number(document.getElementById('monthly_fee').value || 0);
+
+  switch(currentPaymentType) {
+    case 'free':
+      notice.textContent = '무료 챌린지입니다. 참가비가 없습니다.'; break;
+    case 'entry_fee':
+      notice.textContent = entryFee > 0 ? `참가 시 ${entryFee.toLocaleString()}원 1회 결제합니다.` : '입장비를 입력해주세요.'; break;
+    case 'monthly':
+      notice.textContent = monthlyFee > 0 ? `매월 ${monthlyFee.toLocaleString()}원을 결제합니다.` : '월 회비를 입력해주세요.'; break;
+  }
+}
+document.getElementById('entry_fee').addEventListener('input', updatePaymentNotice);
+document.getElementById('monthly_fee').addEventListener('input', updatePaymentNotice);
 
 /* ===== 카테고리 ===== */
 const catGrid = document.getElementById('catGrid');
@@ -209,11 +290,13 @@ let selectedCategories = [];
 function renderCategories(){
   catGrid.innerHTML = categories.map(c=>{
     const on = selectedCategories.includes(c);
-    return `<span class="chip ${on?'sel':''}" onclick="toggleCategory('${c.replace(/'/g,"\\'")}')">${c}</span>`;
+    const esc = c.replace(/'/g,"\\'");
+    return `<span class="chip ${on?'sel':''}" onclick="toggleCategory('${esc}')">${c}</span>`;
   }).join('');
-  selCats.innerHTML = selectedCategories.map(c =>
-    `<span class="chip x" onclick="removeCategory('${c.replace(/'/g,"\\'")}')"><b>×</b>${c}</span>`
-  ).join('');
+  selCats.innerHTML = selectedCategories.map(c => {
+    const esc = c.replace(/'/g,"\\'");
+    return `<span class="chip x" onclick="removeCategory('${esc}')"><b>×</b>${c}</span>`;
+  }).join('');
 }
 function toggleCategory(name){
   const i = selectedCategories.indexOf(name);
@@ -230,14 +313,13 @@ function removeCategory(name){
 }
 async function loadCategories(){
   try{
-    const data = await apiGet('/api/v1/tags/categories'); // list[str]
+    const data = await apiGet('/api/v1/tags/categories');
     categories = Array.isArray(data) ? data : [];
     renderCategories();
   }catch(e){ console.error(e); }
 }
 
-/* ===== 지도/장소 검색 ===== */
-// 네이버 placeId 추출 (id, placeId, link 모두 시도)
+/* ===== 장소 검색/지도 ===== */
 function extractPlaceId(item){
   if (!item) return null;
   if (item.id && /^\d+$/.test(String(item.id))) return String(item.id);
@@ -250,46 +332,34 @@ function extractPlaceId(item){
   return null;
 }
 
-// 네이버 지도 링크 생성 (placeId가 있으면 마커 보장)
 function makeNaverPlaceUrl({ placeId, lat, lng, title } = {}) {
   const lvl = 15;
   if (placeId) {
     const c = (lat != null && lng != null) ? `?c=${lng},${lat},${lvl},0,0,0,dh` : '';
     return `https://map.naver.com/v5/entry/place/${encodeURIComponent(String(placeId))}${c}`;
   }
-  if (lat != null && lng != null) {
-    return `https://map.naver.com/v5/?c=${lng},${lat},${lvl},0,0,0,dh`;
-  }
+  if (lat != null && lng != null) return `https://map.naver.com/v5/?c=${lng},${lat},${lvl},0,0,0,dh`;
   const key = encodeURIComponent((title || '').trim());
   return `https://map.naver.com/v5/search/${key}`;
 }
 
-// StaticMap 이미지 로더 (blob)
 const pvImg = document.getElementById('pv_img');
 if (pvImg) { pvImg.onerror = () => { pvImg.removeAttribute('src'); }; }
 let __pv_blob_url = null;
 async function loadStaticMap(lat, lng, w=360, h=220, scale=2, level=16){
   try{
     const resp = await axios.get('/places/staticmap', {
-      params: { lat, lng, w, h, scale, level },
-      responseType: 'blob'
+      params: { lat, lng, w, h, scale, level }, responseType: 'blob'
     });
     if (__pv_blob_url) URL.revokeObjectURL(__pv_blob_url);
     __pv_blob_url = URL.createObjectURL(resp.data);
     pvImg.src = __pv_blob_url;
-  }catch(e){
-    console.warn('staticmap load failed', e);
-    pvImg.removeAttribute('src');
-  }
+  }catch(e){ pvImg.removeAttribute('src'); }
 }
 
 let _placeItems = [];
 let _searchTimer;
-
-function searchPlace(){
-  clearTimeout(_searchTimer);
-  _searchTimer = setTimeout(_doSearchPlace, 250);
-}
+function searchPlace(){ clearTimeout(_searchTimer); _searchTimer = setTimeout(_doSearchPlace, 250); }
 
 async function _doSearchPlace(){
   const q = (document.getElementById('placeQuery').value || '').trim();
@@ -301,10 +371,7 @@ async function _doSearchPlace(){
   try{
     const data = await apiGet('/naver/local', { q, display: 10, start: 1 });
     _placeItems = data.items || [];
-  }catch(e){
-    alert('검색 실패');
-    return;
-  }
+  }catch(e){ alert('검색 실패'); return; }
 
   if(!_placeItems.length){ box.style.display='none'; box.innerHTML=''; return; }
 
@@ -333,13 +400,11 @@ async function selectPlace(i){
     const q = road || addr || title;
     if(q){
       const j = await apiGet('/places/geocode', { query: q });
-      lat = j.lat ?? null;
-      lng = j.lng ?? null;
+      lat = j.lat ?? null; lng = j.lng ?? null;
     }
   }catch(e){}
 
   const link  = makeNaverPlaceUrl({placeId, lat, lng, title});
-
   const box = document.getElementById('placeResults');
   box.style.display='none'; box.innerHTML='';
 
@@ -351,11 +416,8 @@ async function selectPlace(i){
   document.getElementById('pv_link').href = link;
   document.getElementById('pv_link_hint').innerText = placeId ? '🔵 이 링크는 해당 장소에 마커가 표시됩니다.' : '⚪ 좌표/검색 기반 링크(마커는 보장되지 않음)';
 
-  if(lat!=null && lng!=null){
-    await loadStaticMap(lat, lng, 360, 220, 2, 16);
-  }else{
-    pvImg.removeAttribute('src');
-  }
+  if(lat!=null && lng!=null){ await loadStaticMap(lat, lng, 360, 220, 2, 16); }
+  else { pvImg.removeAttribute('src'); }
   document.getElementById('placePreview').style.display='block';
 
   window.__lastPicked = { title, road, addr, link, lat, lng, placeId };
@@ -365,21 +427,15 @@ function confirmSelectedPlace(){
   const p = window.__lastPicked;
   if(!p){ alert('먼저 결과에서 항목을 선택하세요'); return; }
   document.getElementById('place').value   = p.title || '';
-  document.getElementById('road').value    = p.road  || '';
-  document.getElementById('addr').value    = p.addr  || '';
-  document.getElementById('mapurl').value  = p.link  || '';
+  document.getElementById('addr').value    = (p.road || p.addr) || '';
   document.getElementById('lat').value     = p.lat != null ? p.lat : '';
   document.getElementById('lng').value     = p.lng != null ? p.lng : '';
   document.getElementById('placeId').value = p.placeId || '';
   alert('장소 정보가 입력되었습니다.');
 }
 
-// 지도 검색 팝업
-function openMapPicker(){
-  window.open('/map', 'mapPicker', 'width=1200,height=800');
-}
+function openMapPicker(){ window.open('/map', 'mapPicker', 'width=1200,height=800'); }
 
-// 팝업 → 부모로 전달된 장소 선택 결과
 window.addEventListener('message', async (e)=>{
   const msg = e.data || {};
   if(msg.type === 'placePicked'){
@@ -389,13 +445,10 @@ window.addEventListener('message', async (e)=>{
     const lat   = (msg.lat ?? null);
     const lng   = (msg.lng ?? null);
     const placeId = msg.placeId || msg.id || null;
-
     const link = makeNaverPlaceUrl({placeId, lat, lng, title});
 
     document.getElementById('place').value   = title;
-    document.getElementById('road').value    = road;
-    document.getElementById('addr').value    = addr;
-    document.getElementById('mapurl').value  = link;
+    document.getElementById('addr').value    = road || addr;
     document.getElementById('lat').value     = lat ?? '';
     document.getElementById('lng').value     = lng ?? '';
     document.getElementById('placeId').value = placeId || '';
@@ -407,65 +460,33 @@ window.addEventListener('message', async (e)=>{
     document.getElementById('pv_lng').innerText   = lng ?? '-';
     document.getElementById('pv_link').href       = link;
     document.getElementById('pv_link_hint').innerText = placeId ? '🔵 이 링크는 해당 장소에 마커가 표시됩니다.' : '⚪ 좌표/검색 기반 링크(마커는 보장되지 않음)';
-    if(lat!=null && lng!=null){
-      await loadStaticMap(lat, lng, 360, 220, 2, 16);
-    }
+    if(lat!=null && lng!=null){ await loadStaticMap(lat, lng, 360, 220, 2, 16); }
     document.getElementById('placePreview').style.display='block';
   }
 });
-
-/* ===== 결제/참가 요약/검증 ===== */
-const feeEl  = document.getElementById('fee');
-const partEl = document.getElementById('participation_fee');
-const priceSummary = document.getElementById('priceSummary');
-const priceNotice  = document.getElementById('priceNotice');
-const priceError   = document.getElementById('priceError');
-
-function repaintPriceHelp(){
-  const fee  = Number(feeEl.value || '0');
-  const part = Number(partEl.value || '0');
-
-  priceSummary.textContent = `회비: ${isNaN(fee)?'-':fee.toLocaleString()}원 / 참가비: ${isNaN(part)?'-':part.toLocaleString()}원`;
-  priceError.textContent = '';
-  priceNotice.textContent = '';
-
-  if (fee < 0 || part < 0) {
-    priceError.textContent = '정중히 안내드립니다: 회비/참가비는 0 이상의 값으로 입력해 주세요.';
-    return;
-  }
-  if (fee > 0 && part > 0) {
-    priceNotice.textContent = '안내: 회비와 참가비를 모두 받는 경우, 강사님 포인트는 지급되지 않습니다.';
-  }
-}
-[feeEl, partEl].forEach(el => el.addEventListener('input', repaintPriceHelp));
-
-function getPricesOrThrow(){
-  const fee  = Number(document.getElementById('fee').value || '0');
-  const participation_fee = Number(document.getElementById('participation_fee').value || '0');
-  if (fee < 0 || participation_fee < 0) {
-    throw new Error('회비/참가비는 0 이상의 값으로 입력해 주세요.');
-  }
-  return { fee, participation_fee };
-}
 
 /* ===== 생성 ===== */
 async function createChallenge(){
   const title = (document.getElementById('title').value || '').trim();
   if(!title){ alert('제목은 필수입니다.'); return; }
 
+  const description = (document.getElementById('description').value || '').trim();
   const zoomVal = (document.getElementById('zoom').value || '').trim();
   if (zoomVal && !/^https?:\/\//i.test(zoomVal)) {
-    alert('Default Zoom 링크는 http(s):// 로 시작해야 합니다.');
-    return;
+    alert('Default Zoom 링크는 http(s):// 로 시작해야 합니다.'); return;
   }
 
-  // 금액 검증 (0 이상 허용, 둘 다 양수도 허용)
-  let fee, participation_fee;
-  try{
-    ({ fee, participation_fee } = getPricesOrThrow());
-  }catch(e){
-    alert(e.message || String(e));
-    return;
+  // 결제 검증
+  let entry_fee = 0;
+  let monthly_fee = 0;
+  if (currentPaymentType === 'entry_fee') {
+    entry_fee = Number(document.getElementById('entry_fee').value || 0);
+    if (!Number.isFinite(entry_fee) || entry_fee <= 0) return alert('입장비는 0원보다 커야 합니다.');
+    if (entry_fee > 1000000) return alert('입장비는 최대 100만원까지 설정할 수 있습니다.');
+  } else if (currentPaymentType === 'monthly') {
+    monthly_fee = Number(document.getElementById('monthly_fee').value || 0);
+    if (!Number.isFinite(monthly_fee) || monthly_fee <= 0) return alert('월 회비는 0원보다 커야 합니다.');
+    if (monthly_fee > 100000) return alert('월 회비는 최대 10만원까지 설정할 수 있습니다.');
   }
 
   const latStr = document.getElementById('lat').value;
@@ -473,61 +494,397 @@ async function createChallenge(){
   const default_latitude  = latStr === '' ? null : Number(latStr);
   const default_longitude = lngStr === '' ? null : Number(lngStr);
 
+  // 리워드
+  const use_reward = document.getElementById('use_reward').checked;
+  const reward_description = (document.getElementById('reward_description').value || '').trim();
+  if (use_reward && !reward_description) return alert('리워드를 사용하려면 리워드 내용을 입력해주세요.');
+
   const payload = {
     title,
-    start_date:document.getElementById('start').value||null,
-    end_date:document.getElementById('end').value||null,
-    total_rounds:parseInt(document.getElementById('total').value||'0'),
-    mode:document.getElementById('mode').value,
+    description: description || null,
+    start_date: document.getElementById('start').value || null,
+    end_date: document.getElementById('end').value || null,
+    total_rounds: parseInt(document.getElementById('total').value || '0'),
+    mode: document.getElementById('mode').value,
     same_place_for_all_rounds: document.getElementById('samePlace').checked,
     default_zoom_link: zoomVal || null,
 
     // 장소
-    default_place_name:document.getElementById('place').value||null,
-    default_road_address:document.getElementById('road').value||null,
-    default_address:document.getElementById('addr').value||null,
-    default_map_url:document.getElementById('mapurl').value||null,
+    default_place_name: document.getElementById('place').value || null,
+    default_address: document.getElementById('addr').value || null,
     default_latitude,
     default_longitude,
 
-    // 결제/참가
-    fee,
-    participation_fee,
-    min_participants:Number(document.getElementById('min_participants').value) || null,
-    max_participants:Number(document.getElementById('max_participants').value) || null,
+    // 결제
+    payment_type: currentPaymentType,       // free | entry_fee | monthly
+    entry_fee,                              // entry_fee일 때만 의미
+    monthly_fee,                            // monthly일 때만 의미
+
+    // 참가자 설정
+    min_participants: Number(document.getElementById('min_participants').value) || 1,
+    max_participants: Number(document.getElementById('max_participants').value) || null,
+    min_participation_rate: Number(document.getElementById('min_participation_rate').value) || 80,
 
     // 리워드
-    use_reward: document.getElementById('use_reward').checked,
-    reward:(document.getElementById('reward').value||'').trim() || null,
+    use_reward,
+    reward_description: reward_description || null,
 
-    // 태그(카테고리)
-    categories: selectedCategories
+    // 추가
+    require_approval: document.getElementById('require_approval').checked,
+    is_public: document.getElementById('is_public').checked,
   };
 
-  axios.post("/api/v1/challenges", {
-    challenge_data: payload,       // 그대로
-    tags: selectedCategories       // 이 줄 추가
-    })
-    .then(res => {
-      alert("챌린지가 생성되었습니다!");
-      window.location.href = `/pages/challenges/${res.data.id}`;
-    })
-    .catch(err => {
-      if (err.response && err.response.status === 401) {
-        alert("로그인 부탁드립니다 🙏");
-        location.href = "/login";
-      } else {
-        const detail = err.response?.data?.detail;
-        const msg = typeof detail === 'string' ? detail : (Array.isArray(detail) ? JSON.stringify(detail) : (detail?.msg || err.message));
-        alert("오류가 발생했습니다: " + msg);
-      }
+  const createStatus = document.getElementById('createStatus');
+  createStatus.textContent = '생성 중...';
+
+  try {
+    // 백엔드가 challenge_data로 받도록 설계되어 있으므로 그대로 전송
+    const res = await axios.post("/api/v1/challenges/", { challenge_data: payload }, {
+      headers: { 'Content-Type': 'application/json' }
     });
+
+    // TODO: 태그 기능은 추후 구현
+    // if (selectedCategories.length > 0) {
+    //   try {
+    //     await axios.post(`/api/v1/challenges/${res.data.id}/tags`, { tags: selectedCategories });
+    //   } catch (tagErr) {
+    //     console.warn('태그 추가 실패:', tagErr);
+    //   }
+    // }
+
+    createStatus.textContent = '';
+    
+    // ✅ 결제가 필요한 경우 결제 페이지로 이동
+    if (res.data.needs_payment) {
+      // 모달 형태의 결제 확인창 표시
+      showPaymentConfirmModal(
+        res.data.id, 
+        res.data.payment_amount, 
+        res.data.payment_type,
+        payload.title
+      );
+    } else {
+      alert("챌린지가 성공적으로 생성되었습니다!");
+      window.location.href = `/pages/challenges/${res.data.id}`;
+    }
+  } catch (err) {
+    createStatus.textContent = '';
+    if (err.response && err.response.status === 401) {
+      alert("로그인이 필요합니다 🙏");
+      location.href = "/login";
+    } else {
+      let errorMessage = "챌린지 생성 중 오류가 발생했습니다.";
+      const detail = err.response?.data?.detail;
+      if (typeof detail === 'string') errorMessage = detail;
+      else if (Array.isArray(detail)) errorMessage = detail.map(e => e.msg || e).join(', ');
+      else if (detail?.msg) errorMessage = detail.msg;
+      alert(errorMessage);
+      console.error('Challenge creation error:', err);
+    }
+  }
 }
 
-// 초기화
- document.addEventListener('DOMContentLoaded', () => {
+/* ===== 결제 모달 관련 함수 ===== */
+let pendingChallengeData = null;
+
+function showPaymentConfirmModal(challengeId, amount, paymentType, challengeName) {
+  document.getElementById('modalChallengeName').textContent = challengeName;
+  document.getElementById('modalPaymentType').textContent = paymentType === 'entry_fee' ? '입장비' : '월회비';
+  document.getElementById('modalPaymentAmount').textContent = amount.toLocaleString() + '원';
+  
+  // 데이터 저장
+  pendingChallengeData = { challengeId, amount, paymentType, challengeName };
+  
+  // 모달 표시
+  document.getElementById('paymentModal').style.display = 'flex';
+}
+
+function cancelChallenge() {
+  document.getElementById('paymentModal').style.display = 'none';
+  
+  // 생성된 챌린지를 삭제해야 함
+  if (pendingChallengeData && pendingChallengeData.challengeId) {
+    if (confirm("정말로 챌린지 생성을 취소하시겠습니까?\n생성된 챌린지가 삭제됩니다.")) {
+      deleteChallengeAndRedirect(pendingChallengeData.challengeId);
+    } else {
+      // 취소를 취소한 경우 다시 모달 표시
+      document.getElementById('paymentModal').style.display = 'flex';
+    }
+  } else {
+    // 챌린지 데이터가 없으면 그냥 홈으로
+    window.location.href = '/home';
+  }
+}
+
+async function deleteChallengeAndRedirect(challengeId) {
+  try {
+    await axios.delete(`/api/v1/challenges/${challengeId}`, {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('access_token') || ''}`
+      }
+    });
+    
+    alert("챌린지 생성이 취소되었습니다.");
+    window.location.href = '/home';
+  } catch (error) {
+    console.error('챌린지 삭제 실패:', error);
+    alert("챌린지 삭제 중 오류가 발생했습니다. 관리자에게 문의하세요.");
+    // 실패해도 홈으로 보냄
+    window.location.href = '/home';
+  }
+}
+
+async function proceedWithPayment() {
+  if (!pendingChallengeData) {
+    alert('결제 정보가 없습니다.');
+    return;
+  }
+  
+  document.getElementById('paymentModal').style.display = 'none';
+  await proceedToPayment(
+    pendingChallengeData.challengeId, 
+    pendingChallengeData.amount, 
+    pendingChallengeData.paymentType
+  );
+}
+
+/* ===== 결제 처리 함수 ===== */
+async function proceedToPayment(challengeId, amount, paymentType) {
+  try {
+    // 결제 준비 API 호출
+    const paymentData = await axios.post('/api/v1/payments/ready', {
+      challenge_id: challengeId
+    });
+    
+    if (!paymentData.data) {
+      throw new Error('결제 준비 중 오류가 발생했습니다.');
+    }
+
+    const { orderId, orderName, customerName, customerEmail, clientKey } = paymentData.data;
+    
+    // Toss Payments 스크립트 동적 로드
+    if (!window.TossPayments) {
+      const script = document.createElement('script');
+      script.src = 'https://js.tosspayments.com/v1/payment';
+      script.onload = () => initiateTossPayment(clientKey, orderId, amount, orderName, customerName, customerEmail, challengeId);
+      document.head.appendChild(script);
+    } else {
+      initiateTossPayment(clientKey, orderId, amount, orderName, customerName, customerEmail, challengeId);
+    }
+    
+  } catch (error) {
+    console.error('결제 준비 중 오류:', error);
+    alert('결제 준비 중 오류가 발생했습니다: ' + (error.response?.data?.detail || error.message));
+  }
+}
+
+function initiateTossPayment(clientKey, orderId, amount, orderName, customerName, customerEmail, challengeId) {
+  const tossPayments = TossPayments(clientKey);
+  
+  // 🎯 팝업 방식: 새 창에서 결제 진행 (모바일 호환)
+  // successUrl에 특별한 처리 페이지를 만들어서 결제 완료 후 원래 창으로 메시지 전달
+  tossPayments.requestPayment('카드', {
+    amount: amount,
+    orderId: orderId,
+    orderName: orderName,
+    customerName: customerName,
+    customerEmail: customerEmail,
+    successUrl: `${window.location.origin}/payments/success?challenge_id=${challengeId}&popup=true`,
+    failUrl: `${window.location.origin}/payments/fail?challenge_id=${challengeId}&popup=true`,
+  }).catch(function (error) {
+    if (error.code === 'USER_CANCEL') {
+      alert('결제가 취소되었습니다.');
+      return;
+    } else if (error.code === 'INVALID_CARD_COMPANY') {
+      alert('유효하지 않은 카드입니다.');
+      return;
+    }
+    console.error('결제 오류:', error);
+    alert('결제 중 오류가 발생했습니다: ' + error.message);
+  });
+}
+
+// 팝업에서 메시지를 받는 리스너
+window.addEventListener('message', function(event) {
+  if (event.data && event.data.type === 'PAYMENT_SUCCESS') {
+    const { paymentKey, orderId, amount, challengeId } = event.data;
+    console.log('팝업에서 결제 성공 메시지 받음:', event.data);
+    handlePaymentSuccess(paymentKey, orderId, amount, challengeId);
+  } else if (event.data && event.data.type === 'PAYMENT_FAIL') {
+    alert('결제가 실패했습니다.');
+  }
+});
+
+// 결제 성공 후 직접 처리하는 함수
+async function handlePaymentSuccess(paymentKey, orderId, amount, challengeId) {
+  try {
+    const response = await axios.post('/api/v1/payments/confirm', {
+      paymentKey, 
+      orderId, 
+      amount, 
+      challenge_id: challengeId
+    });
+    
+    alert('결제가 완료되었습니다! 챌린지 모집이 시작됩니다.');
+    window.location.href = `/pages/challenges/${challengeId}?payment=success`;
+    
+  } catch (error) {
+    console.error('결제 승인 처리 실패:', error);
+    alert('결제는 완료되었지만 처리 중 오류가 발생했습니다. 새로고침해주세요.');
+    window.location.href = `/pages/challenges/${challengeId}`;
+  }
+}
+
+// ✅ 챌린지 생성 후 직접 결제 승인 처리 함수
+async function confirmPaymentDirectCreate(paymentKey, orderId, amount, challengeId) {
+  try {
+    const response = await axios.post('/api/v1/payments/confirm', {
+      paymentKey, 
+      orderId, 
+      amount, 
+      challenge_id: challengeId
+    }, {
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('access_token') || ''}`
+      }
+    });
+
+    alert('결제가 완료되었습니다! 챌린지 모집이 시작됩니다.');
+    
+    // 챌린지 상세 페이지로 이동
+    window.location.href = `/pages/challenges/${challengeId}?payment=success`;
+    
+  } catch (error) {
+    console.error('결제 승인 처리 실패:', error);
+    alert('결제는 완료되었지만 처리 중 오류가 발생했습니다. 챌린지 페이지로 이동합니다.');
+    window.location.href = `/pages/challenges/${challengeId}`;
+  }
+}
+
+/* ===== AI 태그 추천 ===== */
+function setupAITagRecommendation() {
+  const titleInput = document.getElementById('title');
+  const descriptionInput = document.getElementById('description');
+  
+  let debounceTimer = null;
+  
+  function handleTextChange() {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(async () => {
+      const title = (titleInput.value || '').trim();
+      const description = (descriptionInput.value || '').trim();
+      const combinedText = `${title} ${description}`.trim();
+      
+      if (combinedText.length > 3) { // 최소 4글자 이상일 때
+        await suggestTagsFromText(combinedText);
+      } else {
+        hideAITagSuggestion();
+      }
+    }, 1000); // 1초 디바운스
+  }
+  
+  titleInput.addEventListener('input', handleTextChange);
+  descriptionInput.addEventListener('input', handleTextChange);
+}
+
+async function suggestTagsFromText(text) {
+  try {
+    const categoryResponse = await fetch(`/api/v1/tags/search?query=${encodeURIComponent(text)}`).then(r => r.json());
+    
+    if (categoryResponse.tag && categoryResponse.score > 0.4) {
+      showAITagSuggestionInCreate(categoryResponse.tag, categoryResponse.score);
+    } else {
+      hideAITagSuggestion();
+    }
+  } catch (e) {
+    console.warn('AI 추천 실패:', e);
+    hideAITagSuggestion();
+  }
+}
+
+function showAITagSuggestionInCreate(suggestedTag, score) {
+  // 기존 추천 제거
+  const existing = document.getElementById('ai-tag-suggestion');
+  if (existing) existing.remove();
+  
+  // 이미 선택된 카테고리라면 표시하지 않음
+  if (selectedCategories.includes(suggestedTag)) {
+    return;
+  }
+  
+  // 카테고리 목록에서 해당 태그가 있는지 확인
+  if (!categories.includes(suggestedTag)) {
+    return;
+  }
+  
+  const confidencePercent = Math.round(score * 100);
+  const confidenceColor = score > 0.7 ? '#10b981' : score > 0.5 ? '#f59e0b' : '#ef4444';
+  
+  const suggestionDiv = document.createElement('div');
+  suggestionDiv.id = 'ai-tag-suggestion';
+  suggestionDiv.style.cssText = `
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 10px 14px;
+    border-radius: 6px;
+    margin: 10px 0;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 2px 6px rgba(102, 126, 234, 0.25);
+  `;
+  
+  suggestionDiv.innerHTML = `
+    <div style="flex: 1;">
+      <div style="font-weight: 600; margin-bottom: 2px;">
+        🤖 AI 추천 카테고리: <span style="background: rgba(255,255,255,0.25); padding: 2px 6px; border-radius: 10px; font-size: 12px;">${suggestedTag}</span>
+      </div>
+      <div style="font-size: 11px; opacity: 0.9;">
+        <span style="color: ${confidenceColor}; font-size: 8px;">●</span> 
+        신뢰도 ${confidencePercent}% · 작성하신 내용을 분석한 결과입니다
+      </div>
+    </div>
+    <button onclick="applyAITagInCreate('${suggestedTag}')" 
+            style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); 
+                   color: white; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 11px;">
+      선택
+    </button>
+    <button onclick="hideAITagSuggestion()" 
+            style="background: none; border: none; color: rgba(255,255,255,0.7); 
+                   cursor: pointer; font-size: 14px; padding: 2px;">×</button>
+  `;
+  
+  // 카테고리 선택 부분 위에 표시
+  const categorySection = document.querySelector('h3');
+  if (categorySection && categorySection.textContent.includes('카테고리')) {
+    categorySection.parentNode.insertBefore(suggestionDiv, categorySection);
+  }
+}
+
+function applyAITagInCreate(tagName) {
+  // 카테고리 선택 로직 (기존 toggleCategory 함수 활용)
+  toggleCategory(tagName);
+  hideAITagSuggestion();
+}
+
+function hideAITagSuggestion() {
+  const suggestion = document.getElementById('ai-tag-suggestion');
+  if (suggestion) suggestion.remove();
+}
+
+/* ===== 초기화 ===== */
+document.addEventListener('DOMContentLoaded', () => {
   loadCategories();
-  repaintPriceHelp();
+  updatePaymentNotice();
+  setupAITagRecommendation();
+  // 기본 날짜
+  const today = new Date();
+  const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+  const nextWeek = new Date(today); nextWeek.setDate(nextWeek.getDate() + 7);
+  document.getElementById('start').value = tomorrow.toISOString().split('T')[0];
+  document.getElementById('end').value   = nextWeek.toISOString().split('T')[0];
 });
 </script>
 </body>

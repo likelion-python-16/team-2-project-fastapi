@@ -15,6 +15,7 @@ from app.security import (
     get_password_requirements,
     normalize_phone,
     id_fingerprint,
+    get_current_user,
 )
 from app.utils.logging import logger
 
@@ -89,6 +90,23 @@ def signup(payload: SignUpIn, db: Session = Depends(get_db)):
 
     # 4) 생성 & 저장
     try:
+        # introduction 처리: JSON 문자열이면 파싱해서 bio 부분만 추출
+        introduction_text = ""  # 안전한 기본값
+        if payload.introduction:
+            introduction_text = payload.introduction
+            if introduction_text.strip().startswith('{'):
+                try:
+                    import json
+                    intro_data = json.loads(introduction_text)
+                    introduction_text = intro_data.get('bio', '') if isinstance(intro_data, dict) else introduction_text
+                except (json.JSONDecodeError, AttributeError):
+                    # JSON 파싱 실패하면 빈 문자열로 안전하게 처리
+                    introduction_text = ""
+        
+        # 최종 안전 검사
+        if not introduction_text:
+            introduction_text = ""
+        
         user = User(
             username=username,
             email=email,
@@ -100,7 +118,7 @@ def signup(payload: SignUpIn, db: Session = Depends(get_db)):
             region_living=(payload.region_living or ""),
             region_active=(payload.region_active or ""),
             profile_image=(payload.profile_image or ""),
-            introduction=(payload.introduction or ""),  # TEXT NOT NULL → ''
+            introduction=introduction_text,  # JSON에서 bio 추출하거나 원본 텍스트
         )
         user.set_password(payload.password)
 
@@ -204,3 +222,17 @@ def refresh_token(payload: RefreshTokenIn, db: Session = Depends(get_db)):
 def logout():
     """클라이언트에서 access/refresh 토큰을 폐기하세요."""
     return {"message": "로그아웃되었습니다"}
+
+
+@router.get("/me")
+def get_current_user_info(current_user: User = Depends(get_current_user)):
+    """현재 로그인한 사용자 정보 반환"""
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "email": current_user.email,
+        "name": current_user.name,
+        "phone": current_user.phone,
+        "is_active": current_user.is_active,
+        "created_at": current_user.created_at
+    }

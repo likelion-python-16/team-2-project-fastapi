@@ -3,11 +3,11 @@ from typing import Optional
 from sqlalchemy import Column, Enum, Integer, String, Boolean, Float, Text, DateTime, Index
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
-from .base import Base
+from .base import Base, TimestampMixin
 from ..security import hash_password, verify_password, encrypt_str, decrypt_str
 from app.models.round_manager import RoundManager
 
-class User(Base):
+class User(Base, TimestampMixin):
     __tablename__ = "users"
     
     # Primary Key
@@ -19,9 +19,7 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     name = Column(String(100), nullable=False)
     
-    # 타임스탬프
-    created_at = Column(DateTime, server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+    # 타임스탬프는 TimestampMixin에서 자동 처리
     
     # 선택 필드들
     # ── [기존 유지] 평문 정규화 저장 컬럼(레거시). 앞으로는 비워두는 것을 권장.
@@ -80,12 +78,13 @@ class User(Base):
         overlaps="refunds"
     )
     
-    point_exchange_requests = relationship(
-        "PointExchangeRequest",
+    payment_methods = relationship(
+        "PaymentMethod",
         back_populates="user",
-        foreign_keys="PointExchangeRequest.user_id",
-        overlaps="point_exchange_requests"
+        foreign_keys="PaymentMethod.user_id"
     )
+    
+# point_exchange_requests relationship removed - PointExchangeRequest model doesn't exist
     
     uploaded_round_pictures = relationship(
         "RoundPicture",
@@ -102,8 +101,9 @@ class User(Base):
 
     participations = relationship(
         "Participation", 
-        back_populates="user"
-        )
+        back_populates="user",
+        foreign_keys="Participation.user_id"
+    )
     
     managed_rounds = relationship(
         "RoundManager",

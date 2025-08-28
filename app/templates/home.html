@@ -48,6 +48,9 @@
     .section h3{font-size:18px; margin:0 0 12px; color:#0f172a; letter-spacing:.2px}
     .notice{background:#FFF7ED; color:#9A3412; border:1px solid #FED7AA; padding:10px 12px; border-radius:12px; font-size:13px; margin-bottom:12px}
     .grid{display:grid; gap:14px}
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    @keyframes slideOut { from { transform: translateX(0); opacity: 1; } to { transform: translateX(100%); opacity: 0; } }
     .grid.cols-3{grid-template-columns:repeat(3,1fr)}
     .grid.cols-4{grid-template-columns:repeat(4,1fr)}
     .card{border:1px solid var(--line); border-radius:14px; overflow:hidden; background:#fff; transition:transform .12s ease, box-shadow .12s ease}
@@ -90,7 +93,7 @@
         <div class="spacer"></div>
 
         <form id="search-form" class="search-wrap" autocomplete="off">
-          <input id="search-input" class="search-input" type="text" placeholder="검색어를 입력하세요 (선택)"/>
+          <input id="search-input" class="search-input" type="text" placeholder="챌린지 제목, 내용, 장소로 검색"/>
           <button id="search-reset" type="button" class="btn" title="초기화">초기화</button>
           <button id="search-btn" type="submit" class="btn primary">검색</button>
         </form>
@@ -118,6 +121,9 @@
         <button id="filters-toggle" class="toggle-chip" type="button" aria-expanded="false" aria-controls="filters-panel">
           <span>필터</span><i>▾</i>
         </button>
+        <button id="refresh-btn" class="btn" type="button" title="챌린지 목록 새로고침">
+          🔄
+        </button>
         <div class="spacer"></div>
       </div>
       <div id="filters-panel" class="filters-panel">
@@ -129,6 +135,8 @@
             <option value="completed">완료</option>
             <option value="cancelled">취소</option>
           </select>
+          <span class="label">장소</span>
+          <input id="f-location" class="compact-control" type="text" placeholder="지역, 장소명"/>
           <span class="label">시작</span>
           <input id="f-sf" class="compact-control" type="date"/>
           <span class="label">~</span>

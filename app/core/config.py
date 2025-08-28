@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     project_name: str = "Team Project API"
     project_version: str = "1.0.0"
     project_description: str = "팀프로젝트 FastAPI 백엔드"
-    id_fingerprint_secret: str
+    id_fingerprint_secret: str = os.getenv("ID_FINGERPRINT_SECRET", "default-fingerprint-secret-change-in-prod")
 
 
     # NAVER Cloud Platform - Maps
@@ -43,7 +43,7 @@ class Settings(BaseSettings):
 
     # JWT
     jwt_secret: str = os.getenv("JWT_SECRET", "team-project-secret-key-change-this-in-production")
-    jwt_refresh_secret: str
+    jwt_refresh_secret: str = os.getenv("JWT_REFRESH_SECRET", "team-project-refresh-secret-change-this-in-production")
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 60
     jwt_refresh_expire_minutes: int = 10080
@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     aws_access_key_id: str = os.getenv("AWS_ACCESS_KEY_ID", "")
     aws_secret_access_key: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
     s3_bucket: str = os.getenv("S3_BUCKET", "")
+
+    #toss
+    toss_client_key: str = os.getenv("TOSS_CLIENT_KEY", "")
+    toss_secret_key: str = os.getenv("TOSS_SECRET_KEY", "")
 
     allowed_origins: list[str] = [
         "http://localhost:3000",
@@ -135,3 +139,5 @@ AWS_REGION = settings.aws_region
 AWS_ACCESS_KEY_ID = settings.aws_access_key_id
 AWS_SECRET_ACCESS_KEY = settings.aws_secret_access_key
 S3_BUCKET = settings.s3_bucket
+TOSS_SECRET_KEY=settings.toss_secret_key
+TOSS_CLIENT_KEY=settings.toss_client_key

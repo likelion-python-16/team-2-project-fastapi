@@ -27,8 +27,10 @@ SECRET_KEY = settings.jwt_secret
 ALGORITHM = settings.jwt_algorithm
 ACCESS_TOKEN_EXPIRE_MINUTES = settings.jwt_access_token_expire_minutes
 
-# 로그인 토큰 발급 엔드포인트 경로에 맞추세요
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+# 로그인 토큰 발급 엔드포인트 경로에 맞추세요(문서용)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+# 선택적 인증이 필요한 엔드포인트용(헤더 없으면 None)
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
 def hash_password(password: str) -> str:
     if not password:
@@ -45,11 +47,16 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         return False
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    """
+    권장: data에는 최소한 {"sub": str(user.id)} 형태로 user_id를 넣어주세요.
+    추가 메타로 {"username": user.username, "ver": user.token_version}도 유용합니다.
+    """
     if not data:
         raise ValueError("토큰 데이터가 비어있습니다")
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({"exp": expire, "iat": datetime.now(timezone.utc), "type": "access"})
+    now = datetime.now(timezone.utc)
+    expire = now + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    to_encode.update({"exp": expire, "iat": now, "type": "access"})
     try:
         return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     except Exception as e:
@@ -64,10 +71,7 @@ def verify_token(token: str) -> Optional[dict]:
         if payload.get("type") != "access":
             logger.warning("잘못된 토큰 타입")
             return None
-        exp = payload.get("exp")
-        if exp and datetime.fromtimestamp(exp, timezone.utc) < datetime.now(timezone.utc):
-            logger.info("만료된 토큰")
-            return None
+        # ExpiredSignatureError는 decode에서 이미 처리됨
         return payload
     except ExpiredSignatureError:
         logger.info("만료된 JWT 토큰")
@@ -83,8 +87,9 @@ def create_refresh_token(data: dict) -> str:
     if not data:
         raise ValueError("토큰 데이터가 비어있습니다")
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(days=7)
-    to_encode.update({"exp": expire, "iat": datetime.now(timezone.utc), "type": "refresh"})
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(days=7)
+    to_encode.update({"exp": expire, "iat": now, "type": "refresh"})
     try:
         return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     except Exception as e:
@@ -93,6 +98,10 @@ def create_refresh_token(data: dict) -> str:
 
 def verify_refresh_token(token: str) -> Optional[dict]:
     if not token:
+        return None
+    # 블랙리스트 체크 추가
+    if is_refresh_token_revoked(token):
+        logger.info("취소된 리프레시 토큰")
         return None
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -188,7 +197,7 @@ def is_refresh_token_revoked(token: str) -> bool:
 # 의존성: 현재 사용자 가져오기 (지연 임포트로 순환 방지)
 # -------------------------------
 def _extract_user_identifier(payload: dict) -> Optional[Union[int, str]]:
-    """일반적으로 'sub'에서 사용자 식별자를 꺼냄"""
+    """일반적으로 'sub'에서 사용자 식별자를 꺼냄 (id 권장)"""
     if not payload:
         return None
     sub = payload.get("sub")
@@ -198,6 +207,18 @@ def _extract_user_identifier(payload: dict) -> Optional[Union[int, str]]:
         return int(sub)
     except (TypeError, ValueError):
         return sub  # username/email 등일 수 있음
+
+def _matches_token_version(user, payload: dict) -> bool:
+    """토큰의 ver(토큰 버전)과 DB의 token_version이 다르면 False"""
+    if not hasattr(user, "token_version"):
+        return True
+    token_ver = payload.get("ver")
+    if token_ver is None:
+        return True  # ver 미포함 토큰은 허용(레거시)
+    try:
+        return int(token_ver) == int(getattr(user, "token_version", 0))
+    except (TypeError, ValueError):
+        return False
 
 def get_current_user(
     token: str = Depends(oauth2_scheme),
@@ -224,14 +245,16 @@ def get_current_user(
         logger.warning("토큰에 사용자 식별자(sub)가 없습니다")
         raise credentials_exc
 
-    user = None
     if isinstance(user_ident, int):
         user = db.query(User).filter(User.id == user_ident).first()
     else:
+        # 레거시: sub가 username/email 로 들어온 경우도 처리
         if hasattr(User, "username"):
             user = db.query(User).filter(User.username == str(user_ident)).first()
         elif hasattr(User, "email"):
             user = db.query(User).filter(User.email == str(user_ident)).first()
+        else:
+            user = None
 
     if not user:
         logger.info(f"사용자를 찾을 수 없음: {user_ident}")
@@ -240,10 +263,14 @@ def get_current_user(
     if hasattr(user, "is_active") and not getattr(user, "is_active"):
         raise HTTPException(status_code=403, detail="비활성화된 계정입니다")
 
+    # 토큰 버전 검증(선택적)
+    if not _matches_token_version(user, payload):
+        raise HTTPException(status_code=401, detail="토큰 버전 불일치(만료)")
+
     return user
 
 def get_current_user_optional(
-    token: Optional[str] = Depends(oauth2_scheme),
+    token: Optional[str] = Depends(oauth2_scheme_optional),
     db: Session = Depends(get_db),
 ):
     """토큰이 유효하면 User, 아니면 None 반환 (공개 엔드포인트에서 선택적 사용)"""
@@ -257,16 +284,24 @@ def get_current_user_optional(
         if user_ident is None:
             return None
 
-        # 지연 임포트
-        from app.models.user import User  # noqa: WPS433
+        from app.models.user import User  # 지연 임포트
 
         if isinstance(user_ident, int):
-            return db.query(User).filter(User.id == user_ident).first()
+            user = db.query(User).filter(User.id == user_ident).first()
         else:
             if hasattr(User, "username"):
-                return db.query(User).filter(User.username == str(user_ident)).first()
+                user = db.query(User).filter(User.username == str(user_ident)).first()
             elif hasattr(User, "email"):
-                return db.query(User).filter(User.email == str(user_ident)).first()
+                user = db.query(User).filter(User.email == str(user_ident)).first()
+            else:
+                user = None
+
+        if not user:
             return None
+        if hasattr(user, "is_active") and not getattr(user, "is_active"):
+            return None
+        if not _matches_token_version(user, payload):
+            return None
+        return user
     except Exception:
         return None

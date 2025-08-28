@@ -22,7 +22,7 @@ class SignUpIn(BaseModel):
     region_living: Optional[str] = Field(None, max_length=50, description="생활 지역 (선택)")
     region_active: Optional[str] = Field(None, max_length=50, description="활동 지역 (선택)")
     profile_image: Optional[str] = Field(None, max_length=255, description="프로필 이미지 URL (선택)")
-    introduction: Optional[str] = Field(None, description="소개 (선택, 미입력시 '')")
+    introduction: Optional[str] = Field("", description="소개 (선택, 미입력시 '')")
 
     # --- validators ---
     @validator('username')

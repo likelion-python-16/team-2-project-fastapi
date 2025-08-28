@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <title>Challenge Detail</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link href="/static/styles.css" rel="stylesheet">
+  <link href="/static/assets/final/css/styles.css" rel="stylesheet">
   <style>
     :root{--card-bg:#fff;--muted:#777;--br:#eee}
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Noto Sans KR,Apple SD Gothic Neo,Helvetica,Arial,sans-serif;margin:16px}
@@ -26,8 +26,30 @@
     .desc{font-size:13px;line-height:1.4;color:#333;white-space:pre-line;max-height:5.6em;overflow:hidden}
     .kv{display:flex;gap:8px;font-size:13px;align-items:center}
     .pagination{display:flex;gap:8px;align-items:center;justify-content:center;margin-top:8px}
+    .stat-card{background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px;text-align:center}
+    .stat-label{font-size:12px;color:#6b7280;margin-bottom:4px}
+    .stat-value{font-weight:bold;font-size:16px;color:#111827}
+    .participants-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-top:10px}
+    .participant-card{border:1px solid #e5e7eb;border-radius:8px;padding:10px;background:#fff;display:flex;align-items:center;gap:8px}
+    .participant-avatar{width:32px;height:32px;border-radius:50%;background:#e5e7eb;display:flex;align-items:center;justify-content:center;font-size:12px;color:#6b7280}
+    .participant-info{flex:1}
+    .participant-name{font-weight:600;font-size:14px;color:#111827}
+    .participant-role{font-size:11px;color:#6b7280}
     @media (max-width:960px){.cards-row{grid-template-columns:repeat(2,minmax(220px,1fr));}}
     @media (max-width:640px){.cards-row{grid-template-columns:1fr;}}
+    
+    /* 결제 모달 스타일 */
+    .payment-modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:none;z-index:1000;align-items:center;justify-content:center}
+    .payment-modal-content{background:white;border-radius:12px;padding:24px;max-width:400px;width:90%;box-shadow:0 10px 25px rgba(0,0,0,0.1)}
+    .payment-modal h3{margin:0 0 16px;color:#111;font-size:18px}
+    .payment-info{background:#f8f9fa;border-radius:8px;padding:16px;margin:16px 0}
+    .payment-amount{font-size:24px;font-weight:bold;color:#2563eb;margin:8px 0}
+    .payment-buttons{display:flex;gap:12px;margin-top:20px}
+    .payment-btn{flex:1;padding:12px;border-radius:8px;border:none;cursor:pointer;font-weight:600}
+    .payment-btn.primary{background:#2563eb;color:white}
+    .payment-btn.secondary{background:#e5e7eb;color:#374151}
+    .payment-btn:hover.primary{background:#1d4ed8}
+    .payment-btn:hover.secondary{background:#d1d5db}
   </style>
 </head>
 <body>
@@ -37,6 +59,40 @@
 <div class="panel">
   <div id="challengeHeader" class="muted" style="margin-bottom:8px">Loading...</div>
   <pre id="challengeInfo"></pre>
+</div>
+
+<!-- 참가 현황 패널 -->
+<div class="panel">
+  <h3>🎯 참가 현황</h3>
+  <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:12px; margin-bottom:16px">
+    <div class="stat-card">
+      <div class="stat-label">현재 참가자</div>
+      <div class="stat-value" id="currentParticipants">-</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">최대 정원</div>
+      <div class="stat-value" id="maxParticipants">-</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">모집 상태</div>
+      <div class="stat-value" id="recruitmentStatus">-</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">결제 방식</div>
+      <div class="stat-value" id="paymentType">-</div>
+    </div>
+  </div>
+  
+
+  <div style="margin-bottom:12px">
+    <button class="btn" onclick="loadParticipantList()">참가자 목록 보기</button>
+    <button class="btn" onclick="refreshParticipationStatus()">현황 새로고침</button>
+  </div>
+  
+  <div id="participantsList" style="display:none">
+    <h4>참가자 목록</h4>
+    <div id="participantsContent" class="participants-grid"></div>
+  </div>
 </div>
 
 <div class="panel">
@@ -98,12 +154,64 @@
   <div id="planned"></div>
 </div>
 
+<div class="panel">
+  <button class="btn" onclick="goToChallenge()">홈</button>
+</div>
+<!-- [추가] 생성자 관리 패널 -->
+<div id="adminPanel" class="panel" style="display:none;">
+  <h3>🔧 챌린지 관리 (생성자 전용)</h3>
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+    <span>현재 상태:</span>
+    <span id="currentStatus" style="font-weight:bold;padding:4px 8px;border-radius:4px;background:#f5f5f5"></span>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+    <button id="btnSetDraft" class="btn">📝 준비중으로 변경</button>
+    <button id="btnSetRecruiting" class="btn">🎯 모집 시작</button>
+    <button id="btnSetActive" class="btn">▶️ 진행 시작</button>
+    <button id="btnSetCompleted" class="btn">✅ 완료 처리</button>
+    <button id="btnSetCancelled" class="btn">❌ 취소</button>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;border-top:1px solid #eee;padding-top:12px">
+    <button id="btnDeleteChallenge" class="btn" style="background:#fee;border-color:#fcc;color:#c00">🗑️ 챌린지 삭제</button>
+  </div>
+  <div id="adminMsg" style="font-size:14px;color:#555"></div>
+</div>
+
+<!-- [추가] 참여/취소 패널 -->
+<div class="panel">
+  <h3>🎯 챌린지 참여</h3>
+  <button id="btnJoinWithPayment" class="btn primary" style="background:#2563eb;color:white;border-color:#2563eb;margin-right:8px">참여하기</button>
+  <button id="btnLeaveChallenge" class="btn" style="display:none;background:#fee;color:#c00;border-color:#fcc">참여 취소</button>
+  <div id="participationMsg" style="margin-top:8px;font-size:14px;color:#555"></div>
+</div>
+
+<!-- 결제 모달 -->
+<div id="paymentModal" class="payment-modal">
+  <div class="payment-modal-content">
+    <h3>💳 결제 확인</h3>
+    <div class="payment-info">
+      <div>챌린지: <strong id="modalChallengeName">-</strong></div>
+      <div>결제 타입: <strong id="modalPaymentType">-</strong></div>
+      <div class="payment-amount" id="modalPaymentAmount">0원</div>
+    </div>
+    <div style="font-size:14px;color:#6b7280;line-height:1.4">
+      결제를 진행하시겠습니까?<br>
+      결제 완료 후 챌린지 모집이 시작됩니다.
+    </div>
+    <div class="payment-buttons">
+      <button class="payment-btn secondary" onclick="closePaymentModal()">취소</button>
+      <button class="payment-btn primary" onclick="confirmPayment()">결제하기</button>
+    </div>
+  </div>
+</div>
+
 <script>
   const CHALLENGE_ID = JSON.parse('{{ challenge_id|default(none)|tojson }}');
 
   // API Prefix
-  const API_CH = '/api/v1'; // challenges 등
-  const API_ROOT = '';      // pictures는 루트로 노출
+  const API_CH = '/api/v1';         // challenges 등
+  const API_PIC = '';               // round_pictures 라우터가 루트에 있으면 '' 유지
+  // ↳ 만약 404가 난다면 '/api/v1'로 바꿔보세요.
 
   function authHeader(){
     const t = localStorage.getItem('access_token');
@@ -120,11 +228,135 @@
     const isJSON = ct.includes('application/json');
     const body = isJSON ? await res.json() : await res.text();
     if (!isJSON) throw new Error(`Expected JSON but got ${ct} ${res.status}: ${String(body).slice(0,200)}`);
-    if (!res.ok) throw new Error(body?.detail || `HTTP ${res.status}`);
+    if (!res.ok) throw new Error((body && (body.detail || body.message)) || `HTTP ${res.status}`);
     return body;
   }
 
   const S = { challenge:null, rounds:[], samePlace:false, page:1, pageSize:3 };
+
+  // ✅ 생성자 결제 상태 확인 함수 (미리 정의)
+  // checkCreatorPaymentStatus 함수 제거됨 - 이제 결제는 생성 시에만 가능
+
+  // ✅ 결제 모달 관련 함수들
+  let pendingPaymentData = null;
+
+  function openPaymentModal(challengeName, paymentType, amount) {
+    document.getElementById('modalChallengeName').textContent = challengeName;
+    document.getElementById('modalPaymentType').textContent = paymentType === 'entry_fee' ? '입장비' : '월회비';
+    document.getElementById('modalPaymentAmount').textContent = amount.toLocaleString() + '원';
+    document.getElementById('paymentModal').style.display = 'flex';
+  }
+
+  function closePaymentModal() {
+    document.getElementById('paymentModal').style.display = 'none';
+    pendingPaymentData = null;
+  }
+
+  async function confirmPayment() {
+    if (!pendingPaymentData) {
+      alert('결제 정보가 없습니다.');
+      return;
+    }
+
+    try {
+      closePaymentModal();
+
+      // Toss Payments로 결제 진행
+      if (!window.TossPayments) {
+        alert('결제 시스템을 로드하는 중입니다. 잠시 후 다시 시도해주세요.');
+        return;
+      }
+
+      const { orderId, amount, orderName, clientKey, customerName, customerEmail } = pendingPaymentData;
+      const toss = window.TossPayments(clientKey);
+      
+      // 🎯 팝업 방식으로 변경 (모바일 Promise 이슈 해결)
+      toss.requestPayment('카드', {
+        amount,
+        orderId,
+        orderName,
+        customerName,
+        customerEmail,
+        successUrl: `${window.location.origin}/payments/success?challenge_id=${CHALLENGE_ID}&popup=true`,
+        failUrl: `${window.location.origin}/payments/fail?challenge_id=${CHALLENGE_ID}&popup=true`
+      }).catch(function (error) {
+        if (error.code === 'USER_CANCEL') {
+          alert('결제가 취소되었습니다.');
+          return;
+        }
+        console.error('결제 오류:', error);
+        alert('결제 중 오류가 발생했습니다: ' + error.message);
+      });
+
+    } catch (error) {
+      console.error('결제 진행 중 오류:', error);
+      alert('결제 진행 중 오류가 발생했습니다: ' + (error.message || '알 수 없는 오류'));
+    }
+  }
+
+  // proceedCreatorPayment 함수 제거됨 - 이제 결제는 생성 시에만 가능
+
+  // ✅ 직접 결제 승인 처리 함수
+  async function confirmPaymentDirect(paymentKey, orderId, amount) {
+    try {
+      const response = await safeFetchJSON('/api/v1/payments/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          paymentKey, 
+          orderId, 
+          amount, 
+          challenge_id: CHALLENGE_ID 
+        })
+      });
+
+      alert('결제가 완료되었습니다! 챌린지 모집이 시작됩니다.');
+      
+      // 페이지 새로고침하여 상태 업데이트
+      window.location.reload();
+      
+    } catch (error) {
+      console.error('결제 승인 처리 실패:', error);
+      alert('결제는 완료되었지만 처리 중 오류가 발생했습니다. 페이지를 새로고침해주세요.');
+    }
+  }
+
+  // 모달 결제에서 성공 처리하는 함수
+  async function handlePaymentSuccessInDetail(paymentKey, orderId, amount) {
+    try {
+      const response = await safeFetchJSON('/api/v1/payments/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          paymentKey, 
+          orderId, 
+          amount, 
+          challenge_id: CHALLENGE_ID 
+        })
+      });
+
+      alert('결제가 완료되었습니다! 챌린지 모집이 시작됩니다.');
+      
+      // 페이지 새로고침하여 상태 업데이트
+      window.location.reload();
+      
+    } catch (error) {
+      console.error('결제 승인 처리 실패:', error);
+      alert('결제는 완료되었지만 처리 중 오류가 발생했습니다. 페이지를 새로고침해주세요.');
+    }
+  }
+
+  // 팝업에서 메시지를 받는 리스너 추가
+  window.addEventListener('message', function(event) {
+    if (event.data && event.data.type === 'PAYMENT_SUCCESS') {
+      console.log('팝업에서 결제 성공 메시지 받음:', event.data);
+      alert('결제가 완료되었습니다! 챌린지 모집이 시작됩니다.');
+      // 페이지 새로고침하여 상태 업데이트
+      window.location.reload();
+    } else if (event.data && event.data.type === 'PAYMENT_FAIL') {
+      alert('결제가 실패했습니다: ' + (event.data.error || '알 수 없는 오류'));
+    }
+  });
 
   document.addEventListener('DOMContentLoaded', async () => {
     if (CHALLENGE_ID == null) {
@@ -133,11 +365,25 @@
     }
     await loadChallenge();
     await loadRounds();
+    await refreshParticipationStatus();
     wireSamePlace();
+    
+    // URL 파라미터에서 결제 완료 확인
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('payment') === 'success') {
+      // 결제 완료 후 2초 후에 페이지 새로고침하여 상태 업데이트
+      setTimeout(async () => {
+        await loadChallenge();
+        await refreshParticipationStatus();
+      }, 2000);
+    }
   });
 
   async function loadChallenge(){
-    const ch = await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}`);
+    console.log('Loading challenge data...');
+    // 사용자 참여 상태가 포함된 챌린지 정보 로드
+    const ch = await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}/with-participation`);
+    console.log('Loaded challenge:', ch);
     S.challenge = ch;
     document.getElementById('challengeHeader').innerHTML =
       `<b>#${ch.id}</b> ${ch.title || ''} · ${ch.mode || ''} · ${ch.status || ''}`;
@@ -149,6 +395,230 @@
     document.getElementById('g_map_url').value = ch.default_map_url || '';
     document.getElementById('g_lat').value = (ch.default_latitude ?? '') || '';
     document.getElementById('g_lon').value = (ch.default_longitude ?? '') || '';
+
+    // 챌린지 상태에 따른 결제 버튼 제어
+    await updatePaymentButtonStatus(ch);
+    
+    // 관리자 패널 표시 여부 결정
+    await updateAdminPanel(ch);
+    
+    // 참가 현황 업데이트
+    await refreshParticipationStatus();
+    
+    // 생성자 결제 상태 확인 제거됨 - 이제 결제는 생성 시에만 가능
+  }
+
+  async function updatePaymentButtonStatus(challenge) {
+    const btnJoin = document.getElementById('btnJoinWithPayment');
+    const btnLeave = document.getElementById('btnLeaveChallenge');
+    const msg = document.getElementById('participationMsg');
+    
+    const status = challenge.status || 'draft';
+    const canJoin = status === 'recruiting';
+    const isDraft = status === 'draft';
+    const userParticipation = challenge.user_participation;
+    
+    // 현재 사용자가 생성자인지 확인
+    const currentUser = await getCurrentUser();
+    const isCreator = currentUser && challenge && currentUser.id === challenge.creator_id;
+    
+    // 사용자 참여 상태에 따른 버튼 제어
+    if (isCreator) {
+      btnJoin.disabled = true;
+      btnJoin.textContent = '생성자';
+      btnLeave.style.display = 'none';
+      msg.innerHTML = '<span style="color:#888">👑 챌린지 생성자입니다. 관리 패널을 이용해 주세요.</span>';
+    } else if (userParticipation) {
+      const participationStatus = userParticipation.status;
+      
+      if (participationStatus === 'active') {
+        btnJoin.disabled = true;
+        btnJoin.textContent = '참여 중';
+        btnJoin.style.background = '#10b981';
+        btnJoin.style.color = 'white';
+        btnLeave.style.display = 'inline-block';
+        msg.innerHTML = '<span style="color:#0a7">✅ 챌린지에 참여 중입니다!</span>';
+      } else if (participationStatus === 'payment_pending') {
+        btnJoin.disabled = false;
+        btnJoin.textContent = '결제하기';
+        btnJoin.style.background = '#f59e0b';
+        btnJoin.style.color = 'white';
+        btnLeave.style.display = 'inline-block';
+        const fee = challenge.payment_type === 'entry_fee' ? challenge.entry_fee : challenge.monthly_fee;
+        msg.innerHTML = `<span style="color:#f59e0b">💳 ${fee?.toLocaleString() || 0}원 결제를 완료해 주세요.</span>`;
+      } else if (participationStatus === 'pending') {
+        btnJoin.disabled = true;
+        btnJoin.textContent = '승인 대기 중';
+        btnJoin.style.background = '#6b7280';
+        btnJoin.style.color = 'white';
+        btnLeave.style.display = 'inline-block';
+        msg.innerHTML = '<span style="color:#f59e0b">⏳ 참가 승인을 기다리고 있습니다.</span>';
+      }
+    } else if (isDraft) {
+      btnJoin.disabled = true;
+      btnJoin.textContent = '준비 중';
+      btnLeave.style.display = 'none';
+      msg.innerHTML = '<span style="color:#888">챌린지가 아직 준비 중입니다</span>';
+    } else if (canJoin) {
+      btnJoin.disabled = false;
+      btnJoin.textContent = '참여하기';
+      btnJoin.style.background = '#2563eb';
+      btnJoin.style.color = 'white';
+      btnLeave.style.display = 'none';
+      
+      const paymentType = challenge.payment_type || 'free';
+      if (paymentType === 'free') {
+        msg.innerHTML = '<span style="color:#0a7">🎉 무료 챌린지입니다. 바로 참여하세요!</span>';
+      } else {
+        const fee = paymentType === 'entry_fee' ? challenge.entry_fee : challenge.monthly_fee;
+        msg.innerHTML = `<span style="color:#0a7">💳 참여하기를 클릭하면 ${fee?.toLocaleString() || 0}원 결제 후 참여됩니다.</span>`;
+      }
+    } else {
+      btnJoin.disabled = true;
+      btnJoin.textContent = '참여 불가';
+      btnLeave.style.display = 'none';
+      const statusText = getStatusText(status);
+      msg.innerHTML = `<span style="color:#c00">현재 참여할 수 없습니다 (상태: ${statusText})</span>`;
+    }
+  }
+
+  function getStatusText(status) {
+    const statusMap = {
+      'draft': '준비중',
+      'recruiting': '모집중', 
+      'active': '진행중',
+      'completed': '완료',
+      'cancelled': '취소됨',
+      'closed': '정산완료'
+    };
+    return statusMap[status] || status;
+  }
+
+  async function getCurrentUser() {
+    try {
+      return await safeFetchJSON('/api/v1/auth/me');
+    } catch (e) {
+      console.log('getCurrentUser failed:', e.message);
+      return null;
+    }
+  }
+
+  async function updateAdminPanel(challenge) {
+    const adminPanel = document.getElementById('adminPanel');
+    const currentUser = await getCurrentUser();
+    
+    // 현재 사용자가 챌린지 생성자인지 확인
+    if (currentUser && challenge && currentUser.id === challenge.creator_id) {
+      adminPanel.style.display = 'block';
+      updateStatusDisplay(challenge.status);
+      wireAdminButtons();
+    } else {
+      adminPanel.style.display = 'none';
+    }
+  }
+
+  function updateStatusDisplay(status) {
+    console.log('Updating status display to:', status);
+    const currentStatus = document.getElementById('currentStatus');
+    const statusText = getStatusText(status);
+    const statusColors = {
+      'draft': '#888',
+      'recruiting': '#0a7',
+      'active': '#07a', 
+      'completed': '#666',
+      'cancelled': '#c00',
+      'closed': '#333'
+    };
+    
+    currentStatus.textContent = statusText;
+    currentStatus.style.color = statusColors[status] || '#888';
+    currentStatus.style.background = statusColors[status] ? statusColors[status] + '20' : '#f5f5f5';
+    console.log('Status display updated to:', statusText);
+  }
+
+  let adminButtonsWired = false;
+  
+  function wireAdminButtons() {
+    if (adminButtonsWired) return; // 중복 실행 방지
+    adminButtonsWired = true;
+    
+    const setAdminMsg = (msg, type = 'info') => {
+      const color = type === 'error' ? '#c00' : (type === 'ok' ? '#0a7' : '#666');
+      document.getElementById('adminMsg').innerHTML = `<span style="color:${color}">${msg}</span>`;
+    };
+
+    // 삭제 버튼
+    const btnDelete = document.getElementById('btnDeleteChallenge');
+    btnDelete?.addEventListener('click', async () => {
+      if (!confirm('⚠️ 정말로 이 챌린지를 삭제하시겠습니까?\n\n삭제된 챌린지는 복구할 수 없습니다.')) return;
+      if (!confirm('마지막 확인: 정말 삭제하시겠습니까?')) return;
+      
+      try {
+        await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}`, {
+          method: 'DELETE',
+          headers: { 
+            'Authorization': `Bearer ${localStorage.getItem('access_token') || ''}`
+          }
+        });
+        
+        setAdminMsg('챌린지가 삭제되었습니다. 홈으로 이동합니다.', 'ok');
+        setTimeout(() => {
+          window.location.href = '/home';
+        }, 2000);
+      } catch (e) {
+        console.error('Delete challenge error:', e);
+        setAdminMsg(`챌린지 삭제 실패: ${e.message}`, 'error');
+      }
+    });
+
+    // 상태 변경 버튼들
+    ['draft', 'recruiting', 'active', 'completed', 'cancelled'].forEach(status => {
+      const btn = document.getElementById(`btnSet${status.charAt(0).toUpperCase() + status.slice(1)}`);
+      btn?.addEventListener('click', async () => {
+        if (!confirm(`챌린지 상태를 '${getStatusText(status)}'로 변경하시겠습니까?`)) return;
+        
+        try {
+          console.log(`Changing status to: ${status}`);
+          const response = await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}/status?new_status=${encodeURIComponent(status)}`, {
+            method: 'PATCH',
+            headers: { 
+              'Authorization': `Bearer ${localStorage.getItem('access_token') || ''}`
+            }
+          });
+          console.log('Status change response:', response);
+          
+          // 응답에서 업데이트된 챌린지 정보가 있다면 사용
+          if (response.challenge) {
+            console.log('Using updated challenge from response:', response.challenge);
+            S.challenge = response.challenge;
+            // 헤더와 JSON 표시 업데이트
+            document.getElementById('challengeHeader').innerHTML =
+              `<b>#${response.challenge.id}</b> ${response.challenge.title || ''} · ${response.challenge.mode || ''} · ${response.challenge.status || ''}`;
+            document.getElementById('challengeInfo').textContent = JSON.stringify(response.challenge, null, 2);
+            
+            // UI 상태 업데이트
+            await updatePaymentButtonStatus(response.challenge);
+            updateStatusDisplay(response.challenge.status);
+          } else {
+            // 챌린지 정보 다시 로드
+            console.log('Reloading challenge data...');
+            await loadChallenge();
+          }
+          
+          setAdminMsg(`상태가 '${getStatusText(status)}'로 변경되었습니다.`, 'ok');
+          
+          // 홈 페이지 자동 업데이트를 위한 이벤트 기록
+          localStorage.setItem('challenge_status_changed', JSON.stringify({
+            challengeId: CHALLENGE_ID,
+            newStatus: status,
+            timestamp: Date.now()
+          }));
+        } catch (e) {
+          console.error('Status change error:', e);
+          setAdminMsg(`상태 변경 실패: ${e.message}`, 'error');
+        }
+      });
+    });
   }
 
   async function loadRounds(){
@@ -157,19 +627,24 @@
     renderRoundCards();
   }
 
-  function isHybrid(){ return (S.challenge?.mode || '').toLowerCase() === 'hybrid'; }
+  function isHybrid(){
+    return (S.challenge?.mode || '').toLowerCase() === 'hybrid';
+  }
 
   function renderRounds(){
     const tb = document.getElementById('roundTbody');
     tb.innerHTML = S.rounds.map(r => {
       const rid = r.id;
+      const rMode = (r.mode || '').toLowerCase();
 
       const modeCell = isHybrid()
         ? `<select data-k="mode">
-             <option value="online"  ${r.mode==='online'?'selected':''}>온라인</option>
-             <option value="offline" ${r.mode==='offline'?'selected':''}>오프라인</option>
+             <option value="online"  ${rMode==='online'?'selected':''}>온라인</option>
+             <option value="offline" ${rMode==='offline'?'selected':''}>오프라인</option>
            </select>`
         : (r.mode || '');
+
+      const isOnline = rMode === 'online';
 
       return `
       <tr data-rid="${rid}">
@@ -185,13 +660,13 @@
 
         <td>
           <div class="row-flex">
-            <input type="text" class="w-100" value="${r.place_name || ''}" data-k="place_name" placeholder="장소명" ${r.mode==='online'?'disabled':''}>
-            <button class="btn tiny" onclick="openPlacePicker('row', ${rid})" ${r.mode==='online'?'disabled':''}>검색</button>
+            <input type="text" class="w-100" value="${r.place_name || ''}" data-k="place_name" placeholder="장소명" ${isOnline?'disabled':''}>
+            <button class="btn tiny" onclick="openPlacePicker('row', ${rid})" ${isOnline?'disabled':''}>검색</button>
           </div>
         </td>
 
         <td>
-          <input type="text" class="w-100" value="${(r.mode==='online' ? (r.url||'') : (r.map_url||''))}" data-k="map_url" placeholder="회의/지도 URL">
+          <input type="text" class="w-100" value="${(isOnline ? (r.url||'') : (r.map_url||''))}" data-k="map_url" placeholder="회의/지도 URL">
           <div class="muted tiny">온라인→url 저장 · 오프라인→map_url 저장</div>
         </td>
 
@@ -236,8 +711,8 @@
           const isOn = sel.value === 'online';
           const placeName = tr.querySelector('[data-k="place_name"]');
           const placeBtn  = tr.querySelector('button[onclick^="openPlacePicker"]');
-          placeName.disabled = isOn;
-          placeBtn.disabled  = isOn;
+          if (placeName) placeName.disabled = isOn;
+          if (placeBtn)  placeBtn.disabled  = isOn;
         });
       });
     }
@@ -255,9 +730,10 @@
     const slice = S.rounds.slice(start, start + S.pageSize);
 
     wrap.innerHTML = slice.map(r=>{
+      const rMode = (r.mode || '').toLowerCase();
       const spanTime = `${(r.start_time||'').slice(0,5)} - ${(r.finish_time||'').slice(0,5)}`;
-      const urlForMode = r.mode === 'online' ? (r.url||'') : (r.map_url||'');
-      const where = (r.mode === 'online') ? '온라인' : (r.place_name || '오프라인');
+      const urlForMode = rMode === 'online' ? (r.url||'') : (r.map_url||'');
+      const where = (rMode === 'online') ? '온라인' : (r.place_name || '오프라인');
       return `
         <div class="card">
           <div class="card-head">
@@ -265,7 +741,7 @@
               <div style="font-weight:600">Round ${r.round}</div>
               <div class="muted">${r.processing_at || ''}</div>
             </div>
-            <span class="badge">${r.mode === 'online' ? 'Online' : 'Offline'}</span>
+            <span class="badge">${rMode === 'online' ? 'Online' : 'Offline'}</span>
           </div>
           <div class="kv"><span>⏱️</span><span>${spanTime}</span></div>
           <div class="kv"><span>📍</span><span>${where}</span></div>
@@ -305,10 +781,11 @@
       lon: document.getElementById('g_lon').value,
     };
     document.querySelectorAll('#roundTbody tr').forEach(tr=>{
-      const modeSel = tr.querySelector('[data-k="mode"]');
-      const currentMode = modeSel ? modeSel.value : (S.challenge?.mode || '');
-      if (currentMode === 'offline' || (!isHybrid() && currentMode === 'offline')) {
-        const q = sel => tr.querySelector(`[data-k="${sel}"]`);
+      const sel = tr.querySelector('[data-k="mode"]');
+      const currentMode = sel ? sel.value : (S.challenge?.mode || '');
+      const isOn = (currentMode || '').toLowerCase() === 'online';
+      if (!isOn) {
+        const q = k => tr.querySelector(`[data-k="${k}"]`);
         if (q('place_name')) q('place_name').value = place.place_name;
         if (q('map_url'))   q('map_url').value   = place.map_url;
       }
@@ -331,12 +808,12 @@
     if (has('mode')) payload.mode = tr.querySelector('[data-k="mode"]').value;
 
     const effectiveUrl = val('map_url');
-    const modeNow = payload.mode || (S.rounds.find(r=>r.id===rid)?.mode || S.challenge?.mode || '');
+    const modeNow = (payload.mode || (S.rounds.find(r=>r.id===rid)?.mode) || S.challenge?.mode || '').toLowerCase();
     if (modeNow === 'online')      payload.url = effectiveUrl;
     else if (modeNow === 'offline') payload.map_url = effectiveUrl;
     else {
       const round = S.rounds.find(r=>r.id===rid);
-      if (round?.mode === 'online') payload.url = effectiveUrl;
+      if ((round?.mode || '').toLowerCase() === 'online') payload.url = effectiveUrl;
       else payload.map_url = effectiveUrl;
     }
 
@@ -402,6 +879,130 @@
       list.map(u => `<div>${u.username || u.name || ('user#'+u.user_id)} (id:${u.user_id})</div>`).join('');
   }
 
+  function goToChallenge(){
+    window.location.href = '/home';
+  }
+
+  // 참가 현황 새로고침
+  async function refreshParticipationStatus() {
+    if (!S.challenge) return;
+    
+    try {
+      // 최신 챌린지 정보 가져오기
+      const latestChallenge = await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}`);
+      S.challenge = latestChallenge;
+      
+      // 통계 정보 가져오기
+      const stats = await safeFetchJSON(`${API_CH}/participations/${CHALLENGE_ID}/stats`).catch(() => null);
+      
+      // 현황 정보 업데이트
+      updateParticipationDisplay(latestChallenge, stats);
+      
+    } catch (e) {
+      console.error('참가 현황 로드 실패:', e);
+      document.getElementById('currentParticipants').textContent = '로드 실패';
+    }
+  }
+  
+  function updateParticipationDisplay(challenge, stats) {
+    // 기본 정보 표시
+    document.getElementById('currentParticipants').textContent = challenge.current_participants || 0;
+    document.getElementById('maxParticipants').textContent = challenge.max_participants || '제한 없음';
+    
+    // 모집 상태
+    const statusEl = document.getElementById('recruitmentStatus');
+    const statusText = getStatusText(challenge.status);
+    statusEl.textContent = statusText;
+    statusEl.style.color = getStatusColor(challenge.status);
+    
+    // 결제 방식
+    const paymentTypeEl = document.getElementById('paymentType');
+    const paymentTypeText = getPaymentTypeText(challenge.payment_type);
+    paymentTypeEl.textContent = paymentTypeText;
+    paymentTypeEl.style.color = challenge.payment_type === 'free' ? '#059669' : '#7c2d12';
+    
+    // 상태에 따른 현재 참가자 수 색상
+    const currentEl = document.getElementById('currentParticipants');
+    if (challenge.max_participants && challenge.current_participants >= challenge.max_participants) {
+      currentEl.style.color = '#dc2626'; // 정원 초과시 빨간색
+    } else if (challenge.status === 'recruiting') {
+      currentEl.style.color = '#059669'; // 모집중일 때 녹색
+    } else {
+      currentEl.style.color = '#111827'; // 기본색
+    }
+  }
+  
+  function getStatusColor(status) {
+    const colors = {
+      'draft': '#6b7280',
+      'recruiting': '#059669',
+      'active': '#0369a1',
+      'completed': '#374151',
+      'cancelled': '#dc2626',
+      'closed': '#111827'
+    };
+    return colors[status] || '#6b7280';
+  }
+  
+  function getPaymentTypeText(paymentType) {
+    const typeMap = {
+      'free': '무료',
+      'entry_fee': '참가비',
+      'monthly_fee': '월회비',
+      'both': '참가비+월회비'
+    };
+    return typeMap[paymentType] || paymentType || '미설정';
+  }
+  
+  // 참가자 목록 로드
+  async function loadParticipantList() {
+    const listDiv = document.getElementById('participantsList');
+    const contentDiv = document.getElementById('participantsContent');
+    
+    try {
+      // 참가자 목록 가져오기
+      const participants = await safeFetchJSON(`${API_CH}/participations/${CHALLENGE_ID}/members`);
+      
+      if (participants.length === 0) {
+        contentDiv.innerHTML = '<div style="text-align:center;padding:20px;color:#6b7280">참가자가 없습니다</div>';
+      } else {
+        contentDiv.innerHTML = participants.map(p => {
+          const user = p.user || {};
+          const roleText = getRoleText(p.role);
+          const avatar = user.username ? user.username.charAt(0).toUpperCase() : 'U';
+          
+          return `
+            <div class="participant-card">
+              <div class="participant-avatar">${avatar}</div>
+              <div class="participant-info">
+                <div class="participant-name">${user.username || user.name || 'Unknown User'}</div>
+                <div class="participant-role">${roleText}</div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+      
+      // 목록 표시/숨김 토글
+      listDiv.style.display = listDiv.style.display === 'none' ? 'block' : 'none';
+      
+    } catch (e) {
+      console.error('참가자 목록 로드 실패:', e);
+      contentDiv.innerHTML = '<div style="text-align:center;padding:20px;color:#dc2626">목록을 불러올 수 없습니다</div>';
+      listDiv.style.display = 'block';
+    }
+  }
+  
+  function getRoleText(role) {
+    const roleMap = {
+      'creator': '생성자',
+      'participant': '참가자',
+      'manager': '관리자',
+      'moderator': '부관리자'
+    };
+    return roleMap[role] || role;
+  }
+
   // 장소 검색 팝업
   function openPlacePicker(scope, rid){
     const url = `/pages/place-picker?scope=${encodeURIComponent(scope)}${rid?`&rid=${rid}`:''}`;
@@ -439,7 +1040,7 @@
     const fd = new FormData();
     fd.append('file', f);
 
-    const res = await fetch(`${API_ROOT}/challenges/${CHALLENGE_ID}/rounds/${rid}/pictures`, {
+    const res = await fetch(`${API_PIC}/challenges/${CHALLENGE_ID}/rounds/${rid}/pictures`, {
       method:'POST',
       credentials:'include',
       headers: { ...authHeader() }, // multipart는 Content-Type 지정 금지
@@ -452,6 +1053,258 @@
     }
     document.getElementById(`picMsg-${rid}`).innerHTML = '<span class="ok">업로드 성공</span>';
   }
+  
 </script>
+
+<!-- 모듈 스크립트: 결제 UI 바인딩 -->
+<script type="module">
+  import { wirePaymentUI } from "/static/js/payment.js";
+
+  // challenge_id와 로더를 그대로 재사용
+  wirePaymentUI({
+    challengeId: CHALLENGE_ID,
+    getChallenge: loadChallenge,
+  });
+</script>
+
+<!-- Toss Payments v1 SDK -->
+<script src="https://js.tosspayments.com/v1"></script>
+
+<!-- 결제 처리 -->
+<script type="module">
+  import { wirePaymentUI } from "/static/js/payment.js";
+
+  // 기존 시뮬레이터도 연결 (btnJoin, btnPaySuccess/Fail)
+  wirePaymentUI({
+    challengeId: CHALLENGE_ID,
+    getChallenge: loadChallenge,
+  });
+
+  // 참여/취소 버튼
+  const btnJoin = document.getElementById('btnJoinWithPayment');
+  const btnLeave = document.getElementById('btnLeaveChallenge');
+  const msg = document.getElementById('participationMsg');
+  const setMsg = (t, type='info') => {
+    const color = type === 'error' ? '#c00' : (type==='ok' ? '#0a7' : '#666');
+    msg.innerHTML = `<span style="color:${color}">${t}</span>`;
+  };
+
+  // success 페이지에서 challengeId 접근 위해 저장
+  sessionStorage.setItem('pay_challenge_id', CHALLENGE_ID);
+
+  async function fetchJSON(url, options = {}) {
+    const res = await fetch(url, {
+      credentials: 'include',
+      headers: { 'Accept': 'application/json', ...(options.headers||{}) },
+      ...options
+    });
+    const ct = res.headers.get('content-type') || '';
+    const isJSON = ct.includes('application/json');
+    const body = isJSON ? await res.json() : await res.text();
+    if (!res.ok) throw new Error(isJSON ? (body?.detail || body?.message || `HTTP ${res.status}`) : String(body));
+    return body;
+  }
+
+  // 참여하기 버튼 이벤트 리스너
+  btnJoin?.addEventListener('click', async () => {
+    // 버튼이 비활성화되었으면 실행하지 않음
+    if (btnJoin.disabled) {
+      setMsg('챌린지 상태를 확인해주세요', 'error');
+      return;
+    }
+
+    // 챌린지 상태 재확인
+    if (!S.challenge || S.challenge.status !== 'recruiting') {
+      setMsg('모집중인 챌린지만 참여할 수 있습니다', 'error');
+      return;
+    }
+
+    // 생성자인지 확인
+    const currentUser = await getCurrentUser();
+    if (currentUser && S.challenge && currentUser.id === S.challenge.creator_id) {
+      setMsg('챌린지 생성자는 참여할 수 없습니다', 'error');
+      return;
+    }
+
+    try {
+      // 최신 챌린지 상태 확인
+      const latestChallenge = await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}`);
+      if (latestChallenge.status !== 'recruiting') {
+        const statusText = getStatusText(latestChallenge.status);
+        setMsg(`현재 모집중이 아닌 챌린지입니다 (상태: ${statusText}). 페이지를 새로고침해주세요.`, 'error');
+        // 챌린지 데이터 업데이트
+        S.challenge = latestChallenge;
+        await updatePaymentButtonStatus(latestChallenge);
+        updateStatusDisplay(latestChallenge.status);
+        return;
+      }
+
+      // 현재 참여 상태 확인
+      const userParticipation = latestChallenge.user_participation;
+      const isPaymentPending = userParticipation && userParticipation.status === 'payment_pending';
+      
+      // 챌린지 결제 타입 확인
+      const paymentType = S.challenge.payment_type || 'free';
+      
+      if (paymentType === 'free') {
+        // 무료 챌린지: 바로 참여 처리
+        setMsg('참여 처리 중...', 'info');
+        
+        await fetchJSON(`/api/v1/participations/join`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('access_token') || ''}`
+          },
+          body: JSON.stringify({ challenge_id: CHALLENGE_ID })
+        });
+        
+        setMsg('🎉 챌린지에 성공적으로 참여했습니다!', 'ok');
+        
+        // 챌린지 데이터 새로고침
+        await loadChallenge();
+        await refreshParticipationStatus();
+        
+      } else if (isPaymentPending) {
+        // 이미 참여 신청한 상태에서 결제만 진행
+        setMsg('결제 준비 중...', 'info');
+        
+        // 결제 준비
+        const ready = await fetchJSON(`/api/v1/payments/ready`, { 
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('access_token') || ''}`
+          },
+          body: JSON.stringify({ challenge_id: CHALLENGE_ID })
+        });
+        const { orderId, amount, orderName, clientKey } = ready;
+
+        // 🎯 팝업 방식으로 결제 진행
+        const toss = window.TossPayments(clientKey);
+        toss.requestPayment('카드', {
+          amount,
+          orderId,
+          orderName,
+          successUrl: window.location.origin + '/payments/success?challenge_id=' + CHALLENGE_ID + '&popup=true',
+          failUrl: window.location.origin + '/payments/fail?challenge_id=' + CHALLENGE_ID + '&popup=true'
+        }).catch(function (error) {
+          if (error.code === 'USER_CANCEL') {
+            setMsg('결제가 취소되었습니다.', 'error');
+            return;
+          }
+          console.error('결제 오류:', error);
+          setMsg('결제 중 오류가 발생했습니다: ' + error.message, 'error');
+        });
+        
+      } else {
+        // 유료 챌린지: 참여 신청 후 결제 진행
+        setMsg('참여 신청 및 결제 준비 중...', 'info');
+        
+        await fetchJSON(`/api/v1/participations/join`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('access_token') || ''}`
+          },
+          body: JSON.stringify({ challenge_id: CHALLENGE_ID })
+        }).catch(()=>{}); // 이미 신청한 경우 무시
+
+        // 결제 준비
+        const ready = await fetchJSON(`/api/v1/payments/ready`, { 
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('access_token') || ''}`
+          },
+          body: JSON.stringify({ challenge_id: CHALLENGE_ID })
+        });
+        const { orderId, amount, orderName, clientKey } = ready;
+
+        // 🎯 팝업 방식으로 결제 진행
+        const toss = window.TossPayments(clientKey);
+        toss.requestPayment('카드', {
+          amount,
+          orderId,
+          orderName,
+          successUrl: window.location.origin + '/payments/success?challenge_id=' + CHALLENGE_ID + '&popup=true',
+          failUrl: window.location.origin + '/payments/fail?challenge_id=' + CHALLENGE_ID + '&popup=true'
+        }).catch(function (error) {
+          if (error.code === 'USER_CANCEL') {
+            setMsg('결제가 취소되었습니다.', 'error');
+            return;
+          }
+          console.error('결제 오류:', error);
+          setMsg('결제 중 오류가 발생했습니다: ' + error.message, 'error');
+        });
+      }
+    } catch (e) {
+      setMsg(`참여 처리 실패: ${e.message}`, 'error');
+    }
+  });
+
+  // 참여 취소 버튼 이벤트 리스너
+  btnLeave?.addEventListener('click', async () => {
+    // 현재 참여 상태 확인
+    const currentChallenge = await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}/with-participation`);
+    const userParticipation = currentChallenge.user_participation;
+    const isActive = userParticipation && userParticipation.status === 'active';
+    
+    let confirmMessage = '정말로 챌린지 참여를 취소하시겠습니까?';
+    if (isActive) {
+      confirmMessage += '\n✅ 결제하신 금액은 자동으로 환불 처리됩니다.';
+    } else {
+      confirmMessage += '\n💳 결제 대기 중인 상태가 취소됩니다.';
+    }
+    
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      console.log('[DEBUG] 참가 취소 시작:', { challengeId: CHALLENGE_ID, isActive });
+      
+      // 토큰 확인
+      const token = localStorage.getItem('access_token');
+      console.log('[DEBUG] 토큰 상태:', token ? '있음' : '없음');
+      
+      if (isActive) {
+        setMsg('참여 취소 및 환불 처리 중...', 'info');
+      } else {
+        setMsg('참여 취소 처리 중...', 'info');
+      }
+      
+      // 참여 취소 API 호출
+      console.log('[DEBUG] API 호출 시작:', `/api/v1/participations/${CHALLENGE_ID}/leave`);
+      const leaveResult = await fetchJSON(`/api/v1/participations/${CHALLENGE_ID}/leave`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token || ''}`
+        },
+        body: JSON.stringify({ reason: '사용자 요청' })
+      });
+
+      console.log('[DEBUG] API 응답:', leaveResult);
+
+      if (isActive) {
+        setMsg('✅ 참여 취소 및 환불이 완료되었습니다.', 'ok');
+      } else {
+        setMsg('✅ 참여가 성공적으로 취소되었습니다.', 'ok');
+      }
+      
+      // 챌린지 데이터 새로고침
+      await loadChallenge();
+      await refreshParticipationStatus();
+      
+    } catch (e) {
+      console.error('[ERROR] 참가 취소 실패:', e);
+      setMsg(`참여 취소 실패: ${e.message}`, 'error');
+    }
+  });
+
+</script>
+
+
 </body>
 </html>

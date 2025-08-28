@@ -4,13 +4,12 @@ from .base import Base
 # 모든 모델들을 import
 from .user import User
 from .challenge import Challenge
-from .participation import Participation, ParticipationRole
+from .participation import Participation, ParticipationManager
 from .challenge_round import ChallengeRound
 from .round_picture import RoundPicture
 from .attendance import QRCode, RoundAttendance, Proof, Appeal
 from .attendance import QRStatus, CheckMethod, AutoDecision, InitialDecision, InitialDecisionCode, ProofStatus, AppealDecisionCode, AttendanceStatus
-from .finance import Payment, Refund, PointExchangeRequest
-from .finance import PaymentStatus, RefundStatus, PointExchangeStatus
+from .payment import Payment ,Refund,PaymentMethodType,PaymentStatus,PaymentTransactionType
 from .tag import Tag, UserTag, ChallengeTag
 from .admin_notice import AdminNotice
 from .notification import Notification, NotificationEvent
@@ -31,6 +30,7 @@ __all__ = [
     "User",
     "Challenge", 
     "Participation",
+    "ParticipationManager",
     "ChallengeRound",
     "RoundPicture",
     
@@ -43,7 +43,6 @@ __all__ = [
     # Finance
     "Payment",
     "Refund", 
-    "PointExchangeRequest",
     "PointHistory",
     
     # Social Features
@@ -60,23 +59,7 @@ __all__ = [
     "Notification",
     "ChallengeEmbedding",
     
-    # Enums
-    "ParticipationRole",
-    "QRStatus",
-    "CheckMethod", 
-    "AutoDecision",
-    "InitialDecision",
-    "InitialDecisionCode",
-    "ProofStatus",
-    "AppealDecisionCode", 
-    "AttendanceStatus",
-    "PaymentStatus",
-    "RefundStatus",
-    "PointExchangeStatus",
-    "PointHistoryType", 
-    "NotificationEvent",
-    "InvitationStatus",
-    "ReviewStatus",
+
 
     # round_manager
     "RoundManager",
