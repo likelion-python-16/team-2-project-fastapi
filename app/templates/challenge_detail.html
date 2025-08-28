@@ -177,6 +177,38 @@
   <div id="adminMsg" style="font-size:14px;color:#555"></div>
 </div>
 
+<!-- [추가] 생성자 팔로우 패널 -->
+<div id="creatorFollowPanel" class="panel" style="display:none;">
+  <h3>👤 챌린지 생성자</h3>
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+    <div>
+      <div id="creatorName" style="font-weight:bold;font-size:16px">-</div>
+      <div id="creatorInfo" style="font-size:14px;color:#6b7280">-</div>
+    </div>
+    <div style="flex:1"></div>
+    <button id="btnFollowCreator" class="btn" style="background:#10b981;color:white;border-color:#10b981">팔로우</button>
+    <button id="btnUnfollowCreator" class="btn" style="display:none;background:#6b7280;color:white;border-color:#6b7280">언팔로우</button>
+  </div>
+  <div id="followMsg" style="font-size:14px;color:#555"></div>
+</div>
+
+<!-- [추가] 태그 패널 -->
+<div class="panel">
+  <h3>🏷️ AI 태그 추천</h3>
+  <div style="display:flex;gap:8px;margin-bottom:12px">
+    <input id="tagSearchInput" type="text" placeholder="태그를 검색하세요..." style="flex:1;padding:8px;border:1px solid #ddd;border-radius:4px">
+    <button id="btnSearchTag" class="btn">검색</button>
+  </div>
+  <div id="tagResult" style="margin-bottom:12px;padding:8px;border:1px solid #e5e7eb;border-radius:4px;background:#f9fafb;display:none">
+    <strong>AI 추천 결과:</strong>
+    <span id="recommendedTag">-</span>
+    <span id="tagConfidence" style="color:#6b7280;font-size:12px">(-)</span>
+  </div>
+  <div id="challengeTags" style="display:flex;flex-wrap:wrap;gap:6px">
+    <!-- 챌린지 태그들 표시 -->
+  </div>
+</div>
+
 <!-- [추가] 참여/취소 패널 -->
 <div class="panel">
   <h3>🎯 챌린지 참여</h3>
@@ -405,7 +437,11 @@
     // 참가 현황 업데이트
     await refreshParticipationStatus();
     
-    // 생성자 결제 상태 확인 제거됨 - 이제 결제는 생성 시에만 가능
+    // 생성자 팔로우 패널 업데이트
+    await updateCreatorFollowPanel(ch);
+    
+    // 챌린지 태그 로드
+    await loadChallengeTags(ch.id);
   }
 
   async function updatePaymentButtonStatus(challenge) {
@@ -1302,6 +1338,124 @@
       setMsg(`참여 취소 실패: ${e.message}`, 'error');
     }
   });
+
+  // ===== 생성자 팔로우 기능 =====
+  async function updateCreatorFollowPanel(challenge) {
+    const panel = document.getElementById('creatorFollowPanel');
+    const creatorName = document.getElementById('creatorName');
+    const creatorInfo = document.getElementById('creatorInfo');
+    const btnFollow = document.getElementById('btnFollowCreator');
+    const btnUnfollow = document.getElementById('btnUnfollowCreator');
+    
+    if (!challenge.creator_id) {
+      panel.style.display = 'none';
+      return;
+    }
+    
+    // 현재 로그인한 사용자가 생성자인 경우 팔로우 패널 숨김
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      panel.style.display = 'none';
+      return;
+    }
+    
+    // 생성자 정보 표시
+    creatorName.textContent = challenge.creator_username || `사용자 #${challenge.creator_id}`;
+    creatorInfo.textContent = `생성된 챌린지: ${challenge.id}번`;
+    
+    // 팔로우 상태 확인 (TODO: API로 확인)
+    btnFollow.style.display = 'inline-block';
+    btnUnfollow.style.display = 'none';
+    
+    panel.style.display = 'block';
+  }
+  
+  // 팔로우 버튼 이벤트
+  document.getElementById('btnFollowCreator').addEventListener('click', async () => {
+    const challenge = S.challenge;
+    if (!challenge?.creator_id) return;
+    
+    try {
+      const token = localStorage.getItem('access_token');
+      const response = await fetchJSON(`/api/v1/follow/${challenge.creator_id}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      document.getElementById('followMsg').textContent = response.message || '팔로우했습니다!';
+      document.getElementById('btnFollowCreator').style.display = 'none';
+      document.getElementById('btnUnfollowCreator').style.display = 'inline-block';
+      
+    } catch (e) {
+      document.getElementById('followMsg').textContent = `팔로우 실패: ${e.message}`;
+    }
+  });
+  
+  // 언팔로우 버튼 이벤트
+  document.getElementById('btnUnfollowCreator').addEventListener('click', async () => {
+    const challenge = S.challenge;
+    if (!challenge?.creator_id) return;
+    
+    try {
+      const token = localStorage.getItem('access_token');
+      const response = await fetchJSON(`/api/v1/follow/${challenge.creator_id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      document.getElementById('followMsg').textContent = response.message || '언팔로우했습니다.';
+      document.getElementById('btnFollowCreator').style.display = 'inline-block';
+      document.getElementById('btnUnfollowCreator').style.display = 'none';
+      
+    } catch (e) {
+      document.getElementById('followMsg').textContent = `언팔로우 실패: ${e.message}`;
+    }
+  });
+
+  // ===== AI 태그 검색 기능 =====
+  document.getElementById('btnSearchTag').addEventListener('click', async () => {
+    const query = document.getElementById('tagSearchInput').value.trim();
+    if (!query) {
+      alert('검색어를 입력해주세요.');
+      return;
+    }
+    
+    try {
+      const response = await fetchJSON(`/api/v1/tags/search?query=${encodeURIComponent(query)}`);
+      
+      document.getElementById('recommendedTag').textContent = response.tag;
+      document.getElementById('tagConfidence').textContent = `(신뢰도: ${(response.score * 100).toFixed(1)}%)`;
+      document.getElementById('tagResult').style.display = 'block';
+      
+    } catch (e) {
+      alert(`태그 검색 실패: ${e.message}`);
+    }
+  });
+  
+  // 엔터키로 태그 검색
+  document.getElementById('tagSearchInput').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      document.getElementById('btnSearchTag').click();
+    }
+  });
+  
+  // 챌린지 태그 로드 (예시 - 실제로는 챌린지별 태그 API 필요)
+  async function loadChallengeTags(challengeId) {
+    const tagsContainer = document.getElementById('challengeTags');
+    
+    // 임시 예시 태그들
+    const exampleTags = ['운동', '건강', '습관형성', '자기개발'];
+    
+    tagsContainer.innerHTML = exampleTags.map(tag => 
+      `<span style="background:#e5e7eb;color:#374151;padding:4px 8px;border-radius:12px;font-size:12px">${tag}</span>`
+    ).join('');
+  }
 
 </script>
 

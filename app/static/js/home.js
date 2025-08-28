@@ -324,20 +324,21 @@ async function loadFollowing() {
     return;
   }
   try {
-    // 1순위: /api/v1/home/following
-    let list = [];
-    try {
-      list = await fetchJSON('/api/v1/home/following');
-    } catch (_) {
-      // 2순위: /api/v1/challenges/following
-      list = await fetchJSON('/api/v1/challenges/following');
-    }
+    // 우리가 구현한 팔로우 API 사용
+    const token = localStorage.getItem('access_token');
+    const list = await fetchJSON('/api/v1/following/challenges', {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
     elHomeFollowLoginReq.style.display = 'none';
     elHomeFollowList.innerHTML = list?.length ? renderCardList(list.slice(0, 6)) : '<div class="empty">팔로우한 사용자의 챌린지가 없어요.</div>';
   } catch (e) {
     elHomeFollowLoginReq.style.display = 'none';
     elHomeFollowList.innerHTML = '<div class="empty">팔로우 데이터를 불러오지 못했습니다.</div>';
-    console.warn(e);
+    console.warn('팔로우 챌린지 로드 실패:', e);
   }
 }
 
