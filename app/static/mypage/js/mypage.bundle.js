@@ -21,6 +21,35 @@
 
     function toast(msg){ const z=qs("toasts"); const t=document.createElement("div"); t.className="toast"; t.textContent=msg; z.appendChild(t); setTimeout(()=>t.remove(), 3200); }
 
+    // micro-anim: number count-up
+    function countTo(el, target, ms=600){
+      if(!el) return;
+      const safeNum = (v)=>{ try{ return Number(String(v).replace(/[^0-9-]/g,''))||0; }catch{ return 0; } };
+      const start = safeNum(el.textContent);
+      const end = Number(target)||0;
+      const t0 = performance.now();
+      const ease = t=> 1 - Math.pow(1-t,3);
+      function step(now){
+        const p = Math.min(1, (now - t0) / ms);
+        const val = Math.round(start + (end - start) * ease(p));
+        try{ el.textContent = val.toLocaleString('ko-KR'); }catch{ el.textContent = String(val); }
+        if(p < 1) requestAnimationFrame(step);
+      }
+      requestAnimationFrame(step);
+    }
+
+    // reveal-on-scroll
+    function initReveal(){
+      const els = Array.from(document.querySelectorAll('.card, .hero, .table-wrap'));
+      els.forEach(el=> el.classList.add('reveal'));
+      const io = new IntersectionObserver((entries)=>{
+        entries.forEach(en=>{
+          if(en.isIntersecting){ en.target.classList.add('in'); io.unobserve(en.target); }
+        });
+      }, { rootMargin: '0px 0px -10% 0px', threshold: 0.08 });
+      els.forEach(el=> io.observe(el));
+    }
+
     function token(){
       try{const t=localStorage.getItem("access_token"); if(t) return t;}catch{}
       const m=document.cookie.match(/(?:^|;)\s*access_token=([^;]+)/); return m?decodeURIComponent(m[1]):null;
@@ -113,6 +142,13 @@
         if(key === 'payments' && isOtherView){ card.style.display='none'; return; }
         card.style.display = (map[key]===false) ? 'none' : '';
       });
+
+      // 네비 항목도 숨겨진 섹션은 감춤
+      document.querySelectorAll('.nav .item[data-jump]').forEach(it=>{
+        const anchor = it.getAttribute('data-jump');
+        const target = anchor ? document.querySelector(anchor) : null;
+        if(target){ it.style.display = (target.style.display === 'none') ? 'none' : ''; }
+      });
     }
 
     async function loadVisibility(){
@@ -187,9 +223,7 @@
       if(isOtherView) return;
       try{
         const p = await jget("/api/v1/users/me/points?skip=0&limit=1");
-        if(p){
-          qs("my_points").textContent = (p.current_points||0).toLocaleString("ko-KR");
-        }
+        if(p){ countTo(qs("my_points"), p.current_points||0, 700); }
       }catch(e){}
     }
 
@@ -279,9 +313,24 @@
 
     /* ===== 결제 내역 (프론트 전용) ===== */
     async function loadSpendSummary(){
+      if(isOtherView){ const c = document.getElementById('my_sec_payments'); if(c) c.style.display='none'; return; }
       const paidEl = qs('summary_paid');
       const refundEl = qs('summary_refund');
       if(!paidEl || !refundEl) return;
+      // prepare fade views
+      paidEl.classList.add('fade-view','show');
+      refundEl.classList.add('fade-view','hidden');
+      const paidWrap = qs('table_paid_wrap');
+      const refWrap = qs('table_refund_wrap');
+      if(paidWrap) paidWrap.classList.add('fade-view','show');
+      if(refWrap) refWrap.classList.add('fade-view','hidden');
+      function swapFade(showEl, hideEl){
+        if(!showEl || !hideEl) return;
+        hideEl.classList.remove('show');
+        setTimeout(()=> hideEl.classList.add('hidden'), 220);
+        showEl.classList.remove('hidden');
+        requestAnimationFrame(()=> showEl.classList.add('show'));
+      }
       try{
         const r = await jget('/api/v1/users/me/spend/summary?include_deposit=true');
         const paid = Number(r?.total_paid||0).toLocaleString('ko-KR');
@@ -299,12 +348,18 @@
           btn.classList.add('active');
           const k = btn.getAttribute('data-tab');
           const showPaid = (k==='paid');
-          paidEl.style.display = showPaid? '' : 'none';
-          refundEl.style.display = showPaid? 'none' : '';
-          qs('table_paid_wrap').style.display = showPaid? '' : 'none';
-          qs('table_refund_wrap').style.display = showPaid? 'none' : '';
-          qs('paid_sum_line').style.display = showPaid? '' : 'none';
-          qs('refund_sum_line').style.display = showPaid? 'none' : '';
+          if(showPaid){
+            swapFade(paidEl, refundEl);
+            swapFade(paidWrap, refWrap);
+          }else{
+            swapFade(refundEl, paidEl);
+            swapFade(refWrap, paidWrap);
+          }
+          const paidSum = qs('paid_sum_line'); const refSum = qs('refund_sum_line');
+          if(paidSum && refSum){
+            paidSum.style.display = showPaid? '' : 'none';
+            refSum.style.display = showPaid? 'none' : '';
+          }
         };
       });
 
@@ -363,8 +418,8 @@
         const base = isOtherView ? `/api/v1/users/${VIEW_USER_ID}` : `/api/v1/users/me`;
         const frs = await jget(`${base}/followers?skip=0&limit=1`).catch(()=>null);
         const fng = await jget(`${base}/following?skip=0&limit=1`).catch(()=>null);
-        if(qs('hero_followers')) qs('hero_followers').textContent = frs?.total ?? 0;
-        if(qs('hero_following')) qs('hero_following').textContent = fng?.total ?? 0;
+        if(qs('hero_followers')) countTo(qs('hero_followers'), frs?.total ?? 0, 600);
+        if(qs('hero_following')) countTo(qs('hero_following'), fng?.total ?? 0, 600);
       }catch(e){
         if(qs('hero_followers')) qs('hero_followers').textContent = '0';
         if(qs('hero_following')) qs('hero_following').textContent = '0';
@@ -599,5 +654,7 @@
       ]);
 
       // 보강: my_manner는 프로필 응답 기준으로 반영됨
+      // init scroll reveals after content is in DOM
+      initReveal();
     }
     init();

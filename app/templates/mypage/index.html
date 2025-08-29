@@ -7,14 +7,14 @@
   <!-- Inter -->
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/mypage/css/mypage.css" />
+  <link rel="stylesheet" href="/static/mypage/css/mypage.css?v=7" />
 
 </head>
 <body data-view-user-id="{{ view_user_id if view_user_id is not none else '' }}">
   <!-- 고정 헤더 -->
   <header class="header">
     <div class="brand">
-      <div class="brand-badge">M</div>
+      <a class="brand-badge" href="/" title="홈으로">H</a>
       <div>MyPage</div>
     </div>
     <div class="header-actions"></div>
@@ -134,7 +134,7 @@
           </div>
           
           <!-- 결제 요약 (긴 카드, 탭) -->
-          <div class="card lg" id="my_sec_payments">
+          <div class="card lg" id="my_sec_payments" data-section="payments">
             <div class="toolbar"><h3 style="margin-right:auto">결제 요약</h3></div>
             <div class="tabs-mini">
               <button class="tab-mini active" data-tab="paid">총결제액</button>
@@ -151,8 +151,8 @@
             <div class="pagination" id="paid_pagination"><button class="btn" id="paid_prev">이전</button><span class="muted" id="paid_info">0-0 / 0</span><button class="btn" id="paid_next">다음</button></div>
             <div class="pagination" id="refund_pagination" style="display:none"><button class="btn" id="refund_prev">이전</button><span class="muted" id="refund_info">0-0 / 0</span><button class="btn" id="refund_next">다음</button></div>
             <div class="row" style="justify-content:flex-end; margin-top:8px">
-              <span class="muted" id="paid_sum_line">합계: - 원</span>
-              <span class="muted" id="refund_sum_line" style="display:none">합계: - 원</span>
+              <span class="muted" id="paid_sum_line"></span>
+              <span class="muted" id="refund_sum_line" style="display:none"></span>
             </div>
           </div>
           
@@ -211,6 +211,6 @@
   <!-- 토스트 -->
   <div class="toast-zone" id="toasts"></div>
 
-  <script type="module" src="/static/mypage/js/mypage.bundle.js" defer></script>
+  <script type="module" src="/static/mypage/js/mypage.bundle.js?v=2" defer></script>
 </body>
 </html>

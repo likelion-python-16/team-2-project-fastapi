@@ -14,6 +14,7 @@ from app.models.following import Following
 from app.models.review import Review, ReviewStatus
 from app.models import Tag  # ← 활성 태그 검증 위해 추가
 from app.schemas.auth import UserOut
+from app.schemas.user_public import UserPublicOut
 from app.schemas.user import UserBrief, FollowListOut
 from app.security import normalize_phone, id_fingerprint
 from app.utils.logging import logger
@@ -468,7 +469,7 @@ def check_duplicates(
 # -------------------------------------------------
 # 단건 조회
 # -------------------------------------------------
-@router.get("/{user_id}", response_model=UserOut)
+@router.get("/{user_id}", response_model=UserPublicOut)
 async def get_user(user_id: int, db: Session = Depends(get_db)):
     """특정 사용자 조회"""
     if user_id <= 0:
@@ -477,16 +478,17 @@ async def get_user(user_id: int, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail=f"사용자 ID {user_id}를 찾을 수 없습니다")
-    return user
+    return UserPublicOut.model_validate(user, from_attributes=True)
 
 
-@router.get("/username/{username}", response_model=UserOut)
+@router.get("/username/{username}", response_model=UserPublicOut)
 async def get_user_by_username(username: str, db: Session = Depends(get_db)):
     """사용자명으로 사용자 조회"""
     user = db.query(User).filter(User.username == username).first()
     if not user:
-        raise HTTPException(statuscode=404, detail=f"사용자명 '{username}'을 찾을 수 없습니다")
-    return user
+        # status_code 오탈자 수정
+        raise HTTPException(status_code=404, detail=f"사용자명 '{username}'을 찾을 수 없습니다")
+    return UserPublicOut.model_validate(user, from_attributes=True)
 
 
 # -------------------------------------------------
