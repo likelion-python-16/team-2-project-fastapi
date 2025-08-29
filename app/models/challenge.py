@@ -43,6 +43,10 @@ class Challenge(Base):
 
     max_participation_rate = Column(Integer, nullable=True, comment="최대 참여율 (%)")
 
+    # 🖼 대표(커버) 이미지
+    cover_image_url = Column(String(255), nullable=True)
+    cover_round_picture_id = Column(Integer, ForeignKey("round_pictures.id", ondelete="SET NULL"), nullable=True)
+
     def get_status(self, current_count: int = 0) -> str:
         today = date.today()
 
@@ -84,6 +88,7 @@ class Challenge(Base):
     default_map_url = Column(String(512), nullable=True)
     default_latitude = Column(Float, nullable=True)
     default_longitude = Column(Float, nullable=True)
+    default_place_id = Column(String(64), nullable=True, comment="네이버 placeId (검색/앱 링크용)")
     
     # 🔗 Relationships (foreign_keys 명시)
     creator = relationship("User", back_populates="created_challenges", foreign_keys="Challenge.creator_id")
@@ -128,3 +133,6 @@ class Challenge(Base):
         back_populates="challenge",
         cascade="all, delete-orphan"
     )
+
+    # 라운드 사진 중 하나를 대표로 지정한 경우 관계
+    cover_round_picture = relationship("RoundPicture", foreign_keys=[cover_round_picture_id])

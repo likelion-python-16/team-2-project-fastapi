@@ -1,17 +1,19 @@
 # app/schemas/challenge_round.py
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, field_validator, model_validator, Field
 from datetime import date, time, datetime
-from typing import Optional,Literal
+from typing import Optional,Literal, Annotated
 from enum import Enum
 
 class RoundMode(str, Enum):
     ONLINE = "online"
     OFFLINE = "offline"
 
+RoundNumber = Annotated[int, Field(ge=1, le=50)]
+
 class ChallengeRoundCreate(BaseModel):
     challenge_id: int
     mode: RoundMode
-    round: int
+    round: RoundNumber
     processing_at: date
     start_time: time
     finish_time: time
@@ -28,6 +30,7 @@ class ChallengeRoundCreate(BaseModel):
     lat: Optional[float] = None
     lon: Optional[float] = None
     geofence_radius_m: Optional[float] = None
+    map_url: Optional[str] = None
 
 
     @field_validator('round')
@@ -70,7 +73,7 @@ class ChallengeRoundUpdate(BaseModel):
     road_address: Optional[str] = None
     address: Optional[str] = None
     map_url: Optional[str] = None
-    mode: Optional[Literal["online", "offline"]] = None
+    
 
 class ChallengeRoundResponse(BaseModel):
     id: int

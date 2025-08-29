@@ -20,8 +20,8 @@ from .utils.logging import logger
 from .routers import users, health, system, challenges, auth, homepage, follow, naver_maps, map, files, tags_categories, places, naver_local, pages
 from .routers import round_pictures
 from app.routers.tags_categories import router as tags_router
-from app.routers.challengecreating import router as challengecreating_router
-from app.routers.challengedetail import router as challengedetail_router
+# from app.routers.challengecreating import router as challengecreating_router
+# from app.routers.challengedetail import router as challengedetail_router
 from app.routers.place_picker import router as place_picker_router
 
 # (중복 제거) email_verification/verify_pages 별도 API 라우터는 include 안함
@@ -158,8 +158,8 @@ app.include_router(files.router, prefix="/api/v1")
 app.include_router(pages.router)
 app.include_router(tags_categories.router, prefix="/api/v1")
 app.include_router(tags_router, prefix="/api/v1")
-app.include_router(challengecreating_router)
-app.include_router(challengedetail_router)
+# app.include_router(challengecreating_router)
+# app.include_router(challengedetail_router)
 app.include_router(place_picker_router)
 
 # ✅ 성공/실패 페이지 라우트는 유지

@@ -39,22 +39,7 @@
   <pre id="challengeInfo"></pre>
 </div>
 
-<div class="panel">
-  <h3>장소 설정</h3>
-  <label><input type="checkbox" id="samePlace"> 모든 회차 동일 장소</label>
-  <div style="margin-top:8px;display:grid;grid-template-columns:repeat(2,minmax(240px,1fr));gap:10px">
-    <label>장소명 <input id="g_place_name" type="text" class="w-100" placeholder="예: 탄천종합운동장"></label>
-    <label>도로명주소 <input id="g_road_address" type="text" class="w-100"></label>
-    <label>지번주소 <input id="g_address" type="text" class="w-100"></label>
-    <label>지도 URL <input id="g_map_url" type="text" class="w-100" placeholder="네이버/카카오 지도 링크"></label>
-    <label>위도 <input id="g_lat" type="text" class="w-100" placeholder="37.4102033"></label>
-    <label>경도 <input id="g_lon" type="text" class="w-100" placeholder="127.1212796"></label>
-  </div>
-  <div class="row-flex" style="margin-top:6px">
-    <button class="btn" onclick="openPlacePicker('global')">장소 검색</button>
-    <span class="muted">체크 시 전역 값이 오프라인 회차에 일괄 반영됩니다(저장 시 적용).</span>
-  </div>
-</div>
+<!-- 장소 설정 패널은 생성 화면에만 유지. 상세 페이지에서는 중복 UX로 혼선이 있어 숨김 처리 -->
 
 <div class="panel">
   <h3>회차 목록</h3>

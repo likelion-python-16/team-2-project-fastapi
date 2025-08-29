@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_, desc, asc
 from typing import List, Optional, Literal
-from datetime import date
+from datetime import date, time
 
 from app.core.database import get_db
 
@@ -16,6 +16,7 @@ from app.models.challenge_round import ChallengeRound
 from app.models.round_manager import RoundManager
 from app.models.attendance import RoundAttendance
 from app.models.tag import Tag, ChallengeTag
+from app.models.round_picture import RoundPicture
 
 # Schemas
 from app.schemas.challenge import (
@@ -78,6 +79,10 @@ def _round_has_dependents(r: ChallengeRound) -> bool:
     )
 
 def _reconcile_total_rounds(db: Session, challenge: Challenge, new_total: Optional[int], force: bool = False) -> None:
+    # ✅ 서버 측 안전장치 (스키마에서 1..50 검증하더라도 추가로 방어)
+    if new_total is not None and new_total > 50:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "total_rounds cannot exceed 50")
+
     if new_total is None:
         return
     existing = (
@@ -90,14 +95,42 @@ def _reconcile_total_rounds(db: Session, challenge: Challenge, new_total: Option
     if new_total == cur_n:
         return
 
+    # 확장
     if new_total > cur_n:
-        base_mode = existing[-1].mode if cur_n > 0 else (challenge.mode or "online")
+        if cur_n > 0:
+            base_mode = existing[-1].mode
+        else:
+            ch_mode = (challenge.mode or "online")
+            if ch_mode == "hybrid":
+                has_offline_default = bool(
+                    getattr(challenge, "default_place_name", None) or
+                    getattr(challenge, "default_road_address", None) or
+                    (getattr(challenge, "default_latitude", None) is not None and
+                     getattr(challenge, "default_longitude", None) is not None)
+                )
+                base_mode = "offline" if has_offline_default else "online"
+            else:
+                base_mode = ch_mode
         for i in range(cur_n + 1, new_total + 1):
-            db.add(ChallengeRound(challenge_id=challenge.id, round=i, mode=base_mode))
+            db.add(ChallengeRound(
+                challenge_id=challenge.id,
+                round=i,
+                mode=base_mode,
+                processing_at=challenge.start_date or date.today(),
+                start_time=time(9, 0),
+                finish_time=time(10, 0),
+                description=f"Round {i}",
+                url=(challenge.default_zoom_link if base_mode == "online" else None),
+                place_name=(challenge.default_place_name if base_mode == "offline" else None),
+                road_address=(challenge.default_road_address if base_mode == "offline" else None),
+                lat=challenge.default_latitude,
+                lon=challenge.default_longitude,
+                geofence_radius_m=100.0,
+            ))
         db.flush()
         return
 
-    # shrink
+    # 축소
     to_delete = [r for r in existing if r.round > new_total]
     for r in reversed(to_delete):
         if _round_has_dependents(r) and not force:
@@ -243,7 +276,7 @@ def dual_search(
 async def create_challenge(
     challenge_data: ChallengeCreate,
     db: Session = Depends(get_db),
-    tags: Optional[List[str]] = Body(None, embed=True),  # ["운동/스포츠", ...]
+    tags: Optional[List[str]] = Body(None, embed=True),
 ):
     me = get_current_user_id()
     _validate_common_business_rules(
@@ -252,6 +285,10 @@ async def create_challenge(
     )
     if challenge_data.use_reward and not challenge_data.reward:
         raise HTTPException(400, "Reward content is required when use_reward is True")
+
+    # (스키마에서 검증되지만) 서버 방어 로직 한 번 더
+    if challenge_data.total_rounds is not None and challenge_data.total_rounds > 50:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "total_rounds cannot exceed 50")
 
     new_challenge = Challenge(
         title=challenge_data.title,
@@ -275,8 +312,10 @@ async def create_challenge(
         default_map_url=challenge_data.default_map_url,
         default_latitude=challenge_data.default_latitude,
         default_longitude=challenge_data.default_longitude,
+        default_place_id=getattr(challenge_data, 'default_place_id', None),
         use_reward=challenge_data.use_reward or False,
         reward=challenge_data.reward,
+        cover_image_url=getattr(challenge_data, 'cover_image_url', None),
     )
     db.add(new_challenge)
     db.flush()
@@ -303,6 +342,51 @@ async def create_challenge(
     db.commit()
     db.refresh(new_challenge)
     return _with_tags(db, new_challenge)
+
+@router.post("/{challenge_id}/cover-from-round-picture")
+def set_cover_from_round_picture(
+    challenge_id: int,
+    round_picture_id: int = Body(..., embed=True),
+    db: Session = Depends(get_db),
+    me: int = Depends(get_current_user_id),
+):
+    ch = db.query(Challenge).filter(Challenge.id == challenge_id).first()
+    if not ch:
+        raise HTTPException(404, "Challenge not found")
+    if not _can_edit_challenge(db, challenge_id, me):
+        raise HTTPException(403, "No permission to edit cover")
+
+    pic = (
+        db.query(RoundPicture)
+        .join(ChallengeRound, ChallengeRound.id == RoundPicture.round_id)
+        .filter(ChallengeRound.challenge_id == challenge_id, RoundPicture.id == round_picture_id)
+        .first()
+    )
+    if not pic:
+        raise HTTPException(404, "Round picture not found in this challenge")
+
+    ch.cover_round_picture_id = pic.id
+    ch.cover_image_url = pic.file_url
+    db.commit()
+    db.refresh(ch)
+    return {"message": "Cover image updated from round picture", "cover_image_url": ch.cover_image_url}
+
+@router.post("/{challenge_id}/cover-url")
+def set_cover_by_url(
+    challenge_id: int,
+    url: str = Body(..., embed=True),
+    db: Session = Depends(get_db),
+    me: int = Depends(get_current_user_id),
+):
+    ch = db.query(Challenge).filter(Challenge.id == challenge_id).first()
+    if not ch:
+        raise HTTPException(404, "Challenge not found")
+    if not _can_edit_challenge(db, challenge_id, me):
+        raise HTTPException(403, "No permission to edit cover")
+    ch.cover_image_url = (url or '').strip() or None
+    ch.cover_round_picture_id = None
+    db.commit()
+    return {"message": "Cover image updated", "cover_image_url": ch.cover_image_url}
 
 @router.get("/", response_model=List[ChallengeResponseWithTags])
 def list_challenges(db: Session = Depends(get_db)):
@@ -376,7 +460,6 @@ def delete_challenge(challenge_id: int, db: Session = Depends(get_db), me: int =
     ch = db.query(Challenge).filter(Challenge.id == challenge_id).first()
     if not ch:
         raise HTTPException(404, "Challenge not found")
-    # 권한: 오너만 삭제 (원하면 is_challenge_manager 허용으로 완화)
     if ch.creator_id != me:
         raise HTTPException(403, "Only the creator can delete this challenge")
 
@@ -483,6 +566,10 @@ def create_challenge_round(
         finish_time=round_data.finish_time,
         description=round_data.description,
         url=round_data.url,
+        place_name=round_data.place_name,
+        road_address=round_data.road_address,
+        address=round_data.address,
+        map_url=getattr(round_data, "map_url", None),
         lat=round_data.lat,
         lon=round_data.lon,
         geofence_radius_m=round_data.geofence_radius_m,
@@ -528,7 +615,6 @@ def update_challenge_round(
 
     # mode 변경은 hybrid에서만 허용
     if "mode" in data and data["mode"] is not None:
-        # Enum 호환 처리
         data["mode"] = data["mode"].value if hasattr(data["mode"], "value") else data["mode"]
         if ch and ch.mode != "hybrid":
             raise HTTPException(400, "mode는 hybrid일 때만 변경 가능")
@@ -538,12 +624,11 @@ def update_challenge_round(
         if key in data and isinstance(data[key], str) and data[key].strip() == "":
             data[key] = None
 
-    # 안전장치: 온라인 모드 + map_url만 온 경우 → url로 저장
+    # 온라인 모드 + map_url만 온 경우 → url로 저장
     eff_mode = data.get("mode") or r.mode
     if eff_mode == "online" and "map_url" in data and data.get("map_url") and "url" not in data:
         data["url"] = data["map_url"]
 
-    # 실제 반영
     for k, v in data.items():
         setattr(r, k, v)
 
@@ -577,9 +662,8 @@ def delete_challenge_round(
         raise HTTPException(409, "This round has dependent data and cannot be deleted.")
 
     db.delete(r)
-    db.flush()  # 삭제 반영
+    db.flush()
 
-    # 총 회차 수 동기화
     remain = db.query(ChallengeRound).filter(ChallengeRound.challenge_id == challenge_id).count()
     ch = db.query(Challenge).filter(Challenge.id == challenge_id).first()
     if ch:
@@ -697,7 +781,7 @@ def attend_round(challenge_id: int, round_id: int, db: Session = Depends(get_db)
         raise HTTPException(404, "Round not found")
     att = db.query(RoundAttendance).filter(RoundAttendance.round_id == round_id, RoundAttendance.user_id == me).first()
     if att:
-        att.status = "pending"  # 참석예정
+        att.status = "pending"
     else:
         db.add(RoundAttendance(user_id=me, round_id=round_id, status="pending"))
     db.commit()
@@ -715,7 +799,6 @@ def unattend_round(challenge_id: int, round_id: int, db: Session = Depends(get_d
     db.commit()
     return {"message": "RSVP removed."}
 
-# 프론트 호환: /decline alias (POST)
 @router.post("/{challenge_id}/rounds/{round_id}/decline")
 def decline_round_alias(challenge_id: int, round_id: int, db: Session = Depends(get_db), me: int = Depends(get_current_user_id)):
     return unattend_round(challenge_id, round_id, db, me)

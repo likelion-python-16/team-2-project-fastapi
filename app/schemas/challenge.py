@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from enum import Enum
-from typing import Optional, List
+from typing import Optional, List, Annotated
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator, Field
 
 
 # -----------------------------
@@ -22,6 +22,8 @@ class ChallengeStatus(str, Enum):
     ACTIVE = "active"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
+
+RoundCount = Annotated[int, Field(ge=1, le=100)]
 
 
 # -----------------------------
@@ -43,7 +45,7 @@ class ChallengeCreate(BaseModel):
     max_participants: Optional[int] = None
 
     # 회차/참여율
-    total_rounds: Optional[int] = None
+    total_rounds: Optional[RoundCount] = None
     min_participation_rate: Optional[int] = 80
     max_participation_rate: Optional[int] = None
 
@@ -63,6 +65,10 @@ class ChallengeCreate(BaseModel):
     default_map_url: Optional[str] = None
     default_latitude: Optional[float] = None
     default_longitude: Optional[float] = None
+    default_place_id: Optional[str] = None
+
+    # 대표 이미지 URL (선택)
+    cover_image_url: Optional[str] = None
 
     # 태그(카테고리)
     tags: Optional[List[str]] = None
@@ -159,7 +165,7 @@ class ChallengeUpdate(BaseModel):
     participation_fee: Optional[int] = None
     min_participants: Optional[int] = None
     max_participants: Optional[int] = None
-    total_rounds: Optional[int] = None
+    total_rounds: Optional[RoundCount] = None
     min_participation_rate: Optional[int] = None
     max_participation_rate: Optional[int] = None
 
@@ -176,8 +182,10 @@ class ChallengeUpdate(BaseModel):
     default_map_url: Optional[str] = None
     default_latitude: Optional[float] = None
     default_longitude: Optional[float] = None
+    default_place_id: Optional[str] = None
 
     tags: Optional[List[str]] = None
+    cover_image_url: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -258,8 +266,10 @@ class ChallengeOut(BaseModel):
     default_map_url: Optional[str] = None
     default_latitude: Optional[float] = None
     default_longitude: Optional[float] = None
+    default_place_id: Optional[str] = None
 
     tags: Optional[List[str]] = None
+    cover_image_url: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -274,8 +284,8 @@ class ChallengeItem(BaseModel):
     description: Optional[str] = None
     creator_id: int
     status: str  # string으로 두면 Enum/str 모두 수용
-    start_date: Optional[date] = None
-    end_date: Optional[date] = None
+    start_date: date
+    end_date: date
     created_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
