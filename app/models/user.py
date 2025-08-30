@@ -95,8 +95,14 @@ class User(Base):
     def set_identification_number(self, plain_number: Optional[str]) -> None:
         if plain_number is None:
             self.identification_number = None
+            self.identification_fingerprint = None
         else:
             self.identification_number = encrypt_str(plain_number)
+            try:
+                from ..security import id_fingerprint
+                self.identification_fingerprint = id_fingerprint(plain_number)
+            except Exception:
+                self.identification_fingerprint = None
     
     def get_identification_number(self) -> Optional[str]:
         if not self.identification_number:

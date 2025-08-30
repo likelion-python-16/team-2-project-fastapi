@@ -8,7 +8,7 @@ class RoundMode(str, Enum):
     ONLINE = "online"
     OFFLINE = "offline"
 
-RoundNumber = Annotated[int, Field(ge=1, le=50)]
+RoundNumber = Annotated[int, Field(ge=1, le=100)]
 
 class ChallengeRoundCreate(BaseModel):
     challenge_id: int
@@ -31,6 +31,10 @@ class ChallengeRoundCreate(BaseModel):
     lon: Optional[float] = None
     geofence_radius_m: Optional[float] = None
     map_url: Optional[str] = None
+
+    # 🆕 회차별 리워드
+    reward_enabled: Optional[bool] = False
+    reward_text: Optional[str] = None
 
 
     @field_validator('round')
@@ -56,6 +60,9 @@ class ChallengeRoundCreate(BaseModel):
                 raise ValueError("offline round requires place_name")
             if not (self.road_address or (self.lat is not None and self.lon is not None)):
                 raise ValueError("offline round requires road_address or (lat & lon)")
+        # 리워드 내용 조건
+        if self.reward_enabled and not (self.reward_text and self.reward_text.strip()):
+            raise ValueError("reward_text is required when reward_enabled is true")
         return self
 
 class ChallengeRoundUpdate(BaseModel):
@@ -73,6 +80,9 @@ class ChallengeRoundUpdate(BaseModel):
     road_address: Optional[str] = None
     address: Optional[str] = None
     map_url: Optional[str] = None
+    # 🆕 회차별 리워드
+    reward_enabled: Optional[bool] = None
+    reward_text: Optional[str] = None
     
 
 class ChallengeRoundResponse(BaseModel):
@@ -96,6 +106,9 @@ class ChallengeRoundResponse(BaseModel):
 
     geofence_radius_m: Optional[float]
     zoom_meeting_id: Optional[str]
+    # 🆕 회차별 리워드
+    reward_enabled: bool
+    reward_text: Optional[str]
     created_at: datetime
     updated_at: datetime
 

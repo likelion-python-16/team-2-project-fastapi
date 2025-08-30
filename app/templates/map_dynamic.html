@@ -1,4 +1,3 @@
-<!-- app/templates/map_dynamic.html -->
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -41,6 +40,24 @@
   <!-- 키워드 결과 -->
   <div id="searchResults"></div>
 
+  <!-- ★ 변경: 주변 추천 → 우측 사이드 패널(28~32%), 접기/펼침 토글 -->
+  <style>
+    #nearbyBox{
+      position: fixed;
+      top: 64px; right: 10px; bottom: 10px;
+      width: clamp(300px, 30%, 420px);
+      background:#fff; border:1px solid #ddd; border-radius:10px;
+      display:none; z-index:10000; overflow:auto;
+      box-shadow:0 8px 24px rgba(0,0,0,.12)
+    }
+    #nearbyHeader{position:sticky; top:0; background:#fff; z-index:1; display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid #eee;}
+    #nearbyHeader .title{font-weight:600}
+    #nearbyClose{border:1px solid #ddd; background:#f7f7f7; border-radius:6px; padding:4px 8px; cursor:pointer}
+    #nearbyOpenBtn{position:fixed; right:10px; top:64px; z-index:9999; display:none; border:1px solid #ddd; background:#fff; border-radius:999px; padding:8px 12px; box-shadow:0 6px 20px rgba(0,0,0,.12); cursor:pointer}
+  </style>
+  <button id="nearbyOpenBtn" type="button">추천 열기</button>
+  <div id="nearbyBox"></div>
+
   <div id="map"></div>
 
   <div id="result">
@@ -61,7 +78,8 @@ let picked = {
   roadAddress: "",
   jibunAddress: "",
   placeName: "",
-  mapUrl: ""
+  mapUrl: "",
+  placeId: null            // ✅ placeId 초기화
 };
 
 function makeNaverMapUrl(lat, lng, title){
@@ -111,16 +129,14 @@ function geocodeAddress(address){
 
 // 로컬(POI) 검색: /places/search → 실패 시 /naver/local
 async function localSearch(query){
-  // 1차: /places/search
   try{
     const r1 = await fetch(`/places/search?query=${encodeURIComponent(query)}&limit=10`);
     if (r1.ok){
       const d = await r1.json();
-      if (d?.items?.length) return d.items; // [{name, roadAddress, address, map_url?}, ...]
+      if (d?.items?.length) return d.items;
     }
   }catch(e){ console.debug("localSearch /places/search error", e); }
 
-  // 2차: /naver/local (레거시 프록시)
   try{
     const r2 = await fetch(`/naver/local?q=${encodeURIComponent(query)}&display=10&start=1`);
     if (r2.ok){
@@ -151,7 +167,6 @@ function showResults(items){
   }).join("");
   $results.style.display = "block";
 
-  // 클릭 핸들러
   Array.from($results.querySelectorAll(".item")).forEach(el=>{
     el.addEventListener("click", async ()=>{
       const idx = Number(el.getAttribute("data-idx"));
@@ -160,7 +175,6 @@ function showResults(items){
       const road = it.roadAddress || "";
       const addr = it.address || "";
 
-      // 좌표가 응답에 없으므로, 도로명/지번 중 하나로 지오코딩
       const q = road || addr || title;
       let geo = null;
       if (q) geo = await geocodeAddress(q);
@@ -181,8 +195,11 @@ function showResults(items){
       picked.jibunAddress = jibunAddress || addr || "";
       picked.placeName = title || "선택 위치";
       picked.mapUrl = makeNaverMapUrl(lat, lng, picked.placeName);
+      picked.placeId = null;
       renderPicked();
       hideResults();
+
+      fetchNearby(lat, lng, picked.placeName || picked.roadAddress || picked.jibunAddress || "");
     });
   });
 }
@@ -190,8 +207,8 @@ function showResults(items){
 // 주소/키워드 스마트 검색
 async function smartSearch(q){
   hideResults();
+  hideNearby(); // ★ 변경: 새 검색 시작 시 이전 추천 패널 닫기
 
-  // 1) 먼저 지오코딩 (주소성 키워드일 때 빠르게 바로 이동)
   try{
     const g = await geocodeAddress(q);
     if (g){
@@ -207,16 +224,20 @@ async function smartSearch(q){
       picked.jibunAddress = jibunAddress;
       picked.placeName = q.trim();
       picked.mapUrl = makeNaverMapUrl(lat, lng, picked.placeName);
+      picked.placeId = null;
       renderPicked();
+
+      fetchNearby(lat, lng, picked.placeName || picked.roadAddress || picked.jibunAddress || "");
       return;
     }
   }catch(e){ console.error("geocodeAddress error:", e); }
 
-  // 2) 로컬 검색 리스트 제공 (POI)
   try{
     const items = await localSearch(q);
     if (!items.length){
-      alert("검색 결과가 없습니다. 다른 키워드나 주소로 시도해 보세요.");
+      alert("검색 결과가 없습니다. 대신 현재 지도의 근처 장소를 추천해 드릴게요.");
+      const c = map.getCenter();
+      fetchNearby(c.y, c.x, q);
       return;
     }
     showResults(items);
@@ -244,7 +265,11 @@ function searchCoordinateToAddress(latlng){
     picked.jibunAddress = jibun ? joinAddress(jibun) : "";
     picked.placeName = "";
     picked.mapUrl = makeNaverMapUrl(picked.lat, picked.lng, "선택 위치");
+    picked.placeId = null;
     renderPicked();
+
+    fetchNearby(picked.lat, picked.lng, picked.placeName || picked.roadAddress || picked.jibunAddress || "");
+    return;
   });
 }
 
@@ -258,7 +283,6 @@ function initMap(){
 
   const $addr = document.getElementById("address");
 
-  // 검색 버튼/엔터
   document.getElementById("btnSearch").addEventListener("click", ()=>{
     const v = $addr.value.trim(); if (v) smartSearch(v);
   });
@@ -268,16 +292,28 @@ function initMap(){
     }
   });
 
-  // 지도 클릭 → 좌표→주소
   naver.maps.Event.addListener(map, "click", (e)=>{
     marker.setPosition(e.coord);
     hideResults();
+    hideNearby(); // ★ 변경: 지도 찍을 때 이전 추천 패널 닫기(새로 띄울 예정)
     searchCoordinateToAddress(e.coord);
   });
 
-  // 확인(부모창으로 전달)
   document.getElementById("btnConfirm").addEventListener("click", ()=>{
-    if (picked.lat==null || picked.lng==null){ alert("먼저 위치를 선택하세요."); return; }
+    if (picked.lat==null || picked.lng==null){
+      alert("먼저 지도에서 위치를 선택하세요.");
+      return;
+    }
+    if (!picked.placeName){
+      const ok = confirm("정확한 장소명이 없어 링크가 부정확할 수 있어요.\n그래도 현재 좌표로 진행할까요? (추천 목록을 보고 싶으면 [취소] 후 상단 목록에서 선택)" );
+      if (!ok){
+        fetchNearby(picked.lat, picked.lng, picked.roadAddress || picked.jibunAddress || "");
+        window.scrollTo({top: 0, behavior: "smooth"});
+        return;
+      }
+      picked.placeName = "선택 위치";
+      picked.mapUrl = makeNaverMapUrl(picked.lat, picked.lng, picked.placeName);
+    }
     window.opener?.postMessage({
       type: "placePicked",
       title: picked.placeName || "선택 위치",
@@ -285,26 +321,102 @@ function initMap(){
       addr: picked.jibunAddress,
       lat: picked.lat,
       lng: picked.lng,
-      link: picked.mapUrl
+      link: picked.mapUrl,
+      placeId: picked.placeId || null
     }, "*");
     window.close();
   });
 
-  // 바깥 클릭 시 결과 닫기
+  // ★ 변경: 추천 박스를 클릭해도 닫히지 않도록 처리
   document.addEventListener("click", (e)=>{
     const inTopbar = e.target.closest("#topbar");
     const inResults = e.target.closest("#searchResults");
-    if (!inTopbar && !inResults) hideResults();
+    const inNearby  = e.target.closest("#nearbyBox"); // ★ 변경
+    if (!inTopbar && !inResults){ hideResults(); }
+    // nearby는 의도적으로 자동 닫지 않음 (선택 시 내부에서만 닫힘)
+    if (!inTopbar && !inResults && !inNearby){
+      // 필요 시 여기서 hideNearby()를 호출하도록 바꿀 수 있음
+    }
   });
 }
 
 // JS 로드 완료되면 초기화
 naver.maps.onJSContentLoaded = initMap;
 
-// 인증 실패 훅(디버그)
 window.navermap_authFailure = function(){
   alert("네이버 지도 인증 실패: ncpKeyId(NAVER_MAPS_CLIENT_ID)가 올바른지 확인하세요.");
 };
+
+/* ========= 주변 장소 추천 (우측 패널) ========= */
+const $nearby = document.getElementById("nearbyBox");
+const $nearbyOpen = document.getElementById("nearbyOpenBtn");
+
+function hideNearby(){ $nearby.style.display = "none"; $nearby.innerHTML = ""; $nearbyOpen.style.display='inline-block'; }
+function showNearby(){ $nearby.style.display = "block"; $nearbyOpen.style.display='none'; }
+
+function renderNearby(list, lat, lng, emptyMsg){
+  if (!list || !list.length){
+    $nearby.innerHTML = `
+      <div id="nearbyHeader"><div class="title">주변 장소 추천</div><button id="nearbyClose" type="button">접기</button></div>
+      <div style="padding:10px 12px; color:#666">${emptyMsg || '주변 추천 결과가 없습니다.'}</div>`;
+    showNearby();
+    document.getElementById('nearbyClose')?.addEventListener('click', hideNearby);
+    return;
+  }
+  $nearby.innerHTML = `
+    <div id="nearbyHeader"><div class="title">주변 장소 추천</div><button id="nearbyClose" type="button">접기</button></div>
+    ${list.map((it, i)=>`
+      <div class="item" data-idx="${i}" style="padding:10px 12px; border-bottom:1px solid #f2f2f2; cursor:pointer">
+        <div style="font-weight:600">${(it.title||it.name||"").replace(/<[^>]+>/g,"")}</div>
+        <div style="font-size:12px; color:#666">${it.roadAddress || it.road_address || it.address || ""}</div>
+      </div>`).join("")}
+  `;
+  showNearby();
+  document.getElementById('nearbyClose')?.addEventListener('click', hideNearby);
+
+  Array.from($nearby.querySelectorAll(".item")).forEach(el=>{
+    el.addEventListener("click", ()=>{
+      const idx = Number(el.getAttribute("data-idx"));
+      const it = list[idx];
+      picked.placeName = (it.title || "선택 위치").replace(/<[^>]+>/g,"");
+      picked.mapUrl = it.link || picked.mapUrl;
+      picked.placeId = it.placeId || null;
+      renderPicked();
+      hideNearby();
+    });
+  });
+}
+
+async function fetchNearby(lat, lng, q=""){
+  try{
+    const url = `/naver/nearby?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}&limit=10${q?`&q=${encodeURIComponent(q)}`:""}`;
+    const resp = await fetch(url);
+    if (!resp.ok){ renderNearby([], lat, lng, '주변 추천 API 호출 실패'); return; }
+    const data = await resp.json();
+    let items = data.items || [];
+    // 폴백: 주변 추천이 비어 있으면 네이버 로컬 검색으로 대체
+    if (!items.length && q){
+      try{
+        const r2 = await fetch(`/naver/local?q=${encodeURIComponent(q)}&display=10`);
+        if (r2.ok){
+          const j2 = await r2.json();
+          items = (j2.items||[]).map(it=>({
+            title: it.name || '',
+            roadAddress: it.roadAddress || '',
+            address: it.address || '',
+            placeId: null,
+            link: it.map_url || ''
+          }));
+        }
+      }catch(_e){}
+    }
+    renderNearby(items, lat, lng);
+  }catch(e){
+    renderNearby([], lat, lng, '주변 추천 로딩 실패');
+  }
+}
+
+$nearbyOpen.addEventListener('click', ()=>{ showNearby(); });
 </script>
 </body>
 </html>

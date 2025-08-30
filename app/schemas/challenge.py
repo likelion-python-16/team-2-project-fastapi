@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from enum import Enum
-from typing import Optional, List, Annotated
+from typing import Optional, List, Annotated, Any, Dict
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator, Field
 
@@ -29,6 +29,68 @@ RoundCount = Annotated[int, Field(ge=1, le=100)]
 # -----------------------------
 # Create / Update
 # -----------------------------
+def _map_korean_keys(data: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(data, dict):
+        return data
+    # 한글 → 영문 키 매핑
+    alias = {
+        "수수료": "fee",
+        "참가비": "participation_fee",
+        "최소 참가 인원": "min_participants",
+        "최대 참가 인원": "max_participants",
+        "총 라운드": "total_rounds",
+        "최소 참가율": "min_participation_rate",
+        "최대 참가율": "max_participation_rate",
+        "모드": "mode",
+        "기본 줌 링크": "default_zoom_link",
+        "모든 라운드에 동일한 장소": "same_place_for_all_rounds",
+        "모든 회차 동일 장소": "same_place_for_all_rounds",
+        "기본 장소 이름": "default_place_name",
+        "기본 도로 주소": "default_road_address",
+        "기본 주소": "default_address",
+        "기본 지도 URL": "default_map_url",
+        "기본 위도": "default_latitude",
+        "기본 경도": "default_longitude",
+        "기본 장소 ID": "default_place_id",
+        "태그": "tags",
+        "커버 이미지 URL": "cover_image_url",
+        # 호환 키(일부 응답/클라이언트에서 혼용 가능)
+        "cover": "cover_image_url",
+        "coverUrl": "cover_image_url",
+    }
+    out = dict(data)
+    for k_kr, k_en in alias.items():
+        if k_kr in out and k_en not in out:
+            out[k_en] = out.pop(k_kr)
+
+    # 모드 값 한/영 치환
+    mode = out.get("mode")
+    if isinstance(mode, str):
+        m = mode.strip().lower()
+        map_mode = {
+            "온라인": "online",
+            "오프라인": "offline",
+            "하이브리드": "hybrid",
+            "온오프라인": "hybrid",
+        }
+        out["mode"] = map_mode.get(mode, map_mode.get(m, mode))
+
+    # 불리언 텍스트 보정 (예: "true"/"false")
+    def to_bool(v):
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, str):
+            vv = v.strip().lower()
+            if vv in ("true", "1", "yes", "y"): return True
+            if vv in ("false", "0", "no", "n"): return False
+        return v
+    for key in ("same_place_for_all_rounds", "use_reward"):
+        if key in out:
+            out[key] = to_bool(out[key])
+
+    return out
+
+
 class ChallengeCreate(BaseModel):
     # 기본 정보
     title: str
@@ -75,6 +137,8 @@ class ChallengeCreate(BaseModel):
 
     model_config = ConfigDict(
         from_attributes=True,
+        populate_by_name=True,
+        extra="ignore",
         json_schema_extra={
             "example": {
                 "title": "배드민턴 챌린지",
@@ -153,6 +217,14 @@ class ChallengeCreate(BaseModel):
         # if (fee > 0 and pfee > 0) or (fee == 0 and pfee == 0): ...
         return self
 
+    # ✅ 요청 바인딩 직전: 한글 키/값 보정, 불필요 키 무시
+    @model_validator(mode="before")
+    @classmethod
+    def _korean_aliases(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            return _map_korean_keys(data)
+        return data
+
 
 class ChallengeUpdate(BaseModel):
     title: Optional[str] = None
@@ -187,7 +259,7 @@ class ChallengeUpdate(BaseModel):
     tags: Optional[List[str]] = None
     cover_image_url: Optional[str] = None
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True, extra="ignore")
 
     @field_validator("participation_fee")
     @classmethod
@@ -226,6 +298,14 @@ class ChallengeUpdate(BaseModel):
         #         raise ValueError("Exactly one of fee or participation_fee must be > 0")
 
         return self
+
+    # ✅ 요청 바인딩 직전: 한글 키/값 보정
+    @model_validator(mode="before")
+    @classmethod
+    def _korean_aliases_u(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            return _map_korean_keys(data)
+        return data
 
 
 # -----------------------------

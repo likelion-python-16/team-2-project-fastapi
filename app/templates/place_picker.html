@@ -96,19 +96,18 @@
 
             // 부모창으로 전달
             if (window.opener){
-              window.opener.postMessage({
-                type: 'place-picked',
-                scope, rid,
-                place: {
-                  place_name: title,
-                  road_address: road || null,
-                  address: addr || null,
-                  map_url: link,
-                  lat, lon: lng
-                }
-              }, window.location.origin);
+              window.opener?.postMessage({
+                type: 'placePicked',
+                title: title,
+                road: road || null,
+                addr: addr || null,
+                lat:  lat,
+                lng:  lng,         // 기존 lon → lng 로 바꿔야 함
+                placeId: placeId || null,
+                link: link
+              }, "*");
+              window.close();
             }
-            window.close();
           });
         });
 

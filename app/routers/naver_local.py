@@ -1,4 +1,3 @@
-# app/routers/naver_local.py
 from fastapi import APIRouter, Query, HTTPException
 import httpx, os
 from typing import Optional
@@ -31,7 +30,6 @@ async def naver_local_search(
         name = (it.get("title") or "").replace("<b>", "").replace("</b>", "")
         mapx, mapy = it.get("mapx"), it.get("mapy")
 
-        # 네이버 지도 URL 강제
         map_url = f"https://map.naver.com/v5/search/{name}"
         try:
             if mapx and mapy:
@@ -59,9 +57,7 @@ async def resolve_place_id(query: str = Query(..., min_length=1), lat: Optional[
     베스트에포트: map.naver.com의 검색 API를 사용하여 placeId(=entry/place/{id}) 추출 시도.
     공식 문서가 없어 구조 변경 가능성이 있으므로 실패 시 placeId는 None을 반환합니다.
     """
-    # 내부 API (공식 문서화 X). 프런트에서 직접 호출하면 CORS 차단되므로 서버가 호출.
     params = {"caller": "pcweb", "query": query, "type": "all"}
-    # 좌표가 있으면 가중치 부여(정확도 향상). 형식은 실제 엔드포인트와 다를 수 있어 무시될 수 있음.
     if lat is not None and lng is not None:
         params["coordinate"] = f"{lng},{lat}"
     url = "https://map.naver.com/v5/api/search"
@@ -74,19 +70,16 @@ async def resolve_place_id(query: str = Query(..., min_length=1), lat: Optional[
     except Exception:
         return {"placeId": None}
 
-    # 구조 탐색: result.place.list[*].id 또는 result.site.list[*].id 등
     def pick_id(data):
         res = data.get("result") if isinstance(data, dict) else None
         if not isinstance(res, dict):
             return None
-        # 우선 place 탭
         place = res.get("place") or {}
         lst = place.get("list") or []
         for it in lst:
             pid = (it.get("id") or it.get("placeId") or it.get("key"))
             if pid:
                 return str(pid)
-        # 사이트/주소 탭 등에서 대체
         site = res.get("site") or {}
         lst2 = site.get("list") or []
         for it in lst2:
@@ -97,3 +90,69 @@ async def resolve_place_id(query: str = Query(..., min_length=1), lat: Optional[
 
     pid = pick_id(j)
     return {"placeId": pid}
+
+
+@router.get("/nearby")
+async def naver_nearby_places(
+    lat: float = Query(...),
+    lng: float = Query(...),
+    q: Optional[str] = "",
+    limit: int = 10,
+):
+    """
+    좌표 기준 주변 장소 추천.
+    내부 API(map.naver.com/v5/api/search)를 'caller=pcweb'로 호출하여,
+    좌표 가중치를 둔 place 리스트를 받아옵니다.
+    """
+    url = "https://map.naver.com/v5/api/search"
+    params = {
+        "caller": "pcweb",
+        "query": (q or "").strip(),
+        "type": "all",
+        "displayCount": limit,     # 명시: limit 반영
+        "coordinate": f"{lng},{lat}",  # 네이버는 lng,lat 순
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=8) as client:
+            r = await client.get(url, params=params)
+        if r.status_code != 200:
+            return {"items": []}
+        data = r.json()
+    except Exception:
+        return {"items": []}
+
+    def make_link(pid: Optional[str], lat: Optional[float], lng: Optional[float], title: str):
+        lvl = 15
+        if pid:
+            c = f"?c={lng},{lat},{lvl},0,0,0,dh" if (lat is not None and lng is not None) else ""
+            return f"https://map.naver.com/v5/entry/place/{pid}{c}"
+        key = (title or "").strip()
+        if key:
+            c = f"?c={lng},{lat},{lvl},0,0,0,dh" if (lat is not None and lng is not None) else ""
+            return f"https://map.naver.com/v5/search/{httpx.QueryParams({'': key})._dict['']}{c}"
+        return "https://map.naver.com/v5"
+
+    items = []
+    try:
+        place = (data or {}).get("result", {}).get("place", {})
+        lst = place.get("list") or []
+        for it in lst:
+            pid = str(it.get("id") or it.get("placeId") or it.get("key") or "").strip() or None
+            title = (it.get("name") or it.get("title") or "").strip()
+            road = it.get("roadAddress") or ""
+            addr = it.get("address") or ""
+            link = make_link(pid, lat, lng, title)
+            items.append({
+                "title": title,
+                "roadAddress": road,
+                "address": addr,
+                "placeId": pid,
+                "link": link,
+            })
+            if len(items) >= limit:
+                break
+    except Exception:
+        items = []
+
+    return {"items": items}

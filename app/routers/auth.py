@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Body, Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 import re, secrets
@@ -16,7 +16,8 @@ from app.security import (
     validate_password_strength,
     get_password_requirements,
 )
-from app.services.mailer import send_email, build_verification_email
+from app.services.mailer import send_email, build_verification_email, build_password_reset_email
+from app.security import id_fingerprint, normalize_phone, validate_password_strength
 from app.utils.logging import logger
 from app.core.config import settings
 
@@ -204,6 +205,167 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
         db.rollback()
         logger.error(f"로그인 처리/토큰 생성 오류: {str(e)}")
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "토큰 생성에 실패했습니다")
+
+# ------------------------
+# 아이디 찾기
+# ------------------------
+def _mask_username(username: str) -> str:
+    if not username:
+        return username
+    n = len(username)
+    if n <= 2:
+        return "*" * n
+    if n <= 4:
+        return username[0] + ("*" * (n-2)) + username[-1]
+    # 기본: 앞2 + *... + 뒤2
+    return username[:2] + ("*" * (n-4)) + username[-2:]
+
+@router.post("/find-username")
+def find_username(payload: dict = Body(...), db: Session = Depends(get_db)):
+    """
+    Body: { name, identification, contact }
+    - contact: 휴대폰번호 또는 이메일 둘 중 하나
+    모두 일치하는 계정의 username을 반환. 없으면 404.
+    """
+    name = (payload.get("name") or "").strip()
+    ident = (payload.get("identification") or "").strip()
+    contact = (payload.get("contact") or "").strip().lower()
+    if not (name and ident and contact):
+        raise HTTPException(400, "name, identification, contact를 모두 입력해 주세요")
+
+    # 이메일/전화 분기
+    is_email = '@' in contact
+    phone_norm = normalize_phone(contact) if not is_email else None
+    phone_fp = id_fingerprint(phone_norm) if phone_norm else None
+    ident_digits = normalize_phone(ident)  # 숫자만 추출 (dash 제거)
+    if not ident_digits or len(ident_digits) != 13:
+        raise HTTPException(400, "주민번호는 13자리 숫자여야 합니다")
+    ident_fp = id_fingerprint(ident_digits)
+
+    # 간단 이메일/전화 형식 검증
+    if is_email:
+        import re as _re
+        if not _re.match(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$", contact):
+            raise HTTPException(400, "이메일 형식이 올바르지 않습니다")
+    else:
+        if not phone_norm or len(phone_norm) != 11 or not phone_norm.startswith('010'):
+            raise HTTPException(400, "전화번호는 010으로 시작하는 11자리여야 합니다")
+
+    # 이름은 대소문자 구분 없이 매칭
+    q = db.query(User).filter(func.lower(User.name) == func.lower(name))
+    candidates = q.all()
+    for u in candidates:
+        ok_ident = False
+        if u.identification_fingerprint:
+            ok_ident = (u.identification_fingerprint == ident_fp)
+        else:
+            try:
+                plain = u.get_identification_number()  # 저장된 값은 숫자 13자리
+                ok_ident = (plain == ident_digits)
+            except Exception:
+                ok_ident = False
+        if not ok_ident:
+            continue
+
+        # 연락처/이메일 일치 여부 확인
+        ok_contact = False
+        if is_email:
+            ok_contact = (str(u.email or '').strip().lower() == contact)
+        else:
+            # 우선 fingerprint → plain(phone) → 복호화(phone_encrypted)
+            if u.phone_fingerprint and phone_fp:
+                ok_contact = (u.phone_fingerprint == phone_fp)
+            if not ok_contact:
+                db_plain = (u.phone or '')
+                if db_plain:
+                    ok_contact = (normalize_phone(db_plain) == phone_norm)
+            if not ok_contact:
+                try:
+                    p = u.get_phone()
+                    if p:
+                        ok_contact = (normalize_phone(p) == phone_norm)
+                except Exception:
+                    ok_contact = False
+
+        if ok_contact:
+            return {"username": _mask_username(u.username)}
+    raise HTTPException(404, "해당 정보를 가진 계정을 찾을 수 없습니다")
+
+# ------------------------
+# 비밀번호 재설정 요청(메일 발송)
+# ------------------------
+@router.post("/request-password-reset")
+def request_password_reset(payload: dict = Body(...), db: Session = Depends(get_db)):
+    """
+    Body: { username, name, identification, email }
+    모두 일치 시 해당 이메일로 재설정 링크 발송.
+    """
+    username = (payload.get("username") or "").strip().lower()
+    name = (payload.get("name") or "").strip()
+    ident = (payload.get("identification") or "").strip()
+    email = (payload.get("email") or "").strip().lower()
+    if not (username and name and ident and email):
+        raise HTTPException(400, "username, name, identification, email을 모두 입력해 주세요")
+
+    user = db.query(User).filter(User.username == username, User.name == name, User.email == email).first()
+    if not user:
+        raise HTTPException(404, "해당 정보를 가진 계정을 찾을 수 없습니다")
+
+    # 주민번호 확인
+    ok_ident = False
+    if user.identification_fingerprint:
+        ok_ident = (user.identification_fingerprint == id_fingerprint(ident))
+    else:
+        try:
+            ok_ident = (user.get_identification_number() == ident)
+        except Exception:
+            ok_ident = False
+    if not ok_ident:
+        raise HTTPException(404, "해당 정보를 가진 계정을 찾을 수 없습니다")
+
+    # 토큰 발급 & 메일 발송
+    token = secrets.token_urlsafe(48)
+    ev = EmailVerification(
+        user_id=user.id,
+        token=token,
+        sent_to=user.email,
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=settings.email_token_expire_minutes),
+    )
+    db.add(ev); db.commit()
+    html, text = build_password_reset_email(token, user.username)
+    send_email(user.email, "[Challengers] 비밀번호 재설정", html, text)
+    return {"message": "비밀번호 재설정 메일을 보냈습니다. 메일함을 확인해 주세요."}
+
+# ------------------------
+# 비밀번호 재설정 수행
+# ------------------------
+@router.post("/reset-password")
+def reset_password(payload: dict = Body(...), db: Session = Depends(get_db)):
+    token = (payload.get("token") or "").strip()
+    new_password = payload.get("new_password") or ""
+    if not token or not new_password:
+        raise HTTPException(400, "token과 new_password가 필요합니다")
+    if not validate_password_strength(new_password):
+        raise HTTPException(400, "비밀번호가 요구사항을 충족하지 않습니다")
+
+    ver = db.query(EmailVerification).filter(EmailVerification.token == token).first()
+    if not ver:
+        raise HTTPException(404, "유효하지 않은 토큰입니다")
+    if ver.used_at:
+        raise HTTPException(400, "이미 사용된 토큰입니다")
+    now_utc = datetime.now(timezone.utc)
+    exp_utc = to_utc_aware(ver.expires_at)
+    if exp_utc and exp_utc < now_utc:
+        raise HTTPException(400, "만료된 토큰입니다")
+
+    user = db.query(User).get(ver.user_id)
+    if not user:
+        raise HTTPException(404, "사용자를 찾을 수 없습니다")
+
+    user.set_password(new_password)
+    ver.used_at = now_utc
+    db.commit()
+    return {"message": "비밀번호가 변경되었습니다. 로그인해 주세요."}
 
 # ------------------------
 # 토큰 갱신 / 로그아웃
@@ -411,3 +573,28 @@ def update_email(
     send_email(user.email, "[Challengers] 이메일 인증", html, text)
 
     return {"message": "이메일이 변경되었고 인증 메일을 보냈습니다.", "sent_to": user.email}
+
+# ------------------------
+# 프론트 URL 유틸 (프록시/배포 환경 대응)
+# ------------------------
+def _front_base_from_request(request: Request) -> str:
+    base = (settings.front_base_url or '').strip().rstrip('/')
+    if base:
+        return base
+    # 헤더로부터 유추 (X-Forwarded-Proto/Host)
+    xf_proto = request.headers.get('x-forwarded-proto')
+    xf_host = request.headers.get('x-forwarded-host')
+    if xf_proto and xf_host:
+        return f"{xf_proto}://{xf_host}"
+    # 기본: 현재 요청 기준
+    u = str(request.base_url).rstrip('/')
+    return u
+
+# ------------------------
+# 비밀번호 재설정 링크 → 프론트로 리디렉션
+# ------------------------
+@router.get('/password-reset/redirect')
+def password_reset_redirect(token: str, request: Request):
+    base = _front_base_from_request(request)
+    url = f"{base}/login?reset_token={token}"
+    return RedirectResponse(url, status_code=303)

@@ -8,7 +8,7 @@
         <h3 class="text-lg font-medium text-mono leading-none mb-2.5">로그인</h3>
         <div class="text-sm text-muted-foreground">
           계정이 없으신가요?
-          <a class="link" href="http://localhost:8001/signup">회원가입</a>
+          <a class="link" href="/signup">회원가입</a>
         </div>
       </div>
 
@@ -22,7 +22,6 @@
       <div class="flex flex-col gap-1">
         <div class="flex items-center justify-between gap-1">
           <label class="kt-form-label font-normal text-mono">비밀번호</label>
-          <a class="text-sm kt-link shrink-0" href="/reset-password">비밀번호 찾기</a>
         </div>
         <div class="kt-input">
           <input id="password" name="password" type="password" placeholder="비밀번호" autocomplete="current-password" required />
@@ -31,12 +30,17 @@
             <i class="ki-filled ki-eye-slash text-muted-foreground hidden" id="iconHide"></i>
           </button>
         </div>
+        <!-- 계정 찾기/로그인 유지 → 한 행에 배치 -->
+        <div class="flex items-center justify-between mt-1">
+          <button type="button" id="btnFindOpen" class="text-sm kt-link">
+            아이디 찾기 · 비밀번호 찾기
+          </button>
+          <label class="kt-label m-0 flex items-center gap-2">
+            <input class="kt-checkbox kt-checkbox-sm" id="rememberMe" type="checkbox" value="1" />
+            <span class="kt-checkbox-label">로그인 상태 유지</span>
+          </label>
+        </div>
       </div>
-
-      <label class="kt-label">
-        <input class="kt-checkbox kt-checkbox-sm" id="rememberMe" type="checkbox" value="1" />
-        <span class="kt-checkbox-label">로그인 상태 유지</span>
-      </label>
 
       <button class="kt-btn kt-btn-primary flex justify-center" id="btnSignIn" type="submit">
         <span id="btnText">로그인</span>
@@ -199,17 +203,296 @@ document.getElementById('signinForm').addEventListener('submit', async (e)=>{
       showAlert('로그인에 실패했습니다. 아이디 또는 비밀번호를 확인해 주세요.', 'error');
     }
   } else {
-    if (data.access_token) localStorage.setItem('access_token', data.access_token);
-    if (data.refresh_token) localStorage.setItem('refresh_token', data.refresh_token);
-    if (document.getElementById('rememberMe').checked) {
-      localStorage.setItem('remember_login', '1');
-    } else {
-      localStorage.removeItem('remember_login');
-    }
+    const remember = document.getElementById('rememberMe').checked;
+    const store = remember ? localStorage : sessionStorage;
+    const other = remember ? sessionStorage : localStorage;
+    try {
+      // 저장소 정리
+      other.removeItem('access_token'); other.removeItem('refresh_token'); other.removeItem('remember_login');
+      if (data.access_token) store.setItem('access_token', data.access_token);
+      if (data.refresh_token) store.setItem('refresh_token', data.refresh_token);
+      if (remember) localStorage.setItem('remember_login', '1');
+    } catch(_) {}
     window.location.href = '/home';
   }
 
   btn.disabled = false; btnText.classList.remove('hidden'); btnLoading.classList.add('hidden');
 });
+</script>
+
+<!-- ===== 아이디/비밀번호 찾기 모달 ===== -->
+<style>
+  .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;z-index:10000}
+  .modal{background:#fff;border-radius:12px;width:min(92vw,420px);box-shadow:0 10px 30px rgba(0,0,0,.2)}
+  .modal .hd{padding:12px 16px;border-bottom:1px solid #eee;font-weight:600;display:flex;align-items:center;justify-content:space-between}
+  .modal .bd{padding:14px 16px}
+  .modal .ft{padding:12px 16px;border-top:1px solid #eee;display:flex;gap:8px;justify-content:flex-end}
+  .field{display:flex;flex-direction:column;margin:8px 0}
+  .field label{font-size:12px;color:#555;margin-bottom:4px}
+  .field input{border:1px solid #ddd;border-radius:8px;padding:8px}
+  .error-text{color:#dc2626;font-size:12px;margin-top:4px}
+</style>
+
+<div id="dlgFindId" class="modal-backdrop">
+  <div class="modal">
+    <div class="hd">아이디 찾기 <button type="button" id="xFindId">✕</button></div>
+    <div class="bd">
+      <div class="field"><label>이름</label><input id="fi_name" placeholder="예: 홍길동"></div>
+      <div class="field"><label>주민번호</label><input id="fi_ident" placeholder="예: 900101-1234567" maxlength="14"></div>
+      <div class="error-text" id="fi_ident_err"></div>
+      <div class="field"><label>연락처</label><input id="fi_contact" placeholder="예: 010-1234-5678" maxlength="13"></div>
+      <div class="error-text" id="fi_contact_err"></div>
+      <div class="field"><label>이메일</label><input id="fi_email" placeholder="예: mail@example.com"></div>
+      <div class="error-text" id="fi_email_err"></div>
+      <div id="fi_msg" class="text-sm"></div>
+    </div>
+    <div class="ft">
+      <button class="kt-btn" id="fi_cancel" type="button">취소</button>
+      <button class="kt-btn kt-btn-primary" id="fi_ok" type="button">확인</button>
+    </div>
+  </div>
+  </div>
+
+<div id="dlgFindPw" class="modal-backdrop">
+  <div class="modal">
+    <div class="hd">비밀번호 찾기 <button type="button" id="xFindPw">✕</button></div>
+    <div class="bd">
+      <div class="field"><label>아이디</label><input id="fp_username" placeholder="가입한 아이디"></div>
+      <div class="error-text" id="fp_username_err"></div>
+      <div class="field"><label>이름</label><input id="fp_name" placeholder="예: 홍길동"></div>
+      <div class="error-text" id="fp_name_err"></div>
+      <div class="field"><label>주민번호</label><input id="fp_ident" placeholder="예: 900101-1234567" maxlength="14"></div>
+      <div class="error-text" id="fp_ident_err"></div>
+      <div class="field"><label>등록 이메일</label><input id="fp_email" placeholder="가입 시 사용한 이메일"></div>
+      <div class="error-text" id="fp_email_err"></div>
+      <div id="fp_msg" class="text-sm"></div>
+    </div>
+    <div class="ft">
+      <button class="kt-btn" id="fp_cancel" type="button">취소</button>
+      <button class="kt-btn kt-btn-primary" id="fp_ok" type="button">확인</button>
+    </div>
+  </div>
+</div>
+
+<!-- 계정 찾기 선택 모달 -->
+<div id="dlgFindSelect" class="modal-backdrop">
+  <div class="modal">
+    <div class="hd">계정 찾기 <button type="button" id="xFindSel">✕</button></div>
+    <div class="bd">
+      <div class="flex flex-col gap-3">
+        <button class="kt-btn kt-btn-primary" id="selFindId" type="button">아이디 찾기</button>
+        <button class="kt-btn" id="selFindPw" type="button">비밀번호 찾기</button>
+      </div>
+    </div>
+    <div class="ft">
+      <button class="kt-btn" id="selClose" type="button">닫기</button>
+    </div>
+  </div>
+  </div>
+
+<div id="dlgResetPw" class="modal-backdrop">
+  <div class="modal">
+    <div class="hd">새 비밀번호 설정 <button type="button" id="xResetPw">✕</button></div>
+    <div class="bd">
+      <div class="field"><label>새 비밀번호</label><input id="rp_pw" type="password" placeholder="새 비밀번호"></div>
+      <div class="field"><label>비밀번호 확인</label><input id="rp_pw2" type="password" placeholder="다시 입력"></div>
+      <div class="text-xs text-muted-foreground">8자 이상, 대/소문자, 숫자, 특수문자 포함</div>
+      <div id="rp_msg" class="text-sm"></div>
+    </div>
+    <div class="ft">
+      <button class="kt-btn" id="rp_cancel" type="button">취소</button>
+      <button class="kt-btn kt-btn-primary" id="rp_ok" type="button">변경</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// 공통 메시지 유틸
+function msgify(v){
+  if (v == null) return '요청에 실패했습니다.';
+  if (typeof v === 'string') return v;
+  try { return JSON.stringify(v); } catch(_) { return String(v); }
+}
+
+// 모달 유틸
+function openDlg(id){ document.getElementById(id).style.display='flex'; }
+function closeDlg(id){ document.getElementById(id).style.display='none'; }
+
+// 아이디/비밀번호 찾기 선택 모달 열기
+document.getElementById('btnFindOpen').addEventListener('click', ()=>{ openDlg('dlgFindSelect'); });
+document.getElementById('xFindId').addEventListener('click', ()=> closeDlg('dlgFindId'));
+document.getElementById('fi_cancel').addEventListener('click', ()=> closeDlg('dlgFindId'));
+// 즉시 포맷/검증 바인딩
+const __fi_ident = document.getElementById('fi_ident');
+const __fi_contact = document.getElementById('fi_contact');
+const __fi_email = document.getElementById('fi_email');
+const __err_ident = document.getElementById('fi_ident_err');
+const __err_contact = document.getElementById('fi_contact_err');
+const __err_email = document.getElementById('fi_email_err');
+
+__fi_ident?.addEventListener('input', ()=>{
+  const v = formatIdentification(__fi_ident.value);
+  __fi_ident.value = v;
+  const ok = /^\d{6}-\d{1,7}$/.test(v) && isValidRRN13(v.replace(/\D/g,''));
+  __err_ident.textContent = ok ? '' : '주민번호 형식이 올바르지 않습니다.';
+});
+__fi_contact?.addEventListener('input', ()=>{
+  const v = formatPhoneOnInput010(__fi_contact.value);
+  __fi_contact.value = v;
+  const norm = normalizePhoneForSave010(v);
+  __err_contact.textContent = (v && !norm) ? '전화번호는 010으로 시작하는 11자리여야 합니다.' : '';
+});
+__fi_email?.addEventListener('input', ()=>{
+  const v = (__fi_email.value||'').trim();
+  __err_email.textContent = (v && !isValidEmailStrict(v)) ? '이메일 형식이 올바르지 않습니다.' : '';
+});
+
+document.getElementById('fi_ok').addEventListener('click', async ()=>{
+  const name = document.getElementById('fi_name').value.trim();
+  let ident = document.getElementById('fi_ident').value.trim();
+  let phone = document.getElementById('fi_contact').value.trim();
+  let email = document.getElementById('fi_email').value.trim();
+  const msg = document.getElementById('fi_msg');
+  msg.textContent='';
+  if(!name || !ident || (!phone && !email)){ msg.textContent='이름/주민번호와 연락처 또는 이메일을 입력해 주세요.'; return; }
+  // 가입 규칙 적용
+  ident = formatIdentification(ident);
+  const d13 = ident.replace(/\D/g,'');
+  if(!isValidRRN13(d13)){ msg.textContent='주민번호 형식이 올바르지 않습니다.'; return; }
+  let contact = '';
+  if (email) {
+    if(!isValidEmailStrict(email)){ msg.textContent='이메일 형식이 올바르지 않습니다.'; return; }
+    contact = email.trim();
+  } else {
+    phone = formatPhoneOnInput010(phone);
+    const norm = normalizePhoneForSave010(phone);
+    if(!norm){ msg.textContent='전화번호는 010으로 시작하는 11자리여야 합니다.'; return; }
+    contact = norm;
+  }
+  try{
+    const r = await fetch('/api/v1/auth/find-username', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ name, identification: ident, contact }) });
+    const j = await r.json();
+    if(r.ok){ alert(`아이디: ${j.username}`); closeDlg('dlgFindId'); }
+    else{ alert('해당 정보를 가진 계정은 없습니다.'); }
+  }catch(_){ alert('조회에 실패했습니다.'); }
+});
+
+// 비밀번호 찾기 (메일 발송)
+document.getElementById('xFindPw').addEventListener('click', ()=> closeDlg('dlgFindPw'));
+document.getElementById('fp_cancel').addEventListener('click', ()=> closeDlg('dlgFindPw'));
+document.getElementById('fp_ok').addEventListener('click', async ()=>{
+  const username = document.getElementById('fp_username').value.trim();
+  const name = document.getElementById('fp_name').value.trim();
+  let ident = document.getElementById('fp_ident').value.trim();
+  const email = document.getElementById('fp_email').value.trim();
+  const msg = document.getElementById('fp_msg');
+  msg.textContent = '';
+  // 즉시 검증(회원가입과 동일 기준)
+  const uErr = document.getElementById('fp_username_err');
+  const nErr = document.getElementById('fp_name_err');
+  const iErr = document.getElementById('fp_ident_err');
+  const eErr = document.getElementById('fp_email_err');
+  uErr.textContent = nErr.textContent = iErr.textContent = eErr.textContent = '';
+
+  // 사용자명: 영문 시작, 영문/숫자/_ 3~50자
+  if(!/^[A-Za-z][A-Za-z0-9_]{2,49}$/.test(username)){ uErr.textContent='사용자명은 영문으로 시작, 영문/숫자/_ 3~50자입니다.'; }
+  // 이름: 2자 이상
+  if(!name || name.trim().length < 2){ nErr.textContent='이름은 2자 이상이어야 합니다.'; }
+  // 주민번호: 포맷/13자리
+  ident = formatIdentification(ident); document.getElementById('fp_ident').value = ident;
+  const d13 = ident.replace(/\D/g,'');
+  if(!isValidRRN13(d13)){ iErr.textContent='주민번호 형식이 올바르지 않습니다.'; }
+  // 이메일 형식
+  if(!isValidEmailStrict(email)){ eErr.textContent='이메일 형식이 올바르지 않습니다.'; }
+
+  if(uErr.textContent || nErr.textContent || iErr.textContent || eErr.textContent){ msg.textContent='입력값을 확인해 주세요.'; return; }
+  try{
+    const r = await fetch('/api/v1/auth/request-password-reset', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username, name, identification: ident, email }) });
+    const j = await r.json();
+    if(r.ok){
+      msg.textContent = '이메일을 보냈습니다. 받은 메일에서 비밀번호 재설정 버튼을 눌러 주세요.';
+    }else{
+      const txt = j && (j.detail || j.message) ? msgify(j.detail || j.message) : '요청에 실패했습니다.';
+      alert(txt);
+    }
+  }catch(e){ alert(msgify(e && e.message)); }
+});
+
+// 비밀번호 찾기: 주민번호 자동 하이픈/검증
+const __fp_ident = document.getElementById('fp_ident');
+const __fp_ident_err = document.getElementById('fp_ident_err');
+__fp_ident?.addEventListener('input', ()=>{
+  const v = formatIdentification(__fp_ident.value);
+  __fp_ident.value = v;
+  const ok = /^\d{6}-\d{1,7}$/.test(v) && isValidRRN13(v.replace(/\D/g,''));
+  if (__fp_ident_err) __fp_ident_err.textContent = ok ? '' : '주민번호 형식이 올바르지 않습니다.';
+});
+
+// 링크로 돌아왔을 때 reset_token 처리 → 새 비밀번호 모달 띄움
+(function handleResetToken(){
+  try{
+    const params = new URLSearchParams(location.search);
+    const t = params.get('reset_token');
+    if(!t) return;
+    openDlg('dlgResetPw');
+    document.getElementById('rp_ok').onclick = async ()=>{
+      const p1 = document.getElementById('rp_pw').value;
+      const p2 = document.getElementById('rp_pw2').value;
+      const m = document.getElementById('rp_msg'); m.textContent='';
+      if(p1 !== p2){ m.textContent='비밀번호가 일치하지 않습니다'; return; }
+      try{
+        const r = await fetch('/api/v1/auth/reset-password', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token: t, new_password: p1 }) });
+        const j = await r.json();
+        if(r.ok){ alert('비밀번호가 변경되었습니다. 이제 로그인해 주세요.'); closeDlg('dlgResetPw'); const url = new URL(location.href); url.search = ''; history.replaceState({}, '', url.toString()); }
+        else { m.textContent = (j.detail || '변경에 실패했습니다'); }
+      }catch(_){ m.textContent='변경에 실패했습니다'; }
+    };
+    document.getElementById('xResetPw').onclick = ()=> closeDlg('dlgResetPw');
+    document.getElementById('rp_cancel').onclick = ()=> closeDlg('dlgResetPw');
+  }catch(_){ }
+})();
+
+// 선택 모달 동작
+document.getElementById('xFindSel').addEventListener('click', ()=> closeDlg('dlgFindSelect'));
+document.getElementById('selClose').addEventListener('click', ()=> closeDlg('dlgFindSelect'));
+document.getElementById('selFindId').addEventListener('click', ()=>{ closeDlg('dlgFindSelect'); openDlg('dlgFindId'); });
+document.getElementById('selFindPw').addEventListener('click', ()=>{ closeDlg('dlgFindSelect'); openDlg('dlgFindPw'); });
+
+// ===== 가입과 동일한 유효성 유틸 =====
+function isValidEmailStrict(email){
+  const re=/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i; return re.test(email);
+}
+function formatPhoneOnInput010(v){
+  const d=String(v||'').replace(/\D/g,'').slice(0,11);
+  if(d.length<=3) return d; if(d.length<=7) return d.slice(0,3)+'-'+d.slice(3);
+  return d.slice(0,3)+'-'+d.slice(3,7)+'-'+d.slice(7);
+}
+function normalizePhoneForSave010(raw){
+  if(!raw) return null; const d=String(raw).replace(/\D/g,'');
+  if(!/^010\d{8}$/.test(d)) return null; return '010-'+d.slice(3,7)+'-'+d.slice(7,11);
+}
+function formatIdentification(v){
+  let n=String(v||'').replace(/\D/g,'').slice(0,13); if(n.length<=6) return n; return n.replace(/(\d{6})(\d{1,7})/,'$1-$2');
+}
+function isValidRRN13(n13){
+  if(!/^\d{13}$/.test(n13)) return false; const m=parseInt(n13.slice(2,4),10), d=parseInt(n13.slice(4,6),10);
+  if(!/[01]/.test(n13[2])) return false; if(!/[0-3]/.test(n13[4])) return false; if(!(m>=1&&m<=12)) return false; if(!(d>=1&&d<=31)) return false; if(!/[1-8]/.test(n13[6])) return false; return true;
+}
+
+// 새 비밀번호 규칙 검증 헬퍼
+function validatePasswordStrength(pw){
+  if(!pw||pw.length<8) return false; const u=/[A-Z]/.test(pw), l=/[a-z]/.test(pw), d=/\d/.test(pw), s=/[!@#$%^&*(),.?":{}|<>]/.test(pw); return u&&l&&d&&s;
+}
+// 새 비밀번호 입력 실시간 검증
+(function(){
+  const p1=document.getElementById('rp_pw'); const p2=document.getElementById('rp_pw2'); const m=document.getElementById('rp_msg');
+  if(!p1||!p2||!m) return;
+  function repaint(){
+    m.textContent=''; const a=p1.value, b=p2.value;
+    if(a && !validatePasswordStrength(a)) m.textContent='비밀번호 규칙(8자 이상, 대/소문자, 숫자, 특수문자)을 만족해 주세요.';
+    else if(b && a!==b) m.textContent='비밀번호가 일치하지 않습니다.';
+  }
+  p1.addEventListener('input', repaint); p2.addEventListener('input', repaint);
+})();
 </script>
 {% endblock %}

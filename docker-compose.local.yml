@@ -5,6 +5,7 @@ services:
   api:
     build: .
     container_name: team-api-local
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
     ports:
       - "8001:8000"
     depends_on:
@@ -38,10 +39,17 @@ services:
       
       # 기타 설정
       - DEBUG=True
+      - HF_HOME=/app/.cache
+      - TRANSFORMERS_CACHE=/app/.cache
+      - SENTENCE_TRANSFORMERS_HOME=/app/.cache
+      - XDG_CACHE_HOME=/app/.cache
+
     volumes:
       - ./app:/app/app
       - ./alembic:/app/alembic
       - ./.env:/app/.env:ro
+      - ./app/static:/app/static
+      - ./app/.cache:/app/.cache   
     networks:
       - team-network-local
     restart: unless-stopped

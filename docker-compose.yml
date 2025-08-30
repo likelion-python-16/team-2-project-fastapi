@@ -5,6 +5,7 @@ services:
   api:
     build: .
     container_name: team-api
+    user: "${UID:-1000}:${GID:-1000}"
     ports:
       - "8000:8000"
     depends_on:
@@ -17,8 +18,14 @@ services:
       - MYSQL_PASSWORD=team_password_123
       - MYSQL_DATABASE=team_project_db
       - DEBUG=True
+      - HF_HOME=/app/.cache
+      - TRANSFORMERS_CACHE=/app/.cache
+      - SENTENCE_TRANSFORMERS_HOME=/app/.cache
+      - XDG_CACHE_HOME=/app/.cache
     volumes:
       - ./app:/app/app  # 개발 중 코드 변경 시 자동 반영
+      - ./app/static:/app/static
+      - ./app/.cache:/app/.cache 
     networks:
       - team-network
     restart: unless-stopped

@@ -79,9 +79,9 @@ def _round_has_dependents(r: ChallengeRound) -> bool:
     )
 
 def _reconcile_total_rounds(db: Session, challenge: Challenge, new_total: Optional[int], force: bool = False) -> None:
-    # ✅ 서버 측 안전장치 (스키마에서 1..50 검증하더라도 추가로 방어)
-    if new_total is not None and new_total > 50:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "total_rounds cannot exceed 50")
+    # ✅ 서버 측 안전장치 (스키마에서 1..100 검증하더라도 추가로 방어)
+    if new_total is not None and new_total > 100:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "total_rounds cannot exceed 100")
 
     if new_total is None:
         return
@@ -276,7 +276,6 @@ def dual_search(
 async def create_challenge(
     challenge_data: ChallengeCreate,
     db: Session = Depends(get_db),
-    tags: Optional[List[str]] = Body(None, embed=True),
 ):
     me = get_current_user_id()
     _validate_common_business_rules(
@@ -287,8 +286,8 @@ async def create_challenge(
         raise HTTPException(400, "Reward content is required when use_reward is True")
 
     # (스키마에서 검증되지만) 서버 방어 로직 한 번 더
-    if challenge_data.total_rounds is not None and challenge_data.total_rounds > 50:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "total_rounds cannot exceed 50")
+    if challenge_data.total_rounds is not None and challenge_data.total_rounds > 100:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "total_rounds cannot exceed 100")
 
     new_challenge = Challenge(
         title=challenge_data.title,
@@ -320,9 +319,10 @@ async def create_challenge(
     db.add(new_challenge)
     db.flush()
 
-    # 태그 연결
-    if tags:
-        for tag_text in tags:
+    # 태그 연결 (요청 본문 내 challenge_data.tags 사용)
+    incoming_tags: Optional[List[str]] = getattr(challenge_data, 'tags', None)
+    if incoming_tags:
+        for tag_text in incoming_tags:
             t = db.query(Tag).filter(Tag.tag == tag_text).first()
             if not t:
                 t = Tag(tag=tag_text, is_active=True)
@@ -530,6 +530,8 @@ def get_challenge_rounds(challenge_id: int, db: Session = Depends(get_db)):
                     "lon": float(r.lon) if r.lon is not None else None,
                     "geofence_radius_m": r.geofence_radius_m,
                     "zoom_meeting_id": r.zoom_meeting_id,
+                    "reward_enabled": bool(getattr(r, 'reward_enabled', False) or False),
+                    "reward_text": getattr(r, 'reward_text', None),
                     "created_at": r.created_at,
                     "updated_at": r.updated_at,
                     "planned_count": counts.get(r.id, 0),
@@ -574,6 +576,8 @@ def create_challenge_round(
         lon=round_data.lon,
         geofence_radius_m=round_data.geofence_radius_m,
         zoom_meeting_id=round_data.zoom_meeting_id,
+        reward_enabled=bool(getattr(round_data, 'reward_enabled', False) or False),
+        reward_text=getattr(round_data, 'reward_text', None),
     )
     db.add(new_round)
     db.commit()
@@ -620,7 +624,7 @@ def update_challenge_round(
             raise HTTPException(400, "mode는 hybrid일 때만 변경 가능")
 
     # 공백 문자열은 None으로 정리
-    for key in ("url", "map_url", "place_name", "road_address", "address", "description", "zoom_meeting_id"):
+    for key in ("url", "map_url", "place_name", "road_address", "address", "description", "zoom_meeting_id", "reward_text"):
         if key in data and isinstance(data[key], str) and data[key].strip() == "":
             data[key] = None
 

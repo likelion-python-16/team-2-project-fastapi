@@ -41,6 +41,11 @@ class ChallengeRound(Base):
     zoom_meeting_id = Column(String(255), comment="줌 미팅 ID")
 
     address = Column(String(255), comment="지번 주소")
+
+    # 🆕 회차별 리워드
+    from sqlalchemy import Boolean
+    reward_enabled = Column(Boolean, default=False, nullable=False, comment="리워드 사용 여부")
+    reward_text = Column(Text, nullable=True, comment="회차 리워드 내용")
     
     # 관계
     challenge = relationship("Challenge", back_populates="rounds")

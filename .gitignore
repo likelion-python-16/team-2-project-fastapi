@@ -47,3 +47,7 @@ htmlcov/
 app/static/assets/**/media/*
 app/static/assets/**/js/widgets/*
 app/static/assets/**/js/layouts/*
+
+# 캐시
+.cache/
+app/.cache/

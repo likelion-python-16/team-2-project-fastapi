@@ -3,6 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 import numpy as np
 from sentence_transformers import SentenceTransformer
+import os   
 
 # 멀티언어 짧은 쿼리/고유명사에 강한 베이스
 MODEL_ID = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
@@ -23,3 +24,9 @@ def embed_texts(texts: list[str]) -> np.ndarray:
     vecs = model.encode(texts, convert_to_numpy=True, normalize_embeddings=True)
     # vecs는 이미 L2 정규화됨 → 코사인유사도 = 내적
     return vecs.astype("float32", copy=False)
+
+
+os.environ.setdefault("HF_HOME", "/app/.cache")
+os.environ.setdefault("TRANSFORMERS_CACHE", "/app/.cache")
+os.environ.setdefault("SENTENCE_TRANSFORMERS_HOME", "/app/.cache")
+os.environ.setdefault("XDG_CACHE_HOME", "/app/.cache")

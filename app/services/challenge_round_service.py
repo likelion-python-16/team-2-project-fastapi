@@ -35,9 +35,9 @@ async def auto_create_rounds_on_challenge_create(db: Session, challenge: Challen
     n = challenge.total_rounds or 0
     if n <= 0:
         return
-    # ✅ 방어 로직: 최대 50회
-    if n > 50:
-        raise HTTPException(status_code=422, detail="total_rounds cannot exceed 50")
+    # ✅ 방어 로직: 최대 100회
+    if n > 100:
+        raise HTTPException(status_code=422, detail="total_rounds cannot exceed 100")
 
     lat = lon = None
     road = challenge.default_road_address
@@ -59,7 +59,7 @@ async def auto_create_rounds_on_challenge_create(db: Session, challenge: Challen
                 c = f"?c={lon},{lat},15,0,0,0,dh" if (lat is not None and lon is not None) else ''
                 map_url = f"https://map.naver.com/v5/entry/place/{place_id}{c}"
             else:
-                map_url = build_naver_map_url(pname, lat, lon, None)
+                map_url = build_naver_map_url(pname, lat, lon)
 
     for i in range(1, n + 1):
         processing_at = _compute_processing_date(challenge, i)
@@ -88,6 +88,11 @@ async def auto_create_rounds_on_challenge_create(db: Session, challenge: Challen
             r.lon = lon
             r.map_url = map_url
 
+        # 🆕 회차별 리워드: 챌린지 리워드를 일괄 적용
+        if getattr(challenge, 'use_reward', False) and (getattr(challenge, 'reward', None) or '').strip():
+            r.reward_enabled = True
+            r.reward_text = challenge.reward
+
         db.add(r)
 
     db.flush()
@@ -103,8 +108,8 @@ def _round_has_dependent_data(r: ChallengeRound) -> bool:
 
 
 def reconcile_total_rounds(db: Session, challenge: Challenge, new_total: int, force: bool = False):
-    if new_total > 50:
-        raise HTTPException(status_code=422, detail="total_rounds cannot exceed 50")
+    if new_total > 100:
+        raise HTTPException(status_code=422, detail="total_rounds cannot exceed 100")
 
     current = db.query(ChallengeRound).filter(
         ChallengeRound.challenge_id == challenge.id
@@ -131,6 +136,10 @@ def reconcile_total_rounds(db: Session, challenge: Challenge, new_total: int, fo
             )
             if challenge.mode == 'online':
                 r.url = challenge.default_zoom_link or None
+            # 🆕 일괄 리워드 적용
+            if getattr(challenge, 'use_reward', False) and (getattr(challenge, 'reward', None) or '').strip():
+                r.reward_enabled = True
+                r.reward_text = challenge.reward
             db.add(r)
         db.flush()
         return
