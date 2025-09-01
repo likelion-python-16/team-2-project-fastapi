@@ -1,7 +1,7 @@
 {% extends "final.html" %}
 {% block title %}프로필 설정 - Team Project{% endblock %}
 {% block content %}
-<div id="pageBg" class="flex items-center justify-center grow bg-center bg-no-repeat page-bg">
+<div id="pageBg" class="flex items-start justify-center min-h-[100dvh] w-full overflow-y-auto py-8">
   <div class="kt-card max-w-[420px] w-full">
     <form class="kt-card-content flex flex-col gap-5 p-10" id="profileForm" method="post" novalidate>
       <div class="text-center mb-2.5">
@@ -84,14 +84,17 @@
       </div>
 
       <div class="flex gap-3">
-        <button class="kt-btn kt-btn-light flex justify-center grow" type="button" id="btnSkip">나중에 설정</button>
+        <button class="kt-btn kt-btn-light flex justify-center grow" type="button" id="btnPrev">이전 단계</button>
         <button class="kt-btn kt-btn-primary flex justify-center grow" id="submitBtn" type="submit">
           <span id="submitText">가입 완료</span>
           <span id="submitLoading" class="hidden"><i class="ki-filled ki-spinner animate-spin me-2"></i>완료 중...</span>
         </button>
       </div>
 
-      <div class="text-center text-xs text-muted-foreground mt-2">🎉 프로필 설정을 완료하면 모든 기능을 이용할 수 있습니다!</div>
+      <div class="text-center text-xs text-muted-foreground mt-2">
+        💡 나중에 프로필에서 언제든 수정할 수 있습니다
+        <a href="#" id="linkSkip" class="text-primary font-medium">나중에 설정</a>
+      </div>
     </form>
   </div>
 </div>
@@ -282,10 +285,18 @@ document.addEventListener('DOMContentLoaded',()=>{
 document.addEventListener('DOMContentLoaded',()=>{
   loadCategories();
 
-  document.getElementById('btnSkip').addEventListener('click',()=>{
+  // 이전 단계 버튼
+  const btnPrev = document.getElementById('btnPrev');
+  if (btnPrev) btnPrev.addEventListener('click',()=>{ window.location.href='/signup/step2'; });
+
+  // 나중에 설정 (아래 링크)
+  const linkSkip = document.getElementById('linkSkip');
+  if (linkSkip) linkSkip.addEventListener('click',(e)=>{
+    e.preventDefault();
     if(confirm('프로필 설정을 건너뛰고 가입을 완료하시겠습니까?')){
       document.getElementById('profile_image').value='';
       document.getElementById('introduction').value='';
+      selected.clear(); paintCategories(); renderSelected();
       document.getElementById('profileForm').requestSubmit();
     }
   });
@@ -293,8 +304,11 @@ document.addEventListener('DOMContentLoaded',()=>{
   document.getElementById('profileForm').addEventListener('submit', async (e)=>{
     e.preventDefault();
     const d=getDraft();
-    if(!d.username||!d.email||!d.password||!d.phone||!d.identification_number){
-      showAlert('이전 단계를 완료해 주세요.','error'); window.location.href='/signup'; return;
+    const SOCIAL = !!localStorage.getItem('social_prefill');
+    const baseOk = (d.username && d.email && d.phone && d.identification_number);
+    if(!(SOCIAL ? baseOk : (baseOk && d.password))){
+      showAlert('이전 단계 정보를 확인해 주세요. (필요시 1단계로 돌아가 입력)', 'error');
+      return;
     }
 
     const profile_image=(document.getElementById('profile_image').value||'').trim();
@@ -304,29 +318,91 @@ document.addEventListener('DOMContentLoaded',()=>{
     const interests_keywords=[...selected];
     setDraft({...d, interests_keywords});
 
+    const introText = (document.getElementById('introduction').value||'').trim();
+    const introPayload = (introText || interests_keywords.length)
+      ? JSON.stringify({bio:introText, interests:{categories:[], keywords: interests_keywords}})
+      : '';
+
+    // 최소 필수만 우선 포함 (건너뛰기 허용)
     const payload={
-      username:d.username, email:d.email, password:d.password,
-      name:d.name || d.username, phone:d.phone, gender:d.gender || null,
-      region_living:d.region_living || '', region_active:d.region_active || '',
-      identification_number:d.identification_number || null,
-      profile_image: profile_image || '',   // 서버에서 기본 처리 가능
-      introduction: JSON.stringify({bio:introduction, interests:{categories:[], keywords: interests_keywords}})
+      username:d.username,
+      email:d.email,
+      password:d.password,
+      phone:d.phone,
+      identification_number:d.identification_number
     };
+    // 선택 항목은 값이 있을 때만 포함
+    if ((d.name||'').trim().length>=2) payload.name = (d.name||'').trim(); else payload.name = d.username;
+    if ((d.gender||'').trim()) payload.gender = d.gender;
+    if ((d.region_living||'').trim()) payload.region_living = (d.region_living||'').trim();
+    if ((d.region_active||'').trim()) payload.region_active = (d.region_active||'').trim();
+    if (profile_image && profile_image !== DEFAULT_AVATAR) payload.profile_image = profile_image;
+    if (introPayload) payload.introduction = introPayload;
 
     const btn=document.getElementById('submitBtn'), txt=document.getElementById('submitText'), load=document.getElementById('submitLoading');
     btn.disabled=true; txt.classList.add('hidden'); load.classList.remove('hidden');
 
     try{
-      const res=await fetch('/api/v1/auth/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-      const j=await res.json().catch(()=>({}));
-      if(!res.ok){throw new Error(j?.detail?.message || j?.detail || '가입 실패');}
-      if(j.access_token){
-        localStorage.setItem('access_token',j.access_token);
-        localStorage.setItem('refresh_token',j.refresh_token);
+      if (SOCIAL){
+        // 소셜 온보딩: 현재 사용자 정보 보강
+        const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token') || '';
+        const socialPayload={
+          phone:d.phone,
+          identification_number:d.identification_number,
+          gender:d.gender || null,
+          region_living:d.region_living || '',
+          region_active:d.region_active || '',
+          profile_image: profile_image || '',
+          introduction: JSON.stringify({bio:introduction, interests:{categories:[], keywords: interests_keywords}})
+        };
+        const res=await fetch('/api/v1/users/me/onboarding',{method:'POST',headers:{'Content-Type':'application/json', 'Authorization': 'Bearer '+token},body:JSON.stringify(socialPayload)});
+        const j=await res.json().catch(()=>({}));
+        if(!res.ok){ throw new Error(j?.detail || '온보딩 저장 실패'); }
+        clearDraft(); localStorage.removeItem('social_prefill');
+        showAlert('정보가 저장되었습니다. 환영합니다!','success');
+        setTimeout(()=>window.location.href='/home',700);
+      } else {
+        let res=await fetch('/api/v1/auth/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+        let j=await res.json().catch(()=>({}));
+        if(!res.ok){
+          // 422 등 유효성 실패 시 최소 필수만 재시도
+          if (res.status===422){
+            const minimal={ username:d.username, email:d.email, password:d.password, phone:d.phone, identification_number:d.identification_number };
+            res = await fetch('/api/v1/auth/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(minimal)});
+            j = await res.json().catch(()=>({}));
+          }
+        }
+        if(!res.ok){
+          // 상세 중복 메시지 처리
+          const f = j && j.detail && j.detail.fields;
+          if (f) {
+            const msgs=[];
+            if (f.username) msgs.push('사용자명');
+            if (f.email) msgs.push('이메일');
+            if (f.phone) msgs.push('전화번호');
+            throw new Error((msgs.length? (msgs.join(', ')+' 중복') : '중복') + '으로 가입할 수 없습니다.');
+          }
+          // Pydantic 오류 배열 처리
+          if (Array.isArray(j?.detail)){
+            const first = j.detail[0];
+            const loc = (first?.loc||[]).join('.');
+            const msg = first?.msg || '유효성 검사 실패';
+            throw new Error(`[${loc}] ${msg}`);
+          }
+          throw new Error(j?.detail?.message || j?.detail || '가입 실패');
+        }
+        if(j.access_token){
+          localStorage.setItem('access_token',j.access_token);
+          localStorage.setItem('refresh_token',j.refresh_token);
+          clearDraft();
+          showAlert('가입이 완료되었습니다. 환영합니다!','success');
+          setTimeout(()=>window.location.href='/home',700);
+        } else {
+          clearDraft();
+          showAlert('가입이 완료되었습니다. 이메일 인증을 완료해 주세요.','success');
+          setTimeout(()=>window.location.href='/signup/complete',900);
+        }
       }
-      clearDraft();
-      showAlert('가입이 완료되었습니다.','success');
-      setTimeout(()=>window.location.href='/signup/complete',900);
     }catch(e){
       showAlert(String(e.message||e),'error');
     }finally{

@@ -5,7 +5,8 @@ from functools import lru_cache
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 
-load_dotenv()
+# Ensure values from .env override any pre-set envs in container
+load_dotenv(override=True)
 
 class Environment(str, Enum):
     DEVELOPMENT = "development"
@@ -73,14 +74,27 @@ class Settings(BaseSettings):
     smtp_user: str = os.getenv("SMTP_USER", "")
     smtp_pass: str = os.getenv("SMTP_PASS", "")
 
-    verification_link_base: str = os.getenv("VERIFICATION_LINK_BASE", "http://localhost:8001/api/v1")
-    verify_success_url: str = os.getenv("VERIFY_SUCCESS_URL", "http://localhost:8001/verify/success")
-    verify_fail_url: str = os.getenv("VERIFY_FAIL_URL", "http://localhost:8001/verify/fail")
+    # 기본값을 8000으로 통일 (단일 앱 실행 환경 안전값)
+    verification_link_base: str = os.getenv("VERIFICATION_LINK_BASE", "http://localhost:8000/api/v1")
+    verify_success_url: str = os.getenv("VERIFY_SUCCESS_URL", "http://localhost:8000/verify/success")
+    verify_fail_url: str = os.getenv("VERIFY_FAIL_URL", "http://localhost:8000/verify/fail")
     email_token_expire_minutes: int = int(os.getenv("EMAIL_TOKEN_EXPIRE_MINUTES", "30"))
 
     # 링크 베이스
     api_base_url: str = os.getenv("API_BASE_URL", "http://localhost:8001/api/v1")
     front_base_url: str = os.getenv("FRONT_BASE_URL", "http://localhost:8000")
+    session_secret: str = os.getenv("SESSION_SECRET", "dev-session-secret")
+    # Email verification policy (general signup)
+    require_email_verification: bool = os.getenv("REQUIRE_EMAIL_VERIFICATION", "false").lower() in ("1","true","yes")
+
+    # Social login
+    naver_client_id: str = os.getenv("NAVER_CLIENT_ID", "")
+    naver_client_secret: str = os.getenv("NAVER_CLIENT_SECRET", "")
+    naver_redirect_path: str = os.getenv("NAVER_REDIRECT_PATH", "/api/v1/auth/callback/naver")
+
+    google_client_id: str = os.getenv("GOOGLE_CLIENT_ID", "")
+    google_client_secret: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
+    google_redirect_path: str = os.getenv("GOOGLE_REDIRECT_PATH", "/api/v1/auth/callback/google")
 
     @property
     def database_url(self) -> str:

@@ -27,6 +27,8 @@ from .routers import (
 from app.routers.place_picker import router as place_picker_router
 from app.web.routes_verify import router as verify_pages_router
 from app.routers.pages import router as pages_router  # ✅ /signup 등 페이지 라우터
+from app.routers import auth_social
+from starlette.middleware.sessions import SessionMiddleware
 
 app = FastAPI(
     title=settings.project_name,
@@ -47,6 +49,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Session for OAuth flows (state/nonce)
+app.add_middleware(SessionMiddleware, secret_key=settings.session_secret)
+
 # Static
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
@@ -63,6 +68,10 @@ async def home_page(request: Request):
 @app.get("/login", response_class=HTMLResponse, tags=["Pages"])
 async def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
+
+@app.get("/auth/callback", response_class=HTMLResponse, tags=["Pages"])
+async def auth_callback_page(request: Request):
+    return templates.TemplateResponse("auth_callback.html", {"request": request})
 
 @app.get("/account/email", response_class=HTMLResponse, tags=["Pages"])
 async def account_email_page(request: Request):
@@ -161,6 +170,7 @@ app.include_router(system.router)
 app.include_router(users.router, prefix="/api/v1")
 app.include_router(challenges.router, prefix="/api/v1")
 app.include_router(auth.router, prefix="/api/v1")
+app.include_router(auth_social.router, prefix="/api/v1")
 app.include_router(places.router)                 # /places/*
 app.include_router(naver_local.router)            # /naver/local
 app.include_router(naver_maps.router)             # /naver/resolve-place-id 등

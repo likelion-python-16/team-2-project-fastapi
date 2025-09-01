@@ -1,7 +1,7 @@
 {% extends "final.html" %}
 {% block title %}개인정보 입력 - Team Project{% endblock %}
 {% block content %}
-<div id="pageBg" class="flex items-start justify-center grow bg-center bg-no-repeat page-bg py-8">
+<div id="pageBg" class="flex items-start justify-center grow py-8">
   <!-- step1과 맞춰 살짝 넓게: 440px -->
   <div class="kt-card max-w-[440px] w-full">
     <form class="kt-card-content flex flex-col gap-5 p-10" id="personalInfoForm" method="post">
@@ -87,11 +87,16 @@
     return next;
   }
 
-  // 이전 단계 강제 진행 보호
+  // 이전 단계 강제 진행 보호(느슨하게: 경고만, 리다이렉트하지 않음)
   (function guard() {
-    const d = getDraft();
-    const ok = ['username','email','password','phone','identification_number'].every(k => d[k]);
-    if (!ok) window.location.href = '/signup';
+    try {
+      const d = getDraft();
+      const SOCIAL = !!localStorage.getItem('social_prefill');
+      const base = ['username','email'];
+      const need = SOCIAL ? base : [...base, 'password'];
+      const ok = need.every(k => d[k]);
+      if (!ok) console.warn('Step2 guard: 이전 단계 정보가 일부 비어 있습니다. 계속 진행은 허용합니다.');
+    } catch (_) {}
   })();
 
   document.addEventListener('DOMContentLoaded', () => {
@@ -123,14 +128,5 @@
   });
 </script>
 
-<!-- 배경 이미지 -->
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-  const el = document.getElementById('pageBg');
-  if (!el) return;
-  el.style.backgroundImage = 'url("{{ url_for("static", path="assets/final/media/images/2600x1200/bg-10.png") }}")';
-  el.style.backgroundPosition = 'center';
-  el.style.backgroundRepeat = 'no-repeat';
-});
-</script>
+<!-- 배경 이미지 사용 안함 -->
 {% endblock %}

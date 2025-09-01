@@ -13,9 +13,13 @@ RUN apt-get update && apt-get install -y \
 
 # Python 의존성 설치
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip
-RUN pip install --no-cache-dir -r requirements.txt
+# ✅ pip 인덱스를 PyPI로 고정
+ENV PIP_INDEX_URL=https://pypi.org/simple
+# (필요하다면 추가 인덱스도 등록 가능)
+# ENV PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu
 
+RUN pip install --no-cache-dir --upgrade pip \
+ && pip install --no-cache-dir -r requirements.txt
 # 애플리케이션 코드 복사
 COPY ./app ./app
 COPY alembic.ini ./

@@ -11,9 +11,13 @@ let searchPage = 1;
 let lastQuery = "";
 let searchActive = false;
 
-// 로그인 간단 체크
-const token = localStorage.getItem("access_token");
-const isLoggedIn = !!token;
+// 로그인 간단 체크 (localStorage 또는 sessionStorage)
+function getToken(){
+  try{ return localStorage.getItem("access_token") || sessionStorage.getItem("access_token") || ""; }
+  catch{ return ""; }
+}
+let token = getToken();
+let isLoggedIn = !!token;
 
 // ===== Utils =====
 function el(id){ return document.getElementById(id); }
@@ -124,6 +128,7 @@ function buildLoggedInMenu(user) {
     '<div class="divider"></div>',
     '<a class="dropdown-item" href="/me">마이페이지</a>',
     '<a class="dropdown-item" href="/profile">프로필 설정</a>',
+    '<a class="dropdown-item" href="/account/edit">회원정보 수정</a>',
     '<div class="divider"></div>',
     '<button id="logout-btn" class="dropdown-item" type="button">로그아웃</button>'
   ].join("");
@@ -152,8 +157,14 @@ function buildLoggedInMenu(user) {
 
   const lo = document.getElementById("logout-btn");
   if (lo) lo.addEventListener("click", function(){
-    localStorage.removeItem("access_token");
-    location.reload();
+    try{
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("refresh_token");
+      localStorage.removeItem("remember_login");
+      sessionStorage.removeItem("access_token");
+      sessionStorage.removeItem("refresh_token");
+    }catch(_){ }
+    location.href = "/login";
   });
 }
 
@@ -223,7 +234,7 @@ function initProfileDropdown(enable) {
 }
 
 async function initProfileUI() {
-  const t = localStorage.getItem("access_token");
+  const t = getToken();
   if (!t) {
     buildLoggedOutMenu();
     initProfileDropdown(false);
@@ -289,6 +300,8 @@ async function loadHomeSections(){
   const url = new URL(API_HOME, window.location.origin);
   url.searchParams.set("latest_page", String(latestPage));
   url.searchParams.set("latest_page_size", String(PAGE_SIZE_LATEST));
+  // refresh in case storage changed
+  token = getToken(); isLoggedIn = !!token;
   const res = await fetch(url.toString(), {headers: token? {Authorization:"Bearer "+token} : {}});
   if(!res.ok){
     el("rec-list").innerHTML = "";

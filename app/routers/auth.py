@@ -44,17 +44,77 @@ def check_duplicates(
     username: str | None = Query(default=None),
     email: str | None = Query(default=None),
     phone: str | None = Query(default=None),
+    identification_number: str | None = Query(default=None),
 ):
-    taken = {"username": False, "email": False, "phone": False}
+    """
+    중복 확인
+    - username: 소문자 비교
+    - email: 소문자 비교
+    - phone: 010-11자리 → fingerprint 우선, fallback으로 plain 컬럼 비교
+    - identification_number: 13자리 숫자 → fingerprint 우선, fallback으로 복호화 비교
+    """
+    taken = {"username": False, "email": False, "phone": False, "identification_number": False}
+
     if username:
         taken["username"] = db.query(User.id).filter(User.username == username.lower()).first() is not None
+
     if email:
         taken["email"] = db.query(User.id).filter(User.email == email.lower()).first() is not None
+
     if phone:
         s = re.sub(r"\D+", "", phone or "")
         if re.fullmatch(r"010\d{8}", s):
-            norm = f"010-{s[3:7]}-{s[7:11]}"
-            taken["phone"] = db.query(User.id).filter(User.phone == norm).first() is not None
+            # fingerprint 우선
+            try:
+                fp = id_fingerprint(s)
+                if db.query(User.id).filter(User.phone_fingerprint == fp).first() is not None:
+                    taken["phone"] = True
+                else:
+                    # 레거시 plain 컬럼도 체크
+                    norm = f"010-{s[3:7]}-{s[7:11]}"
+                    exists_plain = db.query(User.id).filter(User.phone == norm).first() is not None
+                    if exists_plain:
+                        taken["phone"] = True
+                    else:
+                        # fallback 2: 암호화 컬럼 복호화 비교( fingerprint/plain 모두 없는 레거시 데이터 대비 )
+                        try:
+                            users = db.query(User).filter(User.phone_encrypted.isnot(None)).limit(5000).all()
+                            for u in users:
+                                try:
+                                    p = u.get_phone()
+                                    if p and re.sub(r"\D+", "", p) == s:
+                                        taken["phone"] = True
+                                        break
+                                except Exception:
+                                    continue
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+    if identification_number:
+        d = re.sub(r"\D+", "", identification_number or "")
+        if re.fullmatch(r"\d{13}", d):
+            # fingerprint 우선
+            try:
+                fp = id_fingerprint(d)
+                found = db.query(User.id).filter(User.identification_fingerprint == fp).first()
+                if found is not None:
+                    taken["identification_number"] = True
+                else:
+                    # fallback: 복호화 비교(지문이 없는 레거시 데이터 대비)
+                    candidates = db.query(User).filter(User.identification_number.isnot(None)).limit(5000).all()
+                    for u in candidates:
+                        try:
+                            plain = u.get_identification_number()
+                            if plain and re.sub(r"\D+", "", plain) == d:
+                                taken["identification_number"] = True
+                                break
+                        except Exception:
+                            continue
+            except Exception:
+                pass
+
     return {"taken": taken}
 
 # ------------------------
@@ -72,10 +132,30 @@ def signup(payload: SignUpIn, db: Session = Depends(get_db)):
     username = payload.username.lower()
     email = str(payload.email).lower()
 
-    if db.query(User).filter(or_(User.username == username, User.email == email)).first():
-        raise HTTPException(status.HTTP_409_CONFLICT, "이미 사용 중인 사용자명 또는 이메일입니다")
-    if payload.phone and db.query(User).filter(User.phone == payload.phone).first():
-        raise HTTPException(status.HTTP_409_CONFLICT, "이미 등록된 전화번호입니다")
+    # 중복 항목 개별 확인
+    dup_username = db.query(User.id).filter(User.username == username).first() is not None
+    dup_email = db.query(User.id).filter(User.email == email).first() is not None
+    dup_phone = False
+    if payload.phone:
+        try:
+            # 우선 fingerprint 기준으로 중복 확인 (신규 저장 정책)
+            digits = normalize_phone(payload.phone)
+            if digits and len(digits) == 11 and digits.startswith('010'):
+                fp = id_fingerprint(digits)
+                if db.query(User.id).filter(User.phone_fingerprint == fp).first() is not None:
+                    dup_phone = True
+                else:
+                    # 레거시: plain 컬럼(010-1234-5678)도 확인
+                    dup_phone = db.query(User.id).filter(User.phone == payload.phone).first() is not None
+        except Exception:
+            # 포맷/지문 오류 시엔 보수적으로 plain만 확인
+            dup_phone = db.query(User.id).filter(User.phone == payload.phone).first() is not None
+    if dup_username or dup_email or dup_phone:
+        detail = {
+            "message": "중복된 항목이 있습니다",
+            "fields": {"username": dup_username, "email": dup_email, "phone": dup_phone}
+        }
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=detail)
 
     try:
         profile_image_value = (payload.profile_image or "").strip() or DEFAULT_PROFILE_IMAGE
@@ -83,7 +163,7 @@ def signup(payload: SignUpIn, db: Session = Depends(get_db)):
             username=username,
             email=email,
             name=(payload.name or username),
-            phone=payload.phone,
+            phone=None,  # 전화번호는 set_phone에서 암호화/지문 처리
             gender=(payload.gender or "other"),
             region_living=(payload.region_living or ""),
             region_active=(payload.region_active or ""),
@@ -94,30 +174,47 @@ def signup(payload: SignUpIn, db: Session = Depends(get_db)):
         )
         user.set_password(payload.password)
         user.set_identification_number(payload.identification_number)
+        # 전화번호 암호화 저장 + fingerprint
+        try:
+            if payload.phone:
+                user.set_phone(payload.phone)
+        except Exception:
+            pass
 
         db.add(user)
         db.commit()
         db.refresh(user)
         logger.info(f"회원가입(미인증) 생성: user_id={user.id}, username={user.username}")
 
-        # 인증 메일 + 토큰(만료시간)
-        token = secrets.token_urlsafe(48)
-        ev = EmailVerification(
-            user_id=user.id,
-            token=token,
-            sent_to=user.email.lower(),
-            expires_at=datetime.now(timezone.utc) + timedelta(minutes=settings.email_token_expire_minutes),
-        )
-        db.add(ev)
-        db.commit()
+        # 정책: 이메일 인증 요구 여부
+        if settings.require_email_verification:
+            # 인증 메일 + 토큰(만료시간)
+            token = secrets.token_urlsafe(48)
+            ev = EmailVerification(
+                user_id=user.id,
+                token=token,
+                sent_to=user.email.lower(),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=settings.email_token_expire_minutes),
+            )
+            db.add(ev)
+            db.commit()
 
-        html, text = build_verification_email(token)
-        send_email(user.email, "[Challengers] 이메일 인증", html, text)
+            html, text = build_verification_email(token)
+            send_email(user.email, "[Challengers] 이메일 인증", html, text)
 
-        return {
-            "message": "가입이 완료되었습니다. 이메일 인증을 완료하면 로그인할 수 있어요.",
-            "verify": {"sent_to": user.email},
-        }
+            return {
+                "message": "가입이 완료되었습니다. 이메일 인증을 완료하면 로그인할 수 있어요.",
+                "verify": {"sent_to": user.email},
+            }
+        else:
+            # 인증 없이 즉시 활성화 + 토큰 발급
+            user.email_verified = True
+            user.is_active = True
+            db.commit(); db.refresh(user)
+            claims = {"sub": user.username, "user_id": user.id, "tv": (user.token_version or 0)}
+            access_token = create_access_token(data=claims)
+            refresh_token = create_refresh_token(data=claims)
+            return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
 
     except IntegrityError as e:
         db.rollback()
@@ -183,7 +280,7 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
         logger.warning(f"로그인 실패 시도: login={payload.login}")
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "아이디 또는 비밀번호가 올바르지 않습니다")
 
-    if not user.email_verified:
+    if settings.require_email_verification and not user.email_verified:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             detail={"code": "EMAIL_NOT_VERIFIED", "message": "이메일 인증이 필요합니다."},
@@ -219,6 +316,223 @@ def _mask_username(username: str) -> str:
         return username[0] + ("*" * (n-2)) + username[-1]
     # 기본: 앞2 + *... + 뒤2
     return username[:2] + ("*" * (n-4)) + username[-2:]
+
+def _email_hint(email: str) -> str:
+    """이메일 제공자 힌트(도메인 앞부분 2글자 + ***). 예: gmail.com -> gm***, naver.com -> na***"""
+    if not email or '@' not in email:
+        return None
+    try:
+        domain = str(email).strip().lower().split('@', 1)[1]
+        provider = domain.split('.', 1)[0]
+        if not provider:
+            return None
+        head = provider[:2]
+        return f"{head}***"
+    except Exception:
+        return None
+
+def _email_masked(email: str) -> str | None:
+    """전체 이메일 마스킹
+    - local: 앞 3글자 + *** + 끝 1글자(길이에 따라 가변)
+    - domain: 제공자 앞 2글자 + **** + .com  (예: hotmail.com -> ho****.com, naver.com -> na****.com)
+    예) chrislee2@hotmail.com -> chr***2@ho****.com
+    """
+    if not email or '@' not in email:
+        return None
+    try:
+        email = str(email).strip().lower()
+        local, domain = email.split('@', 1)
+        parts = domain.split('.')
+        provider = parts[0] if parts else ''
+
+        # local masking
+        n = len(local)
+        if n <= 1:
+            local_masked = local + '***'
+        elif n == 2:
+            local_masked = local[0] + '***'
+        elif n == 3:
+            local_masked = local[:2] + '*'
+        elif n == 4:
+            local_masked = local[:2] + '**' + local[-1]
+        else:
+            local_masked = local[:3] + '***' + local[-1]
+
+        # provider 앞 2글자 + **** + .com 형태로 고정
+        head = provider[:2]
+        domain_masked = f"{head}****.com"
+        return f"{local_masked}@{domain_masked}"
+    except Exception:
+        return None
+
+@router.post("/match-existing-social")
+def match_existing_social(payload: dict = Body(...), db: Session = Depends(get_db)):
+    """
+    소셜 가입 1단계에서 기존 계정 존재 여부 판단용.
+    입력:
+      - name (선택)
+      - phone (선택, 010-11자리)
+      - identification (선택, 주민번호 13자리 숫자)
+
+    반환:
+      {
+        by_name_phone: bool,
+        by_name_ident: bool,
+        by_phone_ident: bool,
+        by_ident_only: bool,
+        username_masked: str | null,
+        email_hint: str | null,
+        email_masked: str | null,
+      }
+    """
+    name = (payload.get("name") or "").strip()
+    phone = (payload.get("phone") or "").strip()
+    ident = (payload.get("identification") or "").strip()
+
+    # normalize phone
+    phone_norm = None
+    phone_fp = None
+    if phone:
+        s = normalize_phone(phone)
+        if s and len(s) == 11 and s.startswith("010"):
+            phone_norm = s
+            phone_fp = id_fingerprint(s)
+
+    # normalize identification (13 digits)
+    ident_digits = None
+    ident_fp = None
+    if ident:
+        d = normalize_phone(ident)  # 숫자만
+        if d and len(d) == 13:
+            ident_digits = d
+            ident_fp = id_fingerprint(d)
+
+    by_name_phone = False
+    by_name_ident = False
+    by_phone_ident = False
+    by_ident_only = False
+    masked = None
+    email_hint = None
+    email_masked = None
+
+    # name 기반 후보
+    candidates = []
+    if name:
+        candidates = db.query(User).filter(func.lower(User.name) == func.lower(name)).all()
+
+    def _phone_matches(u: User) -> bool:
+        if not (phone_norm or phone_fp):
+            return False
+        # fingerprint 우선
+        if getattr(u, 'phone_fingerprint', None) and phone_fp:
+            if u.phone_fingerprint == phone_fp:
+                return True
+        # plain(phone)
+        p = (u.phone or '')
+        if p:
+            if normalize_phone(p) == phone_norm:
+                return True
+        # decrypt(phone_encrypted)
+        try:
+            dp = u.get_phone()
+            if dp and normalize_phone(dp) == phone_norm:
+                return True
+        except Exception:
+            pass
+        return False
+
+    def _ident_matches(u: User) -> bool:
+        if not (ident_digits or ident_fp):
+            return False
+        if getattr(u, 'identification_fingerprint', None) and ident_fp:
+            if u.identification_fingerprint == ident_fp:
+                return True
+        try:
+            di = u.get_identification_number()
+            if di and normalize_phone(di) == ident_digits:
+                return True
+        except Exception:
+            pass
+        return False
+
+    # name + phone
+    if candidates and (phone_norm or phone_fp):
+        for u in candidates:
+            if _phone_matches(u):
+                by_name_phone = True
+                masked = _mask_username(u.username)
+                email_hint = _email_hint(u.email)
+                email_masked = _email_masked(u.email)
+                break
+
+    # name + identification
+    if not masked and candidates and (ident_digits or ident_fp):
+        for u in candidates:
+            if _ident_matches(u):
+                by_name_ident = True
+                masked = _mask_username(u.username)
+                email_hint = _email_hint(u.email)
+                email_masked = _email_masked(u.email)
+                break
+
+    # phone + identification (강한 충돌)
+    if (phone_norm or phone_fp) and (ident_digits or ident_fp):
+        # 후보: 전화로 1차 좁히기
+        q = db.query(User)
+        if phone_fp:
+            q = q.filter(User.phone_fingerprint == phone_fp)
+        else:
+            # fallback: plain column 비교
+            norm_str = f"010-{phone_norm[3:7]}-{phone_norm[7:]}" if phone_norm and len(phone_norm) == 11 else None
+            if norm_str:
+                q = q.filter(User.phone == norm_str)
+        phone_list = q.all()
+        found = None
+        for u in phone_list:
+            if _ident_matches(u):
+                by_phone_ident = True
+                found = u
+                break
+        # 안전 범위에서 힌트 제공: 단일 매치 시 마스킹 정보 포함
+        if found and not masked:
+            try:
+                masked = _mask_username(found.username)
+                email_hint = _email_hint(getattr(found, 'email', None))
+                email_masked = _email_masked(getattr(found, 'email', None))
+            except Exception:
+                pass
+
+    # identification only (강한 충돌) — 이름/전화 없이 주민번호만 일치
+    if (ident_digits or ident_fp) and not (by_name_ident or by_phone_ident):
+        cand = None
+        if ident_fp:
+            cand = db.query(User).filter(User.identification_fingerprint == ident_fp).first()
+        if not cand:
+            # fallback: 복호화 비교
+            users = db.query(User).filter(User.identification_number.isnot(None)).limit(5000).all()
+            for u in users:
+                try:
+                    plain = u.get_identification_number()
+                    if plain and normalize_phone(plain) == ident_digits:
+                        cand = u; break
+                except Exception:
+                    continue
+        if cand:
+            by_ident_only = True
+            if not masked:
+                masked = _mask_username(cand.username)
+                email_hint = _email_hint(getattr(cand, 'email', None))
+                email_masked = _email_masked(getattr(cand, 'email', None))
+
+    return {
+        "by_name_phone": by_name_phone,
+        "by_name_ident": by_name_ident,
+        "by_phone_ident": by_phone_ident,
+        "username_masked": masked,
+        "by_ident_only": by_ident_only,
+        "email_hint": email_hint,
+        "email_masked": email_masked,
+    }
 
 @router.post("/find-username")
 def find_username(payload: dict = Body(...), db: Session = Depends(get_db)):
@@ -542,6 +856,10 @@ def update_email(
     user = db.query(User).filter(or_(User.username == login, User.email == login)).first()
     if not user:
         raise HTTPException(404, "사용자를 찾을 수 없습니다")
+
+    # 소셜 연동 계정은 이메일 변경 금지(안전 정책)
+    if getattr(user, 'provider', None) and getattr(user, 'provider_id', None):
+        raise HTTPException(403, "소셜 연동 계정은 이메일을 변경할 수 없습니다")
 
     if not user.verify_password(current_password):
         raise HTTPException(401, "비밀번호가 올바르지 않습니다")

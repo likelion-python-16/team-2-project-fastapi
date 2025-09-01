@@ -1,7 +1,7 @@
 {% extends "final.html" %}
 {% block title %}로그인 - Team Project{% endblock %}
 {% block content %}
-<div id="pageBg" class="flex items-center justify-center grow bg-center bg-no-repeat page-bg">
+<div id="pageBg" class="flex items-center justify-center grow">
   <div class="kt-card max-w-[420px] w-full">
     <form class="kt-card-content flex flex-col gap-5 p-10" id="signinForm" method="post" novalidate>
       <div class="text-center mb-2.5">
@@ -13,6 +13,16 @@
       </div>
 
       <div id="alertContainer" class="hidden"></div>
+      <!-- 소셜 로그인 버튼 -->
+      <div class="grid grid-cols-2 gap-2.5">
+        <a id="btnLoginGoogle" class="kt-btn kt-btn-outline justify-center items-center" href="/api/v1/auth/login/google">
+          <img alt="Google" class="size-3.5 shrink-0" src="/static/assets/media/brand-logos/google.svg"><span class="ms-1">구글 로그인</span>
+        </a>
+        <a id="btnLoginNaver" class="kt-btn kt-btn-outline justify-center items-center" href="/api/v1/auth/login/naver">
+          <img alt="Naver" class="size-3.5 shrink-0" src="/static/assets/media/brand-logos/naver.svg"><span class="ms-1">네이버 로그인</span>
+        </a>
+      </div>
+      <div class="text-center my-2 text-sm text-muted-foreground">또는</div>
 
       <div class="flex flex-col gap-1">
         <label class="kt-form-label font-normal text-mono">아이디</label>
@@ -51,13 +61,7 @@
 </div>
 
 <script>
-document.addEventListener('DOMContentLoaded', function () {
-  const el = document.getElementById('pageBg');
-  if (!el) return;
-  el.style.backgroundImage = 'url("{{ url_for("static", path="assets/final/media/images/2600x1200/bg-10.png") }}")';
-  el.style.backgroundPosition = 'center';
-  el.style.backgroundRepeat = 'no-repeat';
-});
+// 배경 이미지는 사용하지 않음 (요청에 따라 제거)
 
 function showAlert(message, type) {
   const el = document.getElementById('alertContainer');
@@ -86,6 +90,27 @@ function showAlert(message, type) {
   } catch (_) {}
 })();
 
+// 딥링크: /login?find=pw|id&u=<username> 로 모달 바로 열기/프리필
+(function deepLinkToFind(){
+  try{
+    const params = new URLSearchParams(location.search);
+    const find = (params.get('find')||'').toLowerCase();
+    const u = (params.get('u')||'').trim();
+    if(u){ try{ document.getElementById('username').value = u; }catch(_){} }
+    if(find === 'pw'){
+      // 열기 약간 지연해 DOM 이벤트 바인딩 이후 실행
+      setTimeout(()=>{
+        if(u){ const fpu=document.getElementById('fp_username'); if(fpu) fpu.value=u; }
+        if(typeof openDlg==='function') openDlg('dlgFindPw');
+      }, 0);
+    } else if(find === 'id'){
+      setTimeout(()=>{ if(typeof openDlg==='function') openDlg('dlgFindId'); }, 0);
+    }
+  }catch(_){ }
+})();
+
+// 소셜 버튼: 추가 선택지 없이 공급자 동의 화면으로 이동합니다.
+
 (function pwToggle(){
   const btn = document.getElementById('btnTogglePw');
   const input = document.getElementById('password');
@@ -98,6 +123,8 @@ function showAlert(message, type) {
     iconHide.classList.toggle('hidden', isPwd);
   });
 })();
+
+// 사전 동의 안내는 제거하고, 동의 후(콜백/온보딩 단계)에서 안내합니다.
 
 document.getElementById('signinForm').addEventListener('submit', async (e)=>{
   e.preventDefault();
@@ -113,6 +140,9 @@ document.getElementById('signinForm').addEventListener('submit', async (e)=>{
     showAlert('아이디와 비밀번호를 입력해 주세요.', 'error');
     return;
   }
+
+  // 이전 토큰은 일단 비움(의도치 않은 자동 로그인 방지)
+  try{ localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token'); sessionStorage.removeItem('access_token'); sessionStorage.removeItem('refresh_token'); }catch(_){}
 
   btn.disabled = true; btnText.classList.add('hidden'); btnLoading.classList.remove('hidden');
 
@@ -203,22 +233,28 @@ document.getElementById('signinForm').addEventListener('submit', async (e)=>{
       showAlert('로그인에 실패했습니다. 아이디 또는 비밀번호를 확인해 주세요.', 'error');
     }
   } else {
-    const remember = document.getElementById('rememberMe').checked;
-    const store = remember ? localStorage : sessionStorage;
-    const other = remember ? sessionStorage : localStorage;
-    try {
-      // 저장소 정리
-      other.removeItem('access_token'); other.removeItem('refresh_token'); other.removeItem('remember_login');
-      if (data.access_token) store.setItem('access_token', data.access_token);
-      if (data.refresh_token) store.setItem('refresh_token', data.refresh_token);
-      if (remember) localStorage.setItem('remember_login', '1');
-    } catch(_) {}
-    window.location.href = '/home';
+    // 성공으로 간주하려면 토큰이 반드시 있어야 함
+    if (data && data.access_token) {
+      const remember = document.getElementById('rememberMe').checked;
+      const store = remember ? localStorage : sessionStorage;
+      const other = remember ? sessionStorage : localStorage;
+      try {
+        other.removeItem('access_token'); other.removeItem('refresh_token'); other.removeItem('remember_login');
+        store.setItem('access_token', data.access_token);
+        if (data.refresh_token) store.setItem('refresh_token', data.refresh_token);
+        if (remember) localStorage.setItem('remember_login', '1');
+      } catch(_) {}
+      window.location.href = '/home';
+    } else {
+      showAlert('로그인에 실패했습니다. 다시 시도해 주세요.', 'error');
+    }
   }
 
   btn.disabled = false; btnText.classList.remove('hidden'); btnLoading.classList.add('hidden');
 });
 </script>
+
+<!-- 소셜 사전 안내 모달은 사용하지 않습니다. -->
 
 <!-- ===== 아이디/비밀번호 찾기 모달 ===== -->
 <style>

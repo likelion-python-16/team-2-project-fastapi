@@ -1,7 +1,7 @@
 {% extends "final.html" %}
 {% block title %}회원가입 - Team Project{% endblock %}
 {% block content %}
-<div id="pageBg" class="flex items-start justify-center grow bg-center bg-no-repeat page-bg py-8">
+<div id="pageBg" class="flex items-start justify-center grow py-8">
   <div class="kt-card max-w-[440px] w-full">
     <form class="kt-card-content flex flex-col gap-5 p-10" id="signupForm" method="post" novalidate>
       <div class="text-center mb-2.5">
@@ -42,7 +42,7 @@
       </div>
 
       <!-- 이메일 (아이디 + 도메인 선택/직접입력) -->
-      <div class="flex flex-col gap-1">
+      <div id="emailBuilderWrap" class="flex flex-col gap-1">
         <label class="kt-form-label">이메일 *</label>
         <input type="hidden" id="email" name="email" />
         <div class="flex gap-2">
@@ -62,6 +62,12 @@
         <span class="text-[11px] text-muted-foreground">아이디와 도메인을 선택(또는 직접 입력)하세요.</span>
       </div>
 
+      <!-- 소셜 프리필 모드: 읽기전용 이메일 표시 -->
+      <div id="emailReadonlyWrap" class="flex flex-col gap-1 hidden">
+        <label class="kt-form-label">이메일</label>
+        <input class="kt-input" id="emailReadonly" type="text" readonly />
+      </div>
+
       <!-- 전화번호 -->
       <div class="flex flex-col gap-1">
         <label class="kt-form-label">전화번호 *</label>
@@ -79,7 +85,7 @@
       </div>
 
       <!-- 비밀번호 -->
-      <div class="flex flex-col gap-1">
+      <div id="sectionPassword" class="flex flex-col gap-1">
         <label class="kt-form-label">비밀번호 *</label>
         <div class="kt-input" data-kt-toggle-password="true">
           <input id="password" name="password" placeholder="비밀번호" type="password" required />
@@ -102,7 +108,7 @@
       </div>
 
       <!-- 비밀번호 확인 -->
-      <div class="flex flex-col gap-1">
+      <div id="sectionPassword2" class="flex flex-col gap-1">
         <label class="kt-form-label">비밀번호 확인 *</label>
         <input class="kt-input" id="confirmPassword" name="confirmPassword" type="password" required />
         <div id="passwordMatchMessage" class="text-xs mt-1"></div>
@@ -125,6 +131,16 @@
 var KEY='signupDraft';
 function getDraft(){try{return JSON.parse(localStorage.getItem(KEY)||'{}')}catch(e){return {}}}
 function saveDraft(d){localStorage.setItem(KEY, JSON.stringify(d||{}))}
+
+// 인라인 경고 출력 유틸(필드 아래 빨간/초록 글씨 유지)
+function setInlineMsg(id, msg, ok){
+  var el=document.getElementById(id); if(!el) return;
+  if(!msg){ el.textContent=''; el.className='text-xs mt-1 hidden'; return; }
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  el.classList.toggle('text-red-500', !ok);
+  el.classList.toggle('text-green-600', !!ok);
+}
 
 /* ===== 알림 ===== */
 function showAlert(msg,type){
@@ -154,10 +170,10 @@ function validatePassword(pw){
 function checkPasswordMatch(){
   var p=document.getElementById('password').value;
   var c=document.getElementById('confirmPassword').value;
-  var m=document.getElementById('passwordMatchMessage');
-  if(!c){ m.textContent=''; m.className='text-xs mt-1'; return false; }
-  if(p===c){ m.textContent='✓ 비밀번호가 일치합니다'; m.className='text-xs mt-1 text-green-600'; return true; }
-  m.textContent='✗ 비밀번호가 일치하지 않습니다'; m.className='text-xs mt-1 text-red-500'; return false;
+  var id='passwordMatchMessage';
+  if(!c){ setInlineMsg(id,'', true); return false; }
+  if(p===c){ setInlineMsg(id,'✓ 비밀번호가 일치합니다', true); return true; }
+  setInlineMsg(id,'✗ 비밀번호가 일치하지 않습니다', false); return false;
 }
 
 /* ===== 이메일 합치기/검증 ===== */
@@ -212,20 +228,70 @@ async function getDup(params){
   var res=await fetch(url.toString(), {method:'GET'});
   try{ return await res.json(); }catch(e){ return {taken:{}}; }
 }
+// 중복검사 레이스 방지: 최신 응답만 반영
+var _dupState={ username:{seq:0}, email:{seq:0}, phone:{seq:0}, identification_number:{seq:0} };
 async function askDup(field, value){
   if(!value) return;
   var idMap={username:'dup-username', email:'dup-email', phone:'dup-phone', identification_number:'dup-idn'};
   var labelMap={username:'사용자명', email:'이메일', phone:'전화번호', identification_number:'주민등록번호'};
-  var params={}; params[field]=value;
-  var j=await getDup(params);
-  var taken=(j && j.taken && j.taken[field]===true) ? true : false;
   var el=document.getElementById(idMap[field]); if(!el) return;
-  if(taken){ el.textContent='⚠ 이미 사용 중인 '+labelMap[field]+'입니다.'; el.classList.remove('hidden'); el.classList.add('text-red-500'); }
-  else{ el.textContent='✔ 사용 가능한 '+labelMap[field]+'입니다.'; el.classList.remove('hidden'); el.classList.remove('text-red-500'); el.classList.add('text-green-600'); }
+  var st=_dupState[field]||{seq:0}; st.seq++; st.value=value; _dupState[field]=st;
+  var mySeq=st.seq;
+  var j=await getDup({[field]:value});
+  if(_dupState[field].seq!==mySeq || _dupState[field].value!==value) return;
+  var taken = j && j.taken && j.taken[field]===true;
+  if(taken){ setInlineMsg(idMap[field], '⚠ 이미 사용 중인 '+labelMap[field]+'입니다.', false); }
+  else{ setInlineMsg(idMap[field], '✔ 사용 가능한 '+labelMap[field]+'입니다.', true); }
 }
 
 /* ===== 바인딩/제출 ===== */
 document.addEventListener('DOMContentLoaded', function(){
+  // 소셜 프리필 처리
+  let SOCIAL=false; let pf=null;
+  try{
+    const raw = localStorage.getItem('social_prefill');
+    if (raw){ pf = JSON.parse(raw); SOCIAL = !!(pf && (pf.username||pf.email)); }
+  }catch(_){ pf=null; }
+  if (pf){
+    if (pf.username){ const e = document.getElementById('username'); e.value = pf.username; }
+    if (pf.name){ const e = document.getElementById('name'); e.value = pf.name; }
+    if (pf.email){
+      const readWrap=document.getElementById('emailReadonlyWrap');
+      const read=document.getElementById('emailReadonly');
+      const builder=document.getElementById('emailBuilderWrap');
+      document.getElementById('email').value = pf.email;
+      if (read && readWrap && builder){
+        read.value = pf.email; readWrap.classList.remove('hidden'); builder.classList.add('hidden');
+      }
+      // 최신 제공자 이메일로 재확인하여 표시 보정
+      (async ()=>{
+        try{
+          let latest=null;
+          const r = await fetch('/api/v1/auth/identity/last');
+          if (r.ok){ const j=await r.json(); latest = (j && j.email) ? j.email : null; }
+          if (!latest){
+            const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token') || '';
+            if (token){ const me = await fetch('/api/v1/users/me', { headers:{ Authorization:'Bearer '+token }}); if (me.ok){ const mj=await me.json(); latest = mj && mj.email; } }
+          }
+          if (latest && latest !== document.getElementById('email').value){
+            document.getElementById('email').value = latest;
+            if (read) read.value = latest;
+            const banner = document.getElementById('alertContainer');
+            banner.innerHTML = '<div class="kt-alert kt-alert-success p-3 rounded-lg">소셜 계정에서 확인된 최신 이메일로 업데이트했습니다.</div>';
+            banner.classList.remove('hidden');
+          }
+        }catch(_){}
+      })();
+    }
+    // 상단 안내 배너
+    const banner = document.getElementById('alertContainer');
+    banner.innerHTML = '<div class="kt-alert kt-alert-success p-3 rounded-lg">소셜 로그인으로 가입을 시작했어요. 원활한 이용을 위해 전화번호와 주민등록번호 등 추가 정보를 입력해 주세요.</div>';
+    banner.classList.remove('hidden');
+    // 비밀번호 불필요 → 섹션 감추기
+    document.getElementById('sectionPassword')?.classList.add('hidden');
+    document.getElementById('sectionPassword2')?.classList.add('hidden');
+  }
+
   const phone=document.getElementById('phone');
   const idn=document.getElementById('identification_number');
   const sel = document.getElementById('emailDomainSelect');
@@ -238,17 +304,36 @@ document.addEventListener('DOMContentLoaded', function(){
     const email = buildEmail();
     if (email && isValidEmailStrict(email)) askDup('email', email);
   });
-  ['emailLocal','emailDomainCustom'].forEach(id=>{
+  // 이메일: 입력 중 디바운스(깜빡임 방지)
+  let _emailTimer=null;
+  ;['emailLocal','emailDomainCustom'].forEach(id=>{
     const el = document.getElementById(id);
     el.addEventListener('input', function(){
-      const email = buildEmail();
-      if (email && isValidEmailStrict(email)) askDup('email', email);
+      if(_emailTimer) clearTimeout(_emailTimer);
+      _emailTimer=setTimeout(()=>{ const email = buildEmail(); if(email && isValidEmailStrict(email)) askDup('email', email); }, 300);
     });
   });
 
   // 입력 중 자동 포맷
   phone.addEventListener('input', function(){ this.value = formatPhoneOnInput010(this.value); });
   idn.addEventListener('input', function(){ this.value = formatIdentification(this.value); });
+
+  // 전화/주민: 입력 중에도 디바운스 중복확인(안정적 유지)
+  let _phoneTimer=null, _idnTimer=null;
+  phone.addEventListener('input', function(){
+    if(_phoneTimer) clearTimeout(_phoneTimer);
+    _phoneTimer=setTimeout(()=>{
+      const d=(phone.value||'').replace(/\D/g,'');
+      if(d.length===11 && d.startsWith('010')) askDup('phone', d);
+    }, 250);
+  });
+  idn.addEventListener('input', function(){
+    if(_idnTimer) clearTimeout(_idnTimer);
+    _idnTimer=setTimeout(()=>{
+      const d=(idn.value||'').replace(/\D/g,'');
+      if(d.length===13 && isValidRRN13(d)) askDup('identification_number', d);
+    }, 250);
+  });
 
   // 포커스아웃 중복검사
   document.getElementById('username').addEventListener('blur', e => {
@@ -259,13 +344,10 @@ document.addEventListener('DOMContentLoaded', function(){
     const n = normalizePhoneForSave010(e.target.value);
     if (n){ 
       e.target.value = n; 
-      askDup('phone', n); 
+      askDup('phone', n.replace(/\D/g,''));
     } else {
       // 형식이 틀린 경우엔 중복검사 안 하고 경고 띄우기
-      const el = document.getElementById('dup-phone');
-      el.textContent = '⚠ 전화번호 형식이 올바르지 않습니다. (010-1234-5678)';
-      el.classList.remove('hidden');
-      el.classList.add('text-red-500');
+      setInlineMsg('dup-phone','전화번호 형식이 올바르지 않습니다. (010-1234-5678)', false);
     }
   });
   idn.addEventListener('blur', function(e){
@@ -273,10 +355,7 @@ document.addEventListener('DOMContentLoaded', function(){
     if (isValidRRN13(raw)) {
       askDup('identification_number', raw);
     } else {
-      const el = document.getElementById('dup-idn');
-      el.textContent = '⚠ 주민등록번호 형식이 올바르지 않습니다. (YYMMDD-XXXXXXX)';
-      el.classList.remove('hidden');
-      el.classList.add('text-red-500');
+      setInlineMsg('dup-idn','주민등록번호 형식이 올바르지 않습니다. (YYMMDD-XXXXXXX)', false);
     }
   });
 
@@ -287,23 +366,38 @@ document.addEventListener('DOMContentLoaded', function(){
   document.getElementById('confirmPassword').addEventListener('input', checkPasswordMatch);
 
   // 제출
-  document.getElementById('signupForm').addEventListener('submit', function(e){
+  document.getElementById('signupForm').addEventListener('submit', async function(e){
     e.preventDefault();
 
-    // 이메일 조립/검증
-    const emailBuilt = buildEmail();
-    if (!emailBuilt || !isValidEmailStrict(emailBuilt)) {
-      showAlert('이메일을 올바르게 입력/선택해 주세요.','error'); return;
+    const SOCIAL = !!localStorage.getItem('social_prefill');
+    let emailBuilt='';
+    if (SOCIAL){
+      emailBuilt = document.getElementById('email').value;
+    } else {
+      // 이메일 조립/검증
+      emailBuilt = buildEmail();
+      if (!emailBuilt || !isValidEmailStrict(emailBuilt)) {
+        showAlert('이메일을 올바르게 입력/선택해 주세요.','error'); return;
+      }
+      document.getElementById('email').value = emailBuilt;
     }
-    document.getElementById('email').value = emailBuilt;
 
-    // 비밀번호
-    const pw = document.getElementById('password').value;
-    if(!validatePassword(pw)){ showAlert('비밀번호 요구사항을 만족해 주세요.','error'); return; }
-    if(!checkPasswordMatch()){ showAlert('비밀번호가 일치하지 않습니다.','error'); return; }
+    // 비밀번호(소셜 모드면 생략)
+    let pw = '';
+    if(!SOCIAL){
+      pw = document.getElementById('password').value;
+      if(!validatePassword(pw)){ showAlert('비밀번호 요구사항을 만족해 주세요.','error'); return; }
+      if(!checkPasswordMatch()){ showAlert('비밀번호가 일치하지 않습니다.','error'); return; }
+    }
 
     // 필수값 체크(1단계 전부)
-    const requiredFields = [
+    const requiredFields = (SOCIAL ? [
+      ['name','이름'],
+      ['username','사용자명'],
+      ['phone','전화번호'],
+      ['identification_number','주민등록번호'],
+      ['agreeTerms','약관 동의(체크)']
+    ] : [
       ['name','이름'],
       ['username','사용자명'],
       ['emailLocal','이메일 아이디'],
@@ -313,7 +407,7 @@ document.addEventListener('DOMContentLoaded', function(){
       ['password','비밀번호'],
       ['confirmPassword','비밀번호 확인'],
       ['agreeTerms','약관 동의(체크)']
-    ];
+    ]);
     for (const [id,label] of requiredFields) {
       const el = document.getElementById(id);
       const val = (el.type === 'checkbox') ? el.checked : (el.value||'').trim();
@@ -332,6 +426,25 @@ document.addEventListener('DOMContentLoaded', function(){
     if(!isValidRRN13(rawIdn)){
       showAlert('주민등록번호 형식이 올바르지 않습니다. (13자리, 7번째=1–8, 생년월일 유효)','error'); return;
     }
+
+    // 서버 중복 최종 확인
+    try {
+      const qs = new URLSearchParams();
+      qs.set('username', document.getElementById('username').value.trim().toLowerCase());
+      if (!SOCIAL) qs.set('email', emailBuilt.toLowerCase());
+      const pDigits = phone.value.replace(/\D/g,''); if (pDigits) qs.set('phone', pDigits);
+      const idDigits = idn.value.replace(/\D/g,''); if (idDigits) qs.set('identification_number', idDigits);
+      const r = await fetch('/api/v1/auth/check-duplicates?' + qs.toString());
+      const j = await r.json().catch(()=>({}));
+      const t = (j && j.taken) || {};
+      let hasDup = false;
+      function markDup(id, ok, msg){ const el=document.getElementById(id); if(!el) return; if(ok){ el.textContent=msg; el.classList.remove('hidden'); el.classList.add('text-red-500'); hasDup = true; } }
+      if (t.username) markDup('dup-username', true, '⚠ 이미 사용 중인 사용자명입니다.');
+      if (!SOCIAL && t.email) markDup('dup-email', true, '⚠ 이미 사용 중인 이메일입니다.');
+      if (t.phone) markDup('dup-phone', true, '⚠ 이미 사용 중인 전화번호입니다.');
+      if (t.identification_number) markDup('dup-idn', true, '⚠ 이미 사용 중인 주민등록번호입니다.');
+      if (hasDup){ showAlert('이미 사용 중인 항목이 있습니다. 표시된 항목을 수정해 주세요.','error'); return; }
+    } catch(_){ /* 네트워크 오류 시 프런트 표시값에 따름 */ }
 
     // 로컬 드래프트 저장
     const draft={
@@ -477,13 +590,5 @@ function showPrivacy(){
 }
 </script>
 
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-  var el = document.getElementById('pageBg');
-  if (!el) return;
-  el.style.backgroundImage = 'url("{{ url_for("static", path="assets/final/media/images/2600x1200/bg-10.png") }}")';
-  el.style.backgroundPosition = 'center';
-  el.style.backgroundRepeat = 'no-repeat';
-});
-</script>
+<!-- 배경 이미지 사용 안함 -->
 {% endblock %}

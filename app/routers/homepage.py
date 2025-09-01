@@ -28,9 +28,17 @@ def get_current_user_optional(
     if not token:
         return None
     payload = verify_token(token)
-    if not payload or "sub" not in payload:
+    if not payload:
         return None
-    user = db.query(User).filter(User.id == int(payload["sub"])).first()
+    # 우리 토큰은 sub=username, user_id=id 형태
+    user = None
+    try:
+        if "user_id" in payload:
+            user = db.query(User).filter(User.id == int(payload["user_id"]) ).first()
+        elif "sub" in payload:
+            user = db.query(User).filter(User.username == str(payload["sub"]).lower()).first()
+    except Exception:
+        user = None
     if not user or not user.is_active:
         return None
     return user
@@ -122,7 +130,8 @@ def get_home_sections(
         user_tag_ids_subq = (
             db.query(UserTag.tag_id).filter(UserTag.user_id == current_user.id).subquery()
         )
-        user_has_tags = db.query(user_tag_ids_subq.exists()).scalar()
+        # SQLAlchemy 1.4/2.x: Subquery에는 exists()가 없음 → 단순 존재 여부만 확인
+        user_has_tags = db.query(UserTag.tag_id).filter(UserTag.user_id == current_user.id).first() is not None
         if user_has_tags:
             recommended_rows = (
                 db.query(Challenge)

@@ -1,0 +1,73 @@
+{% extends "final.html" %}
+{% block title %}소셜 회원가입 2단계 - Team Project{% endblock %}
+{% block content %}
+<div class="flex items-start justify-center grow py-8">
+  <div class="kt-card max-w-[420px] w-full">
+    <form class="kt-card-content flex flex-col gap-5 p-10" id="socialStep2" method="post">
+      <div class="text-center mb-2.5">
+        <h3 class="text-lg font-medium text-mono mb-2.5">소셜 회원가입 · 2단계</h3>
+        <div class="text-sm text-muted-foreground">개인 정보를 선택 입력하세요</div>
+      </div>
+
+      <div id="alertContainer" class="hidden"></div>
+
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label">성별</label>
+        <select class="kt-input" id="gender" name="gender">
+          <option value="">선택하지 않음</option>
+          <option value="male">남성</option>
+          <option value="female">여성</option>
+          <option value="other">기타</option>
+        </select>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label">거주 지역</label>
+        <input class="kt-input" id="region_living" name="region_living" placeholder="예: 경기도 성남시" type="text"/>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label">주요 활동 지역</label>
+        <input class="kt-input" id="region_active" name="region_active" placeholder="예: 서울특별시" type="text"/>
+      </div>
+
+      <div class="flex gap-3">
+        <a class="kt-btn kt-btn-light grow" href="/signup/social/step1">이전 단계</a>
+        <button type="submit" class="kt-btn kt-btn-primary grow">다음 단계</button>
+      </div>
+
+      <div class="text-center text-xs text-muted-foreground mt-2">
+        💡 나중에 프로필에서 언제든 수정할 수 있습니다 
+        <a href="#" id="linkSkip" class="text-primary font-medium">건너뛰기</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+const KEY='signupSocialDraft';
+function getDraft(){ try{return JSON.parse(localStorage.getItem(KEY)||'{}')}catch(e){return {}} }
+function saveDraft(d){ localStorage.setItem(KEY, JSON.stringify(d||{})); }
+function showAlert(msg,type){
+  var el=document.getElementById('alertContainer');
+  var css=type==='error'?'kt-alert-danger':'kt-alert-success';
+  el.innerHTML='<div class="kt-alert '+css+' p-3 rounded-lg flex items-center gap-2"><i class="ki-filled '+(type==='error'?'ki-information-2':'ki-check')+'"></i><span class="text-sm">'+msg+'</span></div>';
+  el.classList.remove('hidden');
+}
+
+document.getElementById('socialStep2').addEventListener('submit', (e)=>{
+  e.preventDefault();
+  const patch={ gender: document.getElementById('gender').value||null, region_living: document.getElementById('region_living').value||'', region_active: document.getElementById('region_active').value||'' };
+  saveDraft(Object.assign(getDraft(), patch));
+  window.location.href = '/signup/social/step3';
+});
+
+// 건너뛰기
+document.getElementById('linkSkip').addEventListener('click', (e)=>{
+  e.preventDefault();
+  if(confirm('개인정보 입력을 건너뛰시겠습니까? 나중에 프로필에서 입력할 수 있습니다.')){
+    window.location.href = '/signup/social/step3';
+  }
+});
+</script>
+{% endblock %}

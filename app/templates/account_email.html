@@ -36,6 +36,22 @@ function showAlert(message, type) {
   el.classList.remove('hidden');
 }
 
+// 소셜 연동 계정이면 비활성화
+(async function(){
+  try{
+    const r = await fetch('/api/v1/users/me');
+    if(r.ok){
+      const j = await r.json();
+      if (j && (j.provider_linked || j.provider)){
+        showAlert('소셜 연동 계정은 이메일을 변경할 수 없습니다.', 'error');
+        ['login','currentPassword','newEmail','btnUpdate'].forEach(id=>{
+          const el = document.getElementById(id); if(el) el.disabled = true;
+        });
+      }
+    }
+  }catch(_){ }
+})();
+
 document.getElementById('btnUpdate').addEventListener('click', async ()=>{
   const login = (document.getElementById('login').value||'').trim().toLowerCase();
   const current_password = (document.getElementById('currentPassword').value||'');

@@ -1,0 +1,223 @@
+{% extends "final.html" %}
+{% block title %}소셜 회원가입 3단계 - Team Project{% endblock %}
+{% block content %}
+<div class="flex items-center justify-center grow">
+  <div class="kt-card max-w-[420px] w-full">
+    <form class="kt-card-content flex flex-col gap-5 p-10" id="socialStep3" method="post" novalidate>
+      <div class="text-center mb-2.5">
+        <h3 class="text-lg font-medium text-mono mb-2.5">소셜 회원가입 · 3단계</h3>
+        <div class="text-sm text-muted-foreground">프로필을 마지막으로 확인해요</div>
+      </div>
+
+      <div id="alertContainer" class="hidden"></div>
+
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label">프로필 이미지</label>
+        <div class="flex items-center gap-3">
+          <div class="avatar-wrap">
+            <img id="profilePreview" alt="프로필 미리보기">
+            <i id="defaultAvatar" class="ki-filled ki-user avatar-fallback"></i>
+          </div>
+          <div class="flex-1 space-y-2">
+            <input class="kt-input" id="profile_image" name="profile_image" placeholder="https://example.com/image.jpg 또는 /static/pictures/xxx.jpg" type="url">
+            <div class="flex items-center gap-2">
+              <input id="profile_file" type="file" accept="image/*" class="hidden">
+              <button type="button" class="kt-btn kt-btn-sm kt-btn-light" id="btnPick">파일 선택</button>
+              <button type="button" class="kt-btn kt-btn-sm kt-btn-light" id="btnUpload">업로드</button>
+              <button type="button" class="kt-btn kt-btn-sm kt-btn-light" id="btnDefault">기본 아바타</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label">자기소개</label>
+        <textarea class="kt-input" id="introduction" name="introduction" placeholder="안녕하세요!" rows="4" maxlength="500"></textarea>
+        <div class="flex justify-between items-center">
+          <span class="text-xs text-muted-foreground">다른 사용자들에게 보여질 소개글입니다</span>
+          <span class="text-xs text-muted-foreground" id="charCount">0/500</span>
+        </div>
+      </div>
+
+      <!-- 관심사(카테고리) 선택 -->
+      <div class="flex flex-col gap-2">
+        <label class="kt-form-label">관심사(카테고리) 선택</label>
+        <div class="text-[11px] text-muted-foreground">최대 10개까지 선택할 수 있어요.</div>
+
+        <div id="selectedTags" class="flex flex-wrap gap-2"></div>
+
+        <div id="tagList" class="flex flex-wrap gap-2 max-h-56 overflow-auto border border-border rounded-md p-2">
+          <span id="tagLoading" class="text-xs text-muted-foreground">로딩 중...</span>
+        </div>
+      </div>
+
+      <div class="flex gap-3">
+        <a class="kt-btn kt-btn-light grow" id="btnPrev" href="/signup/social/step2">이전 단계</a>
+        <button class="kt-btn kt-btn-primary grow" id="submitBtn" type="submit">
+          <span id="submitText">가입 완료</span>
+          <span id="submitLoading" class="hidden"><i class="ki-filled ki-spinner animate-spin me-2"></i>처리 중...</span>
+        </button>
+      </div>
+
+      <div class="text-center text-xs text-muted-foreground mt-2">
+        💡 나중에 프로필에서 언제든 수정할 수 있습니다
+        <a href="#" id="linkSkip" class="text-primary font-medium">나중에 설정</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+const KEY='signupSocialDraft';
+function getDraft(){ try{return JSON.parse(localStorage.getItem(KEY)||'{}')}catch(e){return {}} }
+function saveDraft(d){ localStorage.setItem(KEY, JSON.stringify(d||{})); }
+function clearDraft(){ localStorage.removeItem(KEY); }
+function showAlert(msg,type){ var el=document.getElementById('alertContainer'); var css=type==='error'?'kt-alert-danger':'kt-alert-success'; el.innerHTML='<div class="kt-alert '+css+' p-3 rounded-lg flex items-center gap-2"><i class="ki-filled '+(type==='error'?'ki-information-2':'ki-check')+'"></i><span class="text-sm">'+msg+'</span></div>'; el.classList.remove('hidden'); }
+
+const DEFAULT_AVATAR='/static/pictures/defaultprofile.jpeg';
+function updateProfilePreview(url){ const img=document.getElementById('profilePreview'); const icon=document.getElementById('defaultAvatar'); const showImg=()=>{icon.style.display='none';img.style.display='block'}; const showIcon=()=>{img.style.display='none';icon.style.display='flex'}; if(!url){img.removeAttribute('src'); showIcon(); return;} img.onload=()=>{showImg()}; img.onerror=()=>{showIcon()}; img.src=url; if(img.complete && img.naturalWidth>0) showImg(); }
+async function uploadFileToServer(file, btn){ if(!file){ showAlert('먼저 파일을 선택해 주세요.','error'); return null; } const fd=new FormData(); fd.append('file', file); const old=btn.textContent; btn.disabled=true; btn.textContent='업로드 중...'; try{ const res=await fetch('/api/v1/files/profile-image',{method:'POST', body:fd}); const j=await res.json(); if(!res.ok||!j?.url) throw new Error(j?.detail||'업로드 실패'); showAlert('업로드 완료!','success'); return j.url; }catch(e){ showAlert(String(e?.message||e),'error'); return null; }finally{ btn.disabled=false; btn.textContent=old; } }
+
+// ===== 카테고리(태그) 선택 =====
+const MAX_TAGS = 10;
+let selected = new Set();
+
+async function loadCategories(){
+  const list=document.getElementById('tagList');
+  const loading=document.getElementById('tagLoading');
+  try{
+    const res=await fetch('/api/v1/tags/categories');
+    const cats=await res.json();
+    list.innerHTML='';
+    const arr = Array.isArray(cats)?cats:[];
+    if(arr.length===0){ list.innerHTML='<span class="text-xs text-muted-foreground">카테고리가 없습니다.</span>'; return; }
+    arr.forEach(label=>{
+      const btn=document.createElement('button');
+      btn.type='button'; btn.dataset.tag=label;
+      btn.className='px-2 py-1 rounded-full border text-xs bg-muted text-muted-foreground';
+      btn.textContent=label;
+      btn.addEventListener('click',()=>{
+        if(selected.has(label)) selected.delete(label);
+        else{
+          if(selected.size>=MAX_TAGS){ showAlert('태그는 최대 10개까지 선택할 수 있어요.','error'); return; }
+          selected.add(label);
+        }
+        paintCategories(); renderSelected();
+      });
+      list.appendChild(btn);
+    });
+
+    // 초안에 저장된 것이 있으면 적용
+    const d=getDraft();
+    if(Array.isArray(d.interests_keywords)) d.interests_keywords.forEach(t=>selected.add(t));
+    paintCategories(); renderSelected();
+  }catch(e){ if(loading) loading.textContent='불러오기 실패'; }
+}
+function paintCategories(){
+  document.querySelectorAll('#tagList button[data-tag]').forEach(b=>{
+    const picked=selected.has(b.dataset.tag);
+    b.className=`px-2 py-1 rounded-full border text-xs ${picked?'bg-primary text-primary-foreground':'bg-muted text-muted-foreground'}`;
+  });
+}
+function renderSelected(){
+  const hold=document.getElementById('selectedTags'); hold.innerHTML='';
+  [...selected].forEach(label=>{
+    const pill=document.createElement('span');
+    pill.className='px-2 py-1 rounded-full border text-xs bg-primary/10 text-primary';
+    pill.innerHTML=`${label} <button type="button" class="ms-1 text-primary/70" aria-label="remove">x</button>`;
+    pill.querySelector('button').onclick=()=>{ selected.delete(label); paintCategories(); renderSelected(); };
+    hold.appendChild(pill);
+  });
+}
+
+document.addEventListener('DOMContentLoaded',()=>{
+  const urlInput=document.getElementById('profile_image'); const fileInput=document.getElementById('profile_file'); const btnPick=document.getElementById('btnPick'); const btnDefault=document.getElementById('btnDefault'); const btnUpload=document.getElementById('btnUpload');
+  if(!urlInput.value?.trim()) urlInput.value = DEFAULT_AVATAR; updateProfilePreview(urlInput.value.trim());
+
+  // 소셜 사진 프리필: 세션에 picture가 있으면 기본 아바타 대신 채워넣기
+  (async () => {
+    try{
+      const r = await fetch('/api/v1/auth/identity/last');
+      if(r.ok){
+        const j = await r.json();
+        const pic = (j && j.picture) ? String(j.picture) : '';
+        const cur = (urlInput.value||'').trim();
+        const isDefault = !cur || cur === DEFAULT_AVATAR || /defaultprofile\.(jpe?g|png|gif)$/i.test(cur);
+        if (pic && isDefault){
+          urlInput.value = pic;
+          updateProfilePreview(pic);
+        }
+      }
+    }catch(_){ /* ignore */ }
+  })();
+  btnPick.addEventListener('click',()=>fileInput.click());
+  btnDefault.addEventListener('click',()=>{ urlInput.value=DEFAULT_AVATAR; updateProfilePreview(DEFAULT_AVATAR); });
+  fileInput.addEventListener('change', async ()=>{ const f=fileInput.files?.[0]; if(!f) return; updateProfilePreview(URL.createObjectURL(f)); const uploaded=await uploadFileToServer(f, btnUpload); if(uploaded){ urlInput.value=uploaded; updateProfilePreview(uploaded); } });
+  btnUpload.addEventListener('click', async ()=>{ const f=fileInput.files?.[0]; const uploaded=await uploadFileToServer(f, btnUpload); if(uploaded){ urlInput.value=uploaded; updateProfilePreview(uploaded); } });
+  document.getElementById('introduction').addEventListener('input', function(){ const c=this.value.length; document.getElementById('charCount').textContent=c+'/500'; });
+
+  // 태그 로드
+  loadCategories();
+
+  // 이전 단계 버튼은 앵커로 이동 (기본 동작)
+
+  // 나중에 설정: 필드 비워서 제출 (아래 링크)
+  document.getElementById('linkSkip').addEventListener('click', (e)=>{
+    e.preventDefault();
+    document.getElementById('profile_image').value='';
+    document.getElementById('introduction').value='';
+    selected.clear();
+    document.getElementById('socialStep3').requestSubmit();
+  });
+
+  document.getElementById('socialStep3').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const d=getDraft();
+    const must = (d.phone && d.identification_number);
+    if(!must){ showAlert('1단계 정보를 먼저 입력해 주세요.','error'); return; }
+
+    const interests_keywords = [...selected];
+    const intro = (document.getElementById('introduction').value||'').trim();
+    const introPayload = (intro || interests_keywords.length)
+      ? JSON.stringify({ bio: intro, interests: { categories: [], keywords: interests_keywords } })
+      : '';
+    const payload={
+      phone: d.phone,
+      identification_number: d.identification_number,
+      name: (d.name||'').trim(),
+      gender: d.gender || null,
+      region_living: d.region_living || '',
+      region_active: d.region_active || '',
+      profile_image: (document.getElementById('profile_image').value||'').trim(),
+      introduction: introPayload,
+      // 소셜 생성 지연 시 필요한 값 전달
+      username: d.username || null,
+      password: d.password || null,
+    };
+
+    const btn=document.getElementById('submitBtn'), txt=document.getElementById('submitText'), load=document.getElementById('submitLoading');
+    btn.disabled=true; txt.classList.add('hidden'); load.classList.remove('hidden');
+    try{
+      const token=localStorage.getItem('access_token')||sessionStorage.getItem('access_token')||'';
+      let res, j;
+      if(token){
+        res=await fetch('/api/v1/users/me/onboarding',{method:'POST', headers:{'Content-Type':'application/json', Authorization:'Bearer '+token}, body:JSON.stringify(payload)});
+        j=await res.json().catch(()=>({}));
+      } else {
+        res=await fetch('/api/v1/auth/social/finalize',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+        j=await res.json().catch(()=>({}));
+        if(res.ok && j.access_token){
+          localStorage.setItem('access_token', j.access_token);
+          localStorage.setItem('refresh_token', j.refresh_token||'');
+        }
+      }
+      if(!res.ok) throw new Error(j?.detail||j?.message||'저장 실패');
+      clearDraft();
+      showAlert('가입이 완료되었습니다. 환영합니다!','success');
+      setTimeout(()=>window.location.href='/signup/social/complete',700);
+    }catch(e){ showAlert(String(e.message||e),'error'); }
+    finally{ btn.disabled=false; txt.classList.remove('hidden'); load.classList.add('hidden'); }
+  });
+});
+</script>
+{% endblock %}

@@ -68,6 +68,7 @@ services:
       - MYSQL_DATABASE=team_project_db
       - MYSQL_USER=team_user
       - MYSQL_PASSWORD=team_password_123
+      - REQUIRE_EMAIL_VERIFICATION=true
     ports:
       - "3307:3306"
     volumes:

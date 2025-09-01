@@ -1,0 +1,37 @@
+{% extends "final.html" %}
+{% block title %}가입 완료 - 소셜 로그인 연결{% endblock %}
+{% block content %}
+<div class="flex items-start justify-center overflow-y-auto min-h-[100dvh] w-full py-8">
+  <div class="w-full max-w-[500px] mx-auto px-4">
+    <div class="kt-card w-full">
+      <div class="kt-card-content flex flex-col gap-6 p-10 text-center">
+
+        <div class="flex justify-center">
+          <div class="w-20 h-20 bg-primary rounded-full flex items-center justify-center">
+            <i class="ki-filled ki-check text-3xl text-primary-foreground"></i>
+          </div>
+        </div>
+
+        <div>
+          <h1 class="text-3xl font-bold text-mono leading-snug mb-1">가입이 완료되었습니다</h1>
+          <h2 class="text-lg font-medium text-foreground/90">연동된 소셜 계정으로 이용하세요</h2>
+        </div>
+
+        <div class="rounded-lg p-4 border border-muted bg-muted/20 text-sm text-muted-foreground text-left">
+          <p class="mb-2">지금부터 서비스를 바로 이용할 수 있습니다.</p>
+          <ul class="list-disc ms-5 space-y-1">
+            <li>다음부터는 <b>소셜 로그인으로 바로 로그인</b>됩니다.</li>
+            <li>내 정보에서 프로필과 관심사를 언제든 수정할 수 있어요.</li>
+          </ul>
+        </div>
+
+        <div class="flex gap-3">
+          <a class="kt-btn kt-btn-primary grow" href="/home"><i class="ki-filled ki-home-2 me-2"></i>홈으로</a>
+          <a class="kt-btn grow" href="/login">다른 계정으로 로그인</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+

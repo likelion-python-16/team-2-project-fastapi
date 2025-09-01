@@ -7,11 +7,11 @@ from .base import Base
 class EmailVerification(Base):
     __tablename__ = "email_verifications"
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     token = Column(String(128), nullable=False, unique=True, index=True)
     sent_to = Column(String(120), nullable=False)
     expires_at = Column(DateTime, nullable=False)
     used_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
 
-    user = relationship("User", backref="email_verifications")
+    user = relationship("User", back_populates="email_verifications")

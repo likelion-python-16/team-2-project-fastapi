@@ -15,7 +15,7 @@ def build_password_reset_url(token: str) -> str:
     비밀번호 재설정 링크: 백엔드 리디렉트 엔드포인트로 유도하여
     배포 환경(도메인/포트)에서도 자동으로 프론트 URL을 계산하도록 합니다.
     """
-    base = settings.verification_link_base.rstrip('/') or 'http://localhost:8001/api/v1'
+    base = settings.verification_link_base.rstrip('/') or 'http://localhost:8000/api/v1'
     return f"{base}/auth/password-reset/redirect?token={token}"
 
 def build_password_reset_email(token: str, username: str) -> tuple[str, str]:

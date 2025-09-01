@@ -1,11 +1,12 @@
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import Column, Enum, Integer, String, Boolean, Float, Text, DateTime, Index
+from sqlalchemy import Column, Enum, Integer, String, Boolean, Float, Text, DateTime, Index, UniqueConstraint
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from .base import Base
 from ..security import hash_password, verify_password, encrypt_str, decrypt_str
 from app.models.round_manager import RoundManager
+from sqlalchemy.orm import relationship
 
 class User(Base):
     __tablename__ = "users"
@@ -39,6 +40,13 @@ class User(Base):
     region_living = Column(String(50), nullable=False, server_default='')
     region_active = Column(String(50), nullable=False, server_default='', index=True)
     profile_image = Column(String(255), nullable=False, server_default='')
+    
+    # 소셜 로그인 식별자
+    provider = Column(String(20), nullable=True, index=True)  # 'google' | 'naver'
+    provider_id = Column(String(128), nullable=True, index=True)
+
+    # 선택: 출생연도(네이버 제공)
+    birth_year = Column(String(10), nullable=True)
     introduction = Column(Text, nullable=False)
 
     manner_score = Column(Float, default=0.0, nullable=False, index=True)
@@ -49,6 +57,10 @@ class User(Base):
     # ★ 엄격모드: 기본 비활성/미인증
     is_active = Column(Boolean, default=False, nullable=False, index=True)
     email_verified = Column(Boolean, default=False, nullable=False, index=True)
+
+    # 소프트 삭제
+    is_deleted = Column(Boolean, default=False, nullable=False, server_default='0', index=True)
+    deleted_at = Column(DateTime, nullable=True)
 
     token_version = Column(Integer, nullable=False, server_default='0')
 
@@ -93,16 +105,42 @@ class User(Base):
         return verify_password(plain_password, self.password_hash)
 
     def set_identification_number(self, plain_number: Optional[str]) -> None:
-        if plain_number is None:
+        """주민등록번호(13자리) 저장: 형식 검증 후 암호화 + 지문 생성
+        - YYMMDD + (7번째: 1~8) 제약
+        - 월 십의 자리(3번째)는 0/1, 일 십의 자리(5번째)는 0/1/2/3
+        - 유효 월(1~12), 유효 일(1~31)
+        """
+        import re as _re
+        if plain_number is None or str(plain_number).strip() == "":
             self.identification_number = None
             self.identification_fingerprint = None
-        else:
-            self.identification_number = encrypt_str(plain_number)
-            try:
-                from ..security import id_fingerprint
-                self.identification_fingerprint = id_fingerprint(plain_number)
-            except Exception:
-                self.identification_fingerprint = None
+            return
+        # 숫자만 추출 및 기본 형식 검증
+        n = _re.sub(r"\D+", "", str(plain_number))
+        if not _re.fullmatch(r"\d{13}", n):
+            raise ValueError("식별번호는 13자리 숫자여야 합니다")
+        # 월/일 자릿수 제약 (월 십의 자리: 0/1, 일 십의 자리: 0~3)
+        if n[2] not in ("0", "1"):
+            raise ValueError("월의 십의 자리는 0 또는 1이어야 합니다")
+        if n[4] not in ("0", "1", "2", "3"):
+            raise ValueError("일의 십의 자리는 0-3이어야 합니다")
+        # 유효 월/일
+        m = int(n[2:4]); d = int(n[4:6])
+        if not (1 <= m <= 12):
+            raise ValueError("월은 01-12여야 합니다")
+        if not (1 <= d <= 31):
+            raise ValueError("일은 01-31이어야 합니다")
+        # 7번째(성별/세기) 제약: 1~8
+        if n[6] not in "12345678":
+            raise ValueError("7번째 자리는 1-8이어야 합니다")
+
+        # 저장: 암호화 + fingerprint (정규화된 13자리 기준)
+        self.identification_number = encrypt_str(n)
+        try:
+            from ..security import id_fingerprint
+            self.identification_fingerprint = id_fingerprint(n)
+        except Exception:
+            self.identification_fingerprint = None
     
     def get_identification_number(self) -> Optional[str]:
         if not self.identification_number:
@@ -168,6 +206,14 @@ class User(Base):
     def __repr__(self) -> str:
         return f"<User(id={self.id}, username='{self.username}', name='{self.name}')>"
 
+    # 이메일 인증 토큰들
+    email_verifications = relationship(
+        "EmailVerification",
+        back_populates="user",
+        passive_deletes=True,
+    )
+
 Index("idx_user_region_manner", User.region_active, User.manner_score)
 Index("idx_user_active_points", User.is_active, User.total_points)
 Index("idx_user_email_active", User.email, User.is_active)
+UniqueConstraint(User.provider, User.provider_id, name="uq_user_provider_pid")

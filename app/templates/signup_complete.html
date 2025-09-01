@@ -2,7 +2,7 @@
 {% block title %}계정 생성 완료 - 이메일 인증 필요{% endblock %}
 
 {% block content %}
-<div class="flex items-start justify-center overflow-y-auto min-h-[100dvh] w-full bg-center bg-no-repeat page-bg py-8">
+<div class="flex items-start justify-center overflow-y-auto min-h-[100dvh] w-full py-8">
   <!-- 폭 고정 래퍼 -->
   <div class="w-full max-w-[500px] mx-auto px-4">
     <div class="kt-card w-full">
@@ -83,15 +83,7 @@
 </div>
 
 <script>
-  // 배경 이미지 주입 (린터 경고 회피)
-  document.addEventListener('DOMContentLoaded', function () {
-    const el = document.querySelector('.page-bg');
-    if (!el) return;
-    el.style.backgroundImage =
-      'url("{{ url_for("static", path="assets/final/media/images/2600x1200/bg-10.png") }}")';
-    el.style.backgroundPosition = 'center';
-    el.style.backgroundRepeat = 'no-repeat';
-  });
+  // 배경 이미지는 사용하지 않습니다
 
   // ===== 설정 값 =====
   const VERIFY_EXPIRE_MIN = Number('{{ verify_expire_min|default(30) }}'); // 없으면 30

@@ -1,0 +1,118 @@
+{% extends "final.html" %}
+{% block title %}소셜 계정 연동 확인{% endblock %}
+{% block content %}
+<div class="flex items-center justify-center grow">
+  <div class="kt-card max-w-[520px] w-full">
+    <div class="kt-card-content flex flex-col gap-5 p-10">
+      <h3 class="text-lg font-medium text-mono">소셜 계정 연동 확인</h3>
+      <div id="alert" class="hidden"></div>
+
+      <div id="info" class="grid grid-cols-1 gap-3">
+        <div class="rounded-md border p-3">
+          <div class="text-sm font-medium mb-2">기존 계정</div>
+          <div class="flex items-center gap-3 mb-2">
+            <img id="exImg" class="w-10 h-10 rounded-full border object-cover" alt="ex"/>
+            <span class="text-xs text-muted-foreground">현재 프로필 이미지</span>
+          </div>
+          <div id="exName" class="text-sm"></div>
+          <div id="exEmail" class="text-sm text-muted-foreground"></div>
+          <div id="exPhone" class="text-sm text-muted-foreground"></div>
+        </div>
+        <div class="rounded-md border p-3">
+          <div class="text-sm font-medium mb-2">소셜에서 가져온 정보 <span id="scProv" class="text-xs text-muted-foreground"></span></div>
+          <div class="flex items-center gap-3 mb-2">
+            <img id="scImg" class="w-10 h-10 rounded-full border object-cover" alt="sc"/>
+            <span class="text-xs text-muted-foreground">소셜 프로필 이미지</span>
+          </div>
+          <div id="scName" class="text-sm"></div>
+          <div id="scEmail" class="text-sm text-muted-foreground"></div>
+        </div>
+      </div>
+
+      <div class="rounded-md border p-3">
+        <div class="text-sm font-medium mb-2">변경할 항목 선택</div>
+        <label class="kt-label"><input id="updName" type="checkbox" class="kt-checkbox kt-checkbox-sm"> <span class="kt-checkbox-label">이름을 소셜 정보로 바꾸기</span></label>
+        <label class="kt-label"><input id="updImg" type="checkbox" class="kt-checkbox kt-checkbox-sm" checked> <span class="kt-checkbox-label">프로필 이미지를 소셜 이미지로 바꾸기</span></label>
+        <label class="kt-label"><input id="updEmail" type="checkbox" class="kt-checkbox kt-checkbox-sm"> <span class="kt-checkbox-label">이메일을 소셜 이메일로 바꾸기</span></label>
+        <div class="mt-2">
+          <label class="kt-form-label">전화번호 (소셜 계정 정보랑 다른 경우 현재의 핸드폰 번호 입력)</label>
+          <input id="phone" class="kt-input" placeholder="010-1234-5678">
+        </div>
+      </div>
+
+      <div>
+        <label class="kt-form-label">본인 확인을 위해 기존 계정의 비밀번호를 입력해 주세요</label>
+        <input id="pw" type="password" class="kt-input" placeholder="현재 비밀번호">
+      </div>
+
+      <div class="flex gap-2">
+        <a class="kt-btn" href="/login">취소</a>
+        <button id="btnApply" class="kt-btn kt-btn-primary">연동 완료</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function showAlert(msg, type){ const a=document.getElementById('alert'); a.innerHTML='<div class="kt-alert '+(type==='error'?'kt-alert-danger':'kt-alert-success')+' p-3 rounded">'+msg+'</div>'; a.classList.remove('hidden'); }
+function normPhone(v){ return String(v||'').replace(/\D/g,''); }
+function formatPhone010(v){ const d=normPhone(v).slice(0,11); if(d.length<=3) return d; if(d.length<=7) return d.slice(0,3)+'-'+d.slice(3); return d.slice(0,3)+'-'+d.slice(3,7)+'-'+d.slice(7); }
+function isPhone010Digits(d){ return /^010\d{8}$/.test(d||''); }
+
+document.addEventListener('DOMContentLoaded', async ()=>{
+  // 찌꺼기 초기화: 소셜 프리필/드래프트 등 로컬 상태 제거
+  try{
+    localStorage.removeItem('social_prefill');
+    localStorage.removeItem('signupSocialDraft');
+    localStorage.removeItem('signupDraft');
+    sessionStorage.removeItem('signupSocialDraft');
+    sessionStorage.removeItem('signupDraft');
+  }catch(_){ }
+  try{
+    const r = await fetch('/api/v1/auth/social/merge-info');
+    const j = await r.json();
+    if(!r.ok) throw new Error(j.detail||'정보를 불러오지 못했습니다');
+    document.getElementById('exName').textContent = '이름: '+ (j.existing.name||'-') + ' (아이디: '+j.existing.username+')';
+    document.getElementById('exEmail').textContent = '이메일: '+ (j.existing.email||'-');
+    document.getElementById('exPhone').textContent = '전화번호: '+ (j.existing.phone_masked||'-');
+    document.getElementById('exImg').src = j.existing.profile_image_url || '/static/pictures/defaultprofile.jpeg';
+    document.getElementById('scProv').textContent = j.social.provider ? '('+String(j.social.provider).toUpperCase()+')' : '';
+    document.getElementById('scName').textContent = '이름: '+ (j.social.name||'-');
+    document.getElementById('scEmail').textContent = '이메일: '+ (j.social.email||'-');
+    document.getElementById('scImg').src = j.social.picture || '/static/pictures/defaultprofile.jpeg';
+  }catch(e){ showAlert(String(e.message||e),'error'); }
+
+  // 전화번호 입력 포맷/검증 (010-1234-5678 형식, 010만 허용)
+  (function attachPhoneSchema(){
+    const ipt = document.getElementById('phone');
+    if(!ipt) return;
+    ipt.addEventListener('input', ()=>{ ipt.value = formatPhone010(ipt.value); });
+    ipt.addEventListener('blur', ()=>{
+      const d = normPhone(ipt.value);
+      if(d && !isPhone010Digits(d)){
+        showAlert('전화번호는 010으로 시작하는 11자리여야 합니다.', 'error');
+      }
+    });
+  })();
+
+  document.getElementById('btnApply').addEventListener('click', async ()=>{
+    const payload={
+      update_name: document.getElementById('updName').checked,
+      update_profile_image: document.getElementById('updImg').checked,
+      update_email: document.getElementById('updEmail').checked,
+      password: document.getElementById('pw').value||'',
+      phone: normPhone(document.getElementById('phone').value||'')
+    };
+    if(!payload.password){ showAlert('비밀번호를 입력해 주세요.','error'); return; }
+    try{
+      const r = await fetch('/api/v1/auth/social/merge-apply',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+      const j = await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(j.detail||j.message||'연동 실패');
+      if(j.access_token){ try{ localStorage.setItem('access_token',j.access_token); sessionStorage.setItem('access_token', j.access_token); }catch(_){} }
+      if(j.refresh_token){ try{ localStorage.setItem('refresh_token',j.refresh_token); sessionStorage.setItem('refresh_token', j.refresh_token); }catch(_){} }
+      location.href='/social/merge-done';
+    }catch(e){ showAlert(String(e.message||e),'error'); }
+  });
+});
+</script>
+{% endblock %}
