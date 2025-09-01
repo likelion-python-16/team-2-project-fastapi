@@ -164,6 +164,26 @@ class PaymentSummary(BaseModel):
 
 
 # -----------------------------
+# MyPage 관련 Schemas
+# -----------------------------
+class SpendSummaryOut(BaseModel):
+    """지출 요약"""
+    total_paid: int = 0
+    total_refunded: int = 0
+    net_spent: int = 0
+    
+    model_config = ConfigDict(from_attributes=True)
+
+class PaymentListOut(BaseModel):
+    """결제 목록 응답"""
+    items: list[PaymentOut]
+    total: int
+    skip: int
+    limit: int
+    
+    model_config = ConfigDict(from_attributes=True)
+
+# -----------------------------
 # 호환성 별칭
 # -----------------------------
 PaymentCreateRequest = PaymentCreateIn

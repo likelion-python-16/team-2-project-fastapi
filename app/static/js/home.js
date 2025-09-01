@@ -234,7 +234,7 @@ function wireProfileDropdown() {
       ${
         isLogin
           ? `
-            <a class="dropdown-item" href="/dashboard">대시보드</a>
+            <a class="dropdown-item" href="/mypage">마이페이지</a>
             <a class="dropdown-item" href="/pages/challenges/new">챌린지 생성</a>
             <div class="divider"></div>
             <button class="dropdown-item" id="logout-btn">로그아웃</button>
@@ -429,28 +429,58 @@ async function doSearchFlow() {
     qs.set('page', String(S.search.page));
     qs.set('size', String(S.search.size));
 
-    // /api/v1/challenges/search 사용
+    // /api/v1/challenges/search 사용 (팀원 코드와 동일)
     const data = await fetchJSON(`/api/v1/challenges/search?${qs.toString()}`);
+    console.log('🔍 검색 API 응답:', data);
     
-    // dual_search 응답 구조에 맞게 처리
-    const list = data.matched_challenges || [];
-    const recommendations = data.recommended_by_tag_challenges || [];
+    // search 응답 구조에 맞게 처리
+    const matched = Array.isArray(data.matched_challenges) ? data.matched_challenges : [];
+    const rec = Array.isArray(data.recommended_by_tag_challenges) ? data.recommended_by_tag_challenges : [];
+    console.log('🔍 처리된 데이터:', {matched_count: matched.length, rec_count: rec.length});
     
-    S.search.list = list;
-    S.search.total = list.length; // dual_search에서는 총 개수를 별도로 제공하지 않음
-    S.search.recommendations = recommendations;
+    // 검색 분석 결과 로깅 (디버깅용) 
+    if (data.predicted_tag && S.search.query) {
+      console.log('🔍 검색 분석:', {
+        query: S.search.query,
+        predicted_tag: data.predicted_tag,
+        predicted_score: data.predicted_score
+      });
+      
+      // 검색 분석 결과가 있지만 결과가 없는 경우 추가 정보 제공
+      if (matched.length === 0 && rec.length === 0) {
+        console.log('💡 검색 개선 제안: 다른 키워드를 시도해보세요.');
+        if (data.predicted_tag) {
+          console.log('🏷️ 예측된 태그:', `${data.predicted_tag} (${(data.predicted_score*100).toFixed(1)}%)`);
+        }
+      }
+    }
+    
+    S.search.list = matched;
+    S.search.total = matched.length;
+    S.search.recommendations = rec;
 
-    // 렌더
-    elSearchEmpty.style.display = list.length ? 'none' : 'block';
-    elSearchEmpty.textContent = '검색 결과가 없습니다. 필터를 조정해 보세요.';
-    elSearchGrid.innerHTML = list.length ? renderCardList(list) : '';
-
-    if (recommendations?.length) {
-      elRecEmpty.style.display = 'none';
-      elRecGrid.innerHTML = renderCardList(recommendations.slice(0, 8));
+    // 렌더 (팀원 코드 스타일)
+    if (matched.length === 0) {
+      elSearchGrid.innerHTML = "";
+      elSearchEmpty.style.display = "block";
+      elSearchEmpty.textContent = S.search.query ? `'${S.search.query}'와(과) 일치하는 챌린지가 없습니다.` : "검색어와 일치하는 챌린지가 없습니다.";
     } else {
-      elRecGrid.innerHTML = '';
-      elRecEmpty.style.display = 'block';
+      elSearchEmpty.style.display = "none";
+      elSearchGrid.innerHTML = renderCardList(matched.slice(0, 8)); // 4×2
+    }
+
+    // 추천 섹션 처리 (태그 기반 매칭)
+    console.log('🔍 추천 처리:', {rec_length: rec.length, rec_data: rec});
+    if (rec.length === 0) {
+      elRecGrid.innerHTML = "";
+      elRecEmpty.style.display = "block";
+      elRecEmpty.textContent = "추천할 챌린지가 없습니다.";
+      console.log('❌ 추천 챌린지 없음');
+    } else {
+      elRecEmpty.style.display = "none";
+      const html = renderCardList(rec.slice(0, 8));
+      elRecGrid.innerHTML = html;
+      console.log(`🎯 태그 기반 추천 ${rec.length}개 표시됨`, html.substring(0, 100) + '...');
     }
 
     renderPagination(elSearchPag, S.search.page, Math.max(1, Math.ceil(S.search.total / S.search.size)), async (p) => {

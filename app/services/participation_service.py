@@ -12,6 +12,7 @@ from app.models.participation import (
 )
 from app.models.challenge import Challenge, ChallengeStatus, PaymentType
 from app.models.user import User
+from app.models.payment import Payment, PaymentStatus, Refund
 from app.schemas.participation import (
     ParticipationCreate,
     ParticipationUpdate,
@@ -49,8 +50,15 @@ class ParticipationService:
                 logger.info(f"이미 참가 중인 사용자: {user.id} -> 챌린지 {challenge.id}, 상태: {existing.status}")
                 return ParticipationResponse.model_validate(existing)
             
+            # 강퇴된 사용자는 재참가 불가
+            elif existing.status == ParticipationStatus.expelled:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="이 챌린지에서 강퇴되어 재참가할 수 없습니다"
+                )
+            
             # 취소된 참여가 있는 경우 재활성화
-            elif existing.status in [ParticipationStatus.cancelled, ParticipationStatus.expelled]:
+            elif existing.status == ParticipationStatus.cancelled:
                 logger.info(f"취소된 참여 재활성화: {user.id} -> 챌린지 {challenge.id}, 이전 상태: {existing.status}")
                 return self._reactivate_participation(existing, challenge, participation_data)
         
@@ -218,9 +226,17 @@ class ParticipationService:
         # 환불 금액 계산
         refund_amount = self._calculate_refund_amount(challenge, participation)
         
-        # 실제 환불 처리
-        if refund_amount > 0:
+        logger.info(f"환불 금액 계산 결과: user_id={user.id}, challenge_id={challenge_id}, refund_amount={refund_amount}, total_paid={participation.total_paid_amount}")
+        
+        # 실제 환불 처리 
+        if refund_amount > 0:  # 양수 금액만 실제 환불 처리
             self._process_refund(participation, refund_amount, reason or "사용자 탈퇴")
+        elif refund_amount == 0:
+            # 0원 환불은 기록만 남기기 (constraint 우회를 위해 1원으로 저장 후 메모에 실제 금액 표시)
+            logger.info(f"0원 환불 기록 남기기")
+            self._process_zero_refund(participation, reason or "사용자 탈퇴")
+        else:
+            logger.warning(f"음수 환불 금액: {refund_amount}원 - 환불 처리 건너뛰기")
         
         # 탈퇴 처리 (모델 메서드 활용)
         participation.cancel_participation(
@@ -655,7 +671,7 @@ class ParticipationService:
 
     def _process_refund(self, participation: Participation, refund_amount: int, reason: str):
         """실제 환불 처리"""
-        from app.models.payment import Payment, PaymentStatus
+        from app.models.payment import Payment, PaymentStatus, Refund
         from app.services.payment_service import get_payment_service
         
         # 해당 참여자의 결제 내역 찾기
@@ -667,6 +683,8 @@ class ParticipationService:
         
         if not payments:
             logger.warning(f"환불 대상 결제 내역이 없습니다: user_id={participation.user_id}, challenge_id={participation.challenge_id}")
+            # 결제 내역이 없는 경우 환불할 금액이 0이므로 로그만 남기고 종료
+            logger.info(f"결제 내역 없음으로 환불 처리 생략: user_id={participation.user_id}, challenge_id={participation.challenge_id}, expected_amount={refund_amount}")
             return
         
         # 가장 최근 결제 건에 대해 환불 처리
@@ -680,19 +698,74 @@ class ParticipationService:
         
         try:
             payment_service = get_payment_service(self.db)
-            payment_service.refund_payment(
+            refund = payment_service.refund_payment(
                 payment_id=latest_payment.id,
                 user=user,
                 amount=refund_amount,
                 reason=reason
             )
             
-            logger.info(f"환불 처리 완료: payment_id={latest_payment.id}, amount={refund_amount}, reason={reason}")
+            # 환불 처리 상태를 완료로 업데이트
+            refund.mark_processed()
+            self.db.commit()
+            
+            logger.info(f"환불 처리 완료: payment_id={latest_payment.id}, refund_id={refund.id}, amount={refund_amount}, reason={reason}")
             
         except Exception as e:
             logger.error(f"환불 처리 실패: {e}")
-            # 환불 실패해도 탈퇴는 진행되도록 함
-            pass
+            # 롤백 수행
+            self.db.rollback()
+            
+            # 환불 실패 시 실패 기록만 남기기 (새 트랜잭션에서)
+            try:
+                refund = Refund(
+                    payment_id=latest_payment.id,
+                    user_id=participation.user_id,
+                    challenge_id=participation.challenge_id,
+                    refund_amount=refund_amount,
+                    refund_reason=f"{reason} (처리실패: {str(e)})",
+                    status=PaymentStatus.failed
+                )
+                self.db.add(refund)
+                self.db.commit()  # 실패 기록은 별도로 커밋
+                logger.info(f"환불 실패 기록 생성: payment_id={latest_payment.id}, amount={refund_amount}, error={str(e)}")
+            except Exception as inner_e:
+                logger.error(f"환불 실패 기록 생성도 실패: {inner_e}")
+                self.db.rollback()  # 실패 기록도 실패하면 롤백
+
+    def _process_zero_refund(self, participation: Participation, reason: str):
+        """0원 환불 기록 처리 (기록 목적)"""
+        try:
+            # 결제 내역 확인
+            latest_payment = self.db.query(Payment).filter(
+                Payment.user_id == participation.user_id,
+                Payment.challenge_id == participation.challenge_id
+            ).order_by(Payment.created_at.desc()).first()
+            
+            if not latest_payment:
+                logger.info(f"결제 내역 없음 - 0원 환불 기록 건너뛰기")
+                return
+            
+            # 0원 환불 기록 생성 (사용자에게 "환불 처리함" 표시 목적)
+            refund = Refund(
+                payment_id=latest_payment.id,
+                user_id=participation.user_id,
+                challenge_id=participation.challenge_id,
+                refund_amount=1,  # constraint 우회를 위해 1원으로 저장
+                refund_reason=f"{reason} (실제 환불 금액: 0원)",
+                status=PaymentStatus.completed,  # 즉시 완료 처리
+                requested_at=datetime.now(timezone.utc),
+                processed_at=datetime.now(timezone.utc)
+            )
+            
+            self.db.add(refund)
+            self.db.commit()
+            
+            logger.info(f"0원 환불 기록 생성 완료: payment_id={latest_payment.id}")
+            
+        except Exception as e:
+            logger.error(f"0원 환불 기록 처리 실패: {e}")
+            self.db.rollback()
 
 
 # ==================== Service Factory ====================

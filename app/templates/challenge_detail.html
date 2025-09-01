@@ -35,6 +35,8 @@
     .participant-info{flex:1}
     .participant-name{font-weight:600;font-size:14px;color:#111827}
     .participant-role{font-size:11px;color:#6b7280}
+    .kick-btn{background:#dc2626;color:white;border:1px solid #dc2626;font-size:11px;padding:4px 8px;border-radius:4px;margin-left:auto;cursor:pointer;transition:background 0.2s}
+    .kick-btn:hover{background:#b91c1c}
     @media (max-width:960px){.cards-row{grid-template-columns:repeat(2,minmax(220px,1fr));}}
     @media (max-width:640px){.cards-row{grid-template-columns:1fr;}}
     
@@ -192,22 +194,6 @@
   <div id="followMsg" style="font-size:14px;color:#555"></div>
 </div>
 
-<!-- [추가] 태그 패널 -->
-<div class="panel">
-  <h3>🏷️ AI 태그 추천</h3>
-  <div style="display:flex;gap:8px;margin-bottom:12px">
-    <input id="tagSearchInput" type="text" placeholder="태그를 검색하세요..." style="flex:1;padding:8px;border:1px solid #ddd;border-radius:4px">
-    <button id="btnSearchTag" class="btn">검색</button>
-  </div>
-  <div id="tagResult" style="margin-bottom:12px;padding:8px;border:1px solid #e5e7eb;border-radius:4px;background:#f9fafb;display:none">
-    <strong>AI 추천 결과:</strong>
-    <span id="recommendedTag">-</span>
-    <span id="tagConfidence" style="color:#6b7280;font-size:12px">(-)</span>
-  </div>
-  <div id="challengeTags" style="display:flex;flex-wrap:wrap;gap:6px">
-    <!-- 챌린지 태그들 표시 -->
-  </div>
-</div>
 
 <!-- [추가] 참여/취소 패널 -->
 <div class="panel">
@@ -242,6 +228,10 @@
 
   // API Prefix
   const API_CH = '/api/v1';         // challenges 등
+  
+  // 사용자 정보 (템플릿에서 주입)
+  window.USER_ROLE = '{{ user_role|default("") }}';
+  window.USER_ID = {{ current_user.id if current_user else 'null' }};
   const API_PIC = '';               // round_pictures 라우터가 루트에 있으면 '' 유지
   // ↳ 만약 404가 난다면 '/api/v1'로 바꿔보세요.
 
@@ -411,6 +401,51 @@
     }
   });
 
+  // ===== 생성자 팔로우 기능 =====
+  async function updateCreatorFollowPanel(challenge) {
+    const panel = document.getElementById('creatorFollowPanel');
+    const creatorName = document.getElementById('creatorName');
+    const creatorInfo = document.getElementById('creatorInfo');
+    const btnFollow = document.getElementById('btnFollowCreator');
+    const btnUnfollow = document.getElementById('btnUnfollowCreator');
+    
+    if (!challenge.creator_id) {
+      panel.style.display = 'none';
+      return;
+    }
+    
+    // 현재 로그인한 사용자 확인
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      panel.style.display = 'none';
+      return;
+    }
+    
+    try {
+      const currentUser = await getCurrentUser();
+      
+      // 현재 사용자가 생성자인 경우 팔로우 패널 숨김
+      if (currentUser && currentUser.id === challenge.creator_id) {
+        panel.style.display = 'none';
+        return;
+      }
+      
+      // 생성자 정보 표시
+      creatorName.textContent = challenge.creator_username || `사용자 #${challenge.creator_id}`;
+      creatorInfo.textContent = `생성된 챌린지: ${challenge.id}번`;
+      
+      // 팔로우 상태 확인 (기본적으로 팔로우 버튼 표시)
+      btnFollow.style.display = 'inline-block';
+      btnUnfollow.style.display = 'none';
+      
+      panel.style.display = 'block';
+      
+    } catch (e) {
+      console.error('Error checking user status:', e);
+      panel.style.display = 'none';
+    }
+  }
+
   async function loadChallenge(){
     console.log('Loading challenge data...');
     // 사용자 참여 상태가 포함된 챌린지 정보 로드
@@ -439,9 +474,6 @@
     
     // 생성자 팔로우 패널 업데이트
     await updateCreatorFollowPanel(ch);
-    
-    // 챌린지 태그 로드
-    await loadChallengeTags(ch.id);
   }
 
   async function updatePaymentButtonStatus(challenge) {
@@ -996,8 +1028,20 @@
     const contentDiv = document.getElementById('participantsContent');
     
     try {
+      // 토큰 확인
+      const token = localStorage.getItem('access_token');
+      console.log('저장된 토큰:', token ? '토큰 있음' : '토큰 없음');
+      
+      // 현재 사용자 정보 가져오기
+      const currentUser = await safeFetchJSON(`${API_CH}/auth/me`);
+      console.log('현재 사용자 정보:', currentUser);
+      
       // 참가자 목록 가져오기
       const participants = await safeFetchJSON(`${API_CH}/participations/${CHALLENGE_ID}/members`);
+      
+      console.log('현재 사용자 역할:', window.USER_ROLE);
+      console.log('현재 사용자 ID:', window.USER_ID);
+      console.log('참가자 목록:', participants);
       
       if (participants.length === 0) {
         contentDiv.innerHTML = '<div style="text-align:center;padding:20px;color:#6b7280">참가자가 없습니다</div>';
@@ -1007,6 +1051,15 @@
           const roleText = getRoleText(p.role);
           const avatar = user.username ? user.username.charAt(0).toUpperCase() : 'U';
           
+          // 현재 사용자가 생성자인지 확인 (API에서 받은 currentUser 사용)
+          const currentUserId = currentUser ? currentUser.id : null;
+          const currentUserParticipation = participants.find(part => part.user_id === currentUserId);
+          const currentUserRole = currentUserParticipation ? currentUserParticipation.role : null;
+          const isCreator = currentUserRole === 'creator';
+          const canKick = isCreator && p.role !== 'creator' && p.status === 'active';
+          
+          console.log(`참가자 ${user.username}: role=${p.role}, status=${p.status}, canKick=${canKick}`);
+          
           return `
             <div class="participant-card">
               <div class="participant-avatar">${avatar}</div>
@@ -1014,6 +1067,7 @@
                 <div class="participant-name">${user.username || user.name || 'Unknown User'}</div>
                 <div class="participant-role">${roleText}</div>
               </div>
+              ${canKick ? `<button class="kick-btn" onclick="kickParticipant(${user.id}, '${user.username}')">강퇴</button>` : ''}
             </div>
           `;
         }).join('');
@@ -1037,6 +1091,44 @@
       'moderator': '부관리자'
     };
     return roleMap[role] || role;
+  }
+
+  // 참가자 강퇴 함수
+  async function kickParticipant(targetUserId, username) {
+    const reason = prompt(`${username}님을 강퇴하는 이유를 입력해주세요:`);
+    if (!reason || reason.trim() === '') {
+      alert('강퇴 사유를 입력해주세요.');
+      return;
+    }
+
+    if (!confirm(`정말로 ${username}님을 강퇴하시겠습니까?\n강퇴된 사용자는 이 챌린지에 다시 참가할 수 없습니다.`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_CH}/participations/${CHALLENGE_ID}/kick/${targetUserId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeader()
+        },
+        body: JSON.stringify({ reason: reason.trim() })
+      });
+
+      if (response.ok) {
+        alert(`${username}님이 강퇴되었습니다.`);
+        // 참가자 목록 새로고침
+        await loadParticipantList();
+        // 참가자 수 새로고침
+        await refreshParticipationStatus();
+      } else {
+        const error = await response.json();
+        alert(`강퇴 실패: ${error.detail || '알 수 없는 오류'}`);
+      }
+    } catch (error) {
+      console.error('강퇴 요청 실패:', error);
+      alert('강퇴 요청에 실패했습니다. 네트워크를 확인해주세요.');
+    }
   }
 
   // 장소 검색 팝업
@@ -1339,36 +1431,6 @@
     }
   });
 
-  // ===== 생성자 팔로우 기능 =====
-  async function updateCreatorFollowPanel(challenge) {
-    const panel = document.getElementById('creatorFollowPanel');
-    const creatorName = document.getElementById('creatorName');
-    const creatorInfo = document.getElementById('creatorInfo');
-    const btnFollow = document.getElementById('btnFollowCreator');
-    const btnUnfollow = document.getElementById('btnUnfollowCreator');
-    
-    if (!challenge.creator_id) {
-      panel.style.display = 'none';
-      return;
-    }
-    
-    // 현재 로그인한 사용자가 생성자인 경우 팔로우 패널 숨김
-    const token = localStorage.getItem('access_token');
-    if (!token) {
-      panel.style.display = 'none';
-      return;
-    }
-    
-    // 생성자 정보 표시
-    creatorName.textContent = challenge.creator_username || `사용자 #${challenge.creator_id}`;
-    creatorInfo.textContent = `생성된 챌린지: ${challenge.id}번`;
-    
-    // 팔로우 상태 확인 (TODO: API로 확인)
-    btnFollow.style.display = 'inline-block';
-    btnUnfollow.style.display = 'none';
-    
-    panel.style.display = 'block';
-  }
   
   // 팔로우 버튼 이벤트
   document.getElementById('btnFollowCreator').addEventListener('click', async () => {
@@ -1418,44 +1480,6 @@
     }
   });
 
-  // ===== AI 태그 검색 기능 =====
-  document.getElementById('btnSearchTag').addEventListener('click', async () => {
-    const query = document.getElementById('tagSearchInput').value.trim();
-    if (!query) {
-      alert('검색어를 입력해주세요.');
-      return;
-    }
-    
-    try {
-      const response = await fetchJSON(`/api/v1/tags/search?query=${encodeURIComponent(query)}`);
-      
-      document.getElementById('recommendedTag').textContent = response.tag;
-      document.getElementById('tagConfidence').textContent = `(신뢰도: ${(response.score * 100).toFixed(1)}%)`;
-      document.getElementById('tagResult').style.display = 'block';
-      
-    } catch (e) {
-      alert(`태그 검색 실패: ${e.message}`);
-    }
-  });
-  
-  // 엔터키로 태그 검색
-  document.getElementById('tagSearchInput').addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-      document.getElementById('btnSearchTag').click();
-    }
-  });
-  
-  // 챌린지 태그 로드 (예시 - 실제로는 챌린지별 태그 API 필요)
-  async function loadChallengeTags(challengeId) {
-    const tagsContainer = document.getElementById('challengeTags');
-    
-    // 임시 예시 태그들
-    const exampleTags = ['운동', '건강', '습관형성', '자기개발'];
-    
-    tagsContainer.innerHTML = exampleTags.map(tag => 
-      `<span style="background:#e5e7eb;color:#374151;padding:4px 8px;border-radius:12px;font-size:12px">${tag}</span>`
-    ).join('');
-  }
 
 </script>
 

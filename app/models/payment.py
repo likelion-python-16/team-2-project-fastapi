@@ -156,7 +156,7 @@ class Refund(Base, TimestampMixin):
     challenge = relationship("Challenge", back_populates="refunds")
 
     __table_args__ = (
-        CheckConstraint("refund_amount > 0", name="ck_refund_amount_positive"),
+        CheckConstraint("refund_amount >= 0", name="ck_refund_amount_positive"),
         Index("ix_refund_user_date", "user_id", "requested_at"),
     )
 

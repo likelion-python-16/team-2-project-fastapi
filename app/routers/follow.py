@@ -3,12 +3,11 @@ from __future__ import annotations
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, desc
 
 from app.core.database import get_db
-from app.security import verify_token
+from app.security import get_current_user
 from app.models.user import User
 from app.models.challenge import Challenge
 from app.models.following import Following
@@ -16,57 +15,57 @@ from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/v1", tags=["Follow"])
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
-
-def get_current_user_required(
-    token: Optional[str] = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-) -> User:
-    if not token:
-        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
-    payload = verify_token(token)
-    if not payload or "sub" not in payload:
-        raise HTTPException(status_code=401, detail="유효하지 않은 토큰입니다.")
-    user = db.query(User).filter(User.id == int(payload["sub"])).first()
-    if not user or not user.is_active:
-        raise HTTPException(status_code=401, detail="비활성 사용자거나 존재하지 않습니다.")
-    return user
-
 class ChallengeCard(BaseModel):
     id: int
     title: str
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     status: str
-    fee_type: str
-    participation_fee: int
-    fee: int
-    thumbnail_url: Optional[str] = None
+    mode: Optional[str] = None
+    payment_type: str
+    entry_fee: int = 0
+    monthly_fee: int = 0
+    current_participants: int = 0
+    max_participants: Optional[int] = None
+    cover_image: Optional[str] = None
 
     class Config:
         from_attributes = True
 
 def _to_card(ch: Challenge) -> ChallengeCard:
-    fee_val = (ch.fee or 0)
-    part_fee_val = (ch.participation_fee or 0)
-    fee_type = "유료" if (fee_val > 0 or part_fee_val > 0) else "무료"
+    # payment_type 결정
+    entry_fee_val = getattr(ch, 'entry_fee', 0) or 0
+    monthly_fee_val = getattr(ch, 'monthly_fee', 0) or 0
+    
+    if entry_fee_val > 0 and monthly_fee_val > 0:
+        payment_type = "both"
+    elif entry_fee_val > 0:
+        payment_type = "entry_fee"
+    elif monthly_fee_val > 0:
+        payment_type = "monthly_fee"
+    else:
+        payment_type = "free"
+    
     return ChallengeCard(
         id=ch.id,
         title=ch.title,
         start_date=ch.start_date.isoformat() if ch.start_date else None,
         end_date=ch.end_date.isoformat() if ch.end_date else None,
         status=ch.status,
-        fee_type=fee_type,
-        participation_fee=part_fee_val,
-        fee=fee_val,
-        thumbnail_url=getattr(ch, "thumbnail_url", None),
+        mode=getattr(ch, 'mode', None),
+        payment_type=payment_type,
+        entry_fee=entry_fee_val,
+        monthly_fee=monthly_fee_val,
+        current_participants=getattr(ch, 'current_participants', 0) or 0,
+        max_participants=getattr(ch, 'max_participants', None),
+        cover_image=getattr(ch, 'cover_image', None),
     )
 
 @router.post("/follow/{target_user_id}")
 def follow_user(
     target_user_id: int,
     db: Session = Depends(get_db),
-    me: User = Depends(get_current_user_required),
+    me: User = Depends(get_current_user),
 ):
     if target_user_id == me.id:
         raise HTTPException(status_code=400, detail="자기 자신을 팔로우할 수 없습니다.")
@@ -93,7 +92,7 @@ def follow_user(
 def unfollow_user(
     target_user_id: int,
     db: Session = Depends(get_db),
-    me: User = Depends(get_current_user_required),
+    me: User = Depends(get_current_user),
 ):
     rel = db.query(Following).filter(
         and_(
@@ -111,7 +110,7 @@ def unfollow_user(
 def following_challenges(
     limit: int = Query(10, ge=1, le=50),
     db: Session = Depends(get_db),
-    me: User = Depends(get_current_user_required),
+    me: User = Depends(get_current_user),
 ):
     subq = db.query(Following.following_id).filter(Following.follower_id == me.id).subquery()
 
@@ -123,3 +122,12 @@ def following_challenges(
         .all()
     )
     return [_to_card(c) for c in rows]
+
+@router.get("/following/users")
+def get_following_users(
+    db: Session = Depends(get_db),
+    me: User = Depends(get_current_user),
+):
+    """현재 사용자가 팔로우하는 사용자 ID 목록 반환"""
+    following_ids = db.query(Following.following_id).filter(Following.follower_id == me.id).all()
+    return {"following_user_ids": [row.following_id for row in following_ids]}

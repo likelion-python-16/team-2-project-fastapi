@@ -538,19 +538,17 @@ async function createChallenge(){
   createStatus.textContent = '생성 중...';
 
   try {
-    // 백엔드가 challenge_data로 받도록 설계되어 있으므로 그대로 전송
-    const res = await axios.post("/api/v1/challenges/", { challenge_data: payload }, {
+    // 백엔드가 challenge_data와 tags를 따로 받도록 설계되어 있음
+    const requestBody = { 
+      challenge_data: payload,
+      tags: selectedCategories  // 선택된 태그들을 포함
+    };
+    
+    console.log('🏷️ 챌린지 생성 요청:', { tags: selectedCategories, title: payload.title });
+    
+    const res = await axios.post("/api/v1/challenges/", requestBody, {
       headers: { 'Content-Type': 'application/json' }
     });
-
-    // TODO: 태그 기능은 추후 구현
-    // if (selectedCategories.length > 0) {
-    //   try {
-    //     await axios.post(`/api/v1/challenges/${res.data.id}/tags`, { tags: selectedCategories });
-    //   } catch (tagErr) {
-    //     console.warn('태그 추가 실패:', tagErr);
-    //   }
-    // }
 
     createStatus.textContent = '';
     

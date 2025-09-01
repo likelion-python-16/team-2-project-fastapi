@@ -232,3 +232,49 @@ class PasswordChangeIn(BaseModel):
                 "new_password": "NewSecurePass123!"
             }
         }
+
+
+# -----------------------------
+# MyPage 관련 Schemas
+# -----------------------------
+class UserBrief(BaseModel):
+    """간단한 사용자 정보"""
+    id: int
+    username: str
+    name: Optional[str] = ""
+    profile_image: Optional[str] = ""
+    
+    class Config:
+        from_attributes = True
+
+class FollowListOut(BaseModel):
+    """팔로우 목록 응답"""
+    items: list[UserBrief]
+    total: int
+    skip: int
+    limit: int
+    
+    class Config:
+        from_attributes = True
+
+class PointHistoryOut(BaseModel):
+    """포인트 히스토리"""
+    id: int
+    amount: int
+    history_type: str
+    description: Optional[str] = ""
+    created_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+
+class PointHistoryListOut(BaseModel):
+    """포인트 히스토리 목록 응답"""
+    items: list[PointHistoryOut]
+    total: int
+    skip: int
+    limit: int
+    current_points: Optional[int] = 0
+    
+    class Config:
+        from_attributes = True

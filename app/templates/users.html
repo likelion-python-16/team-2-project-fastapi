@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>사용자 목록</title>
+
+  <style>
+    :root{ --brand:#181C32; --text:#1f2937; --muted:#6b7280; --line:#E5E7EB;
+      --primary:#4338CA; --accent:#EEF2FF; --danger:#DC2626; --ok:#059669;
+      --chip:#111827; --chip-bg:#F3F4F6;
+    }
+    *{box-sizing:border-box}
+    body{margin:0; font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji"; color:var(--text); background:#fff}
+    a{color:var(--primary); text-decoration:none}
+    .container{max-width:1120px; margin:0 auto; padding:0 16px}
+
+    .header-bar{border-bottom:1px solid var(--line); background:#fff}
+    .header-inner{display:flex; align-items:center; gap:16px; padding:12px 0}
+    .brand{display:flex; align-items:center; gap:10px; color:var(--brand); font-weight:700; letter-spacing:.2px}
+    .brand .dot{color:#9CA3AF; font-weight:600}
+    .spacer{flex:1}
+    .btn{height:38px; padding:0 14px; border-radius:10px; border:1px solid var(--line); background:#fff; color:var(--text); font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:8px; text-decoration:none}
+    .btn.primary{background:var(--primary); color:#fff; border-color:var(--primary)}
+    .btn.small{height:32px; padding:0 12px; font-size:13px}
+
+    .section{padding:18px 0}
+    .section h2{font-size:24px; margin:0 0 16px; color:#0f172a; letter-spacing:.2px}
+    .section h3{font-size:18px; margin:0 0 12px; color:#0f172a; letter-spacing:.2px}
+
+    .user-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:16px; margin:16px 0}
+    .user-card{border:1px solid var(--line); border-radius:14px; padding:16px; background:#fff; transition:transform .12s ease, box-shadow .12s ease}
+    .user-card:hover{transform:translateY(-2px); box-shadow:0 8px 24px rgba(0,0,0,.06)}
+    
+    .user-header{display:flex; align-items:center; gap:12px; margin-bottom:12px}
+    .user-avatar{width:48px; height:48px; border-radius:50%; background:#f3f4f6; border:1px solid var(--line); display:flex; align-items:center; justify-content:center; font-weight:700; color:#475569}
+    .user-info{flex:1}
+    .user-name{font-weight:700; font-size:16px; color:#111827; margin:0 0 4px}
+    .user-meta{font-size:13px; color:var(--muted)}
+
+    .user-actions{display:flex; gap:8px; margin-top:12px}
+    .follow-btn{height:32px; padding:0 12px; border-radius:8px; border:1px solid var(--line); background:#fff; color:var(--text); font-weight:600; cursor:pointer; font-size:13px; transition:all .12s ease}
+    .follow-btn.following{background:var(--ok); color:#fff; border-color:var(--ok)}
+    .follow-btn:hover{background:var(--primary); color:#fff; border-color:var(--primary)}
+    .follow-btn.following:hover{background:var(--danger); border-color:var(--danger)}
+
+    .search-bar{margin:16px 0; display:flex; gap:12px; align-items:center}
+    .search-input{flex:1; height:40px; border:1px solid var(--line); border-radius:10px; padding:0 14px; font-size:14px; outline:none}
+
+    .pagination{display:flex; justify-content:center; gap:6px; margin:24px 0}
+    .page-btn{min-width:34px; height:34px; padding:0 10px; border:1px solid var(--line); border-radius:10px; background:#fff; cursor:pointer; font-weight:600}
+    .page-btn.active{background:var(--primary); border-color:var(--primary); color:#fff}
+
+    .empty{padding:48px; text-align:center; color:var(--muted); border:1px dashed var(--line); border-radius:14px; background:#fff}
+
+    @media (max-width:768px){
+      .user-grid{grid-template-columns:1fr}
+    }
+  </style>
+</head>
+<body>
+  <!-- HEADER -->
+  <div class="header-bar">
+    <div class="container">
+      <div class="header-inner">
+        <a href="/" class="brand">FastTeam <span class="dot">•</span> 사용자</a>
+        <div class="spacer"></div>
+        <a href="/" class="btn">🏠 홈으로</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONTENT -->
+  <main class="container">
+    <div class="section">
+      <h2>👥 사용자 목록</h2>
+      
+      <div class="search-bar">
+        <input type="text" id="search-input" class="search-input" placeholder="사용자 이름으로 검색...">
+        <button id="search-btn" class="btn primary">검색</button>
+      </div>
+
+      <div id="user-list" class="user-grid"></div>
+      <div id="empty-state" class="empty" style="display:none">
+        검색 결과가 없습니다.
+      </div>
+      
+      <div id="pagination" class="pagination"></div>
+    </div>
+  </main>
+
+  <script>
+    // 전역 상태
+    const S = {
+      users: [],
+      currentPage: 1,
+      pageSize: 12,
+      searchQuery: '',
+      followingUsers: new Set(), // 팔로우한 사용자 ID들
+      currentUserId: null // 현재 로그인한 사용자 ID
+    };
+
+    // 유틸리티 함수
+    function parseJwt(token) {
+      try {
+        const base64Url = token.split('.')[1];
+        const base64 = base64Url.replace(/-/g,'+').replace(/_/g,'/');
+        const json = decodeURIComponent(
+          atob(base64).split('').map(c => '%' + ('00'+c.charCodeAt(0).toString(16)).slice(-2)).join('')
+        );
+        return JSON.parse(json);
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function getAccessToken() {
+      return localStorage.getItem('access_token') || null;
+    }
+
+    function authHeader() {
+      const t = getAccessToken();
+      return t ? { 'Authorization': 'Bearer ' + t } : {};
+    }
+
+    async function fetchJSON(url, opts = {}) {
+      const res = await fetch(url, {
+        credentials: 'include',
+        headers: { 'Accept': 'application/json', ...authHeader(), ...(opts.headers || {}) },
+        ...opts
+      });
+      const ct = res.headers.get('content-type') || '';
+      const isJSON = ct.includes('application/json');
+      const body = isJSON ? await res.json() : await res.text();
+      if (!res.ok) {
+        const msg = (isJSON ? (body?.detail || body?.message) : body) || `HTTP ${res.status}`;
+        throw new Error(msg);
+      }
+      return isJSON ? body : body;
+    }
+
+    // 현재 사용자 정보 가져오기
+    async function getCurrentUser() {
+      const token = getAccessToken();
+      if (!token) return null;
+      
+      try {
+        const user = await fetchJSON('/api/v1/auth/me');
+        return user;
+      } catch (error) {
+        console.warn('현재 사용자 정보 로드 실패:', error);
+        return null;
+      }
+    }
+
+    // 사용자 목록 로드
+    async function loadUsers() {
+      try {
+        const skip = (S.currentPage - 1) * S.pageSize;
+        const params = new URLSearchParams({
+          skip: skip,
+          limit: S.pageSize
+        });
+
+        if (S.searchQuery) {
+          params.set('search', S.searchQuery);
+        }
+
+        const users = await fetchJSON(`/api/v1/users?${params}`);
+        
+        // 현재 사용자가 로그인한 경우 자기 자신 제외
+        if (getAccessToken() && !S.currentUserId) {
+          const currentUser = await getCurrentUser();
+          if (currentUser) {
+            S.currentUserId = currentUser.id;
+          }
+        }
+        
+        // 자기 자신 제외한 사용자 목록 설정
+        if (S.currentUserId) {
+          S.users = users.filter(user => user.id !== S.currentUserId);
+        } else {
+          S.users = users;
+        }
+
+        // 팔로우 상태 로드 (로그인한 경우)
+        if (getAccessToken()) {
+          await loadFollowingStatus();
+        }
+
+        renderUsers();
+      } catch (error) {
+        console.error('사용자 목록 로드 실패:', error);
+        document.getElementById('user-list').innerHTML = '<div class="empty">사용자 목록을 불러오지 못했습니다.</div>';
+      }
+    }
+
+    // 팔로우 상태 로드
+    async function loadFollowingStatus() {
+      try {
+        const response = await fetchJSON('/api/v1/following/users');
+        S.followingUsers.clear();
+        
+        // 팔로우하는 사용자 ID들을 Set에 추가
+        if (response.following_user_ids) {
+          response.following_user_ids.forEach(id => {
+            S.followingUsers.add(id);
+          });
+        }
+        
+        console.log('팔로우 상태 로드됨:', S.followingUsers.size + '명');
+      } catch (error) {
+        console.warn('팔로우 상태 로드 실패:', error);
+        S.followingUsers.clear();
+      }
+    }
+
+    // 사용자 목록 렌더링
+    function renderUsers() {
+      const userListEl = document.getElementById('user-list');
+      const emptyStateEl = document.getElementById('empty-state');
+
+      if (!S.users.length) {
+        userListEl.style.display = 'none';
+        emptyStateEl.style.display = 'block';
+        return;
+      }
+
+      userListEl.style.display = 'grid';
+      emptyStateEl.style.display = 'none';
+
+      userListEl.innerHTML = S.users.map(user => renderUserCard(user)).join('');
+    }
+
+    // 사용자 카드 렌더링
+    function renderUserCard(user) {
+      const isFollowing = S.followingUsers.has(user.id);
+      const avatar = user.username ? user.username.slice(0, 2).toUpperCase() : 'U';
+      const isCurrentUser = S.currentUserId && user.id === S.currentUserId;
+      
+      return `
+        <div class="user-card">
+          <div class="user-header">
+            <div class="user-avatar">${avatar}</div>
+            <div class="user-info">
+              <div class="user-name">
+                ${escapeHtml(user.username || user.name || '이름없음')}
+                ${isCurrentUser ? '<span style="color:#6b7280;font-size:12px;margin-left:6px;">(나)</span>' : ''}
+              </div>
+              <div class="user-meta">
+                ${user.email ? escapeHtml(user.email) : ''}
+                ${user.created_at ? '• 가입일: ' + new Date(user.created_at).toLocaleDateString('ko-KR') : ''}
+              </div>
+            </div>
+          </div>
+          ${!isCurrentUser ? `
+            <div class="user-actions">
+              <button 
+                class="follow-btn ${isFollowing ? 'following' : ''}" 
+                onclick="toggleFollow(${user.id}, this)"
+                ${!getAccessToken() ? 'disabled' : ''}
+              >
+                ${isFollowing ? '언팔로우' : '팔로우'}
+              </button>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    function escapeHtml(s='') {
+      return String(s)
+        .replaceAll('&','&amp;').replaceAll('<','&lt;')
+        .replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
+    }
+
+    // 팔로우/언팔로우
+    async function toggleFollow(userId, btnEl) {
+      if (!getAccessToken()) {
+        alert('로그인이 필요합니다.');
+        return;
+      }
+
+      // 자기 자신을 팔로우하려는 경우 방지
+      if (S.currentUserId && userId === S.currentUserId) {
+        alert('자기 자신을 팔로우할 수 없습니다.');
+        return;
+      }
+
+      const isFollowing = S.followingUsers.has(userId);
+      
+      try {
+        if (isFollowing) {
+          await fetchJSON(`/api/v1/follow/${userId}`, { method: 'DELETE' });
+          S.followingUsers.delete(userId);
+          btnEl.classList.remove('following');
+          btnEl.textContent = '팔로우';
+        } else {
+          await fetchJSON(`/api/v1/follow/${userId}`, { method: 'POST' });
+          S.followingUsers.add(userId);
+          btnEl.classList.add('following');
+          btnEl.textContent = '언팔로우';
+        }
+        
+        console.log('팔로우 상태 업데이트:', userId, isFollowing ? '언팔로우' : '팔로우');
+      } catch (error) {
+        // 오류 발생 시 상태 되돌리기
+        if (isFollowing) {
+          S.followingUsers.add(userId);
+          btnEl.classList.add('following');
+          btnEl.textContent = '언팔로우';
+        } else {
+          S.followingUsers.delete(userId);
+          btnEl.classList.remove('following');
+          btnEl.textContent = '팔로우';
+        }
+        alert('팔로우 처리 중 오류가 발생했습니다: ' + error.message);
+      }
+    }
+
+    // 검색
+    async function performSearch() {
+      S.searchQuery = document.getElementById('search-input').value.trim();
+      S.currentPage = 1;
+      await loadUsers();
+    }
+
+    // 초기화
+    document.addEventListener('DOMContentLoaded', async () => {
+      // 검색 이벤트
+      document.getElementById('search-btn').addEventListener('click', performSearch);
+      document.getElementById('search-input').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') performSearch();
+      });
+
+      // 데이터 로드
+      await loadUsers();
+    });
+  </script>
+</body>
+</html>

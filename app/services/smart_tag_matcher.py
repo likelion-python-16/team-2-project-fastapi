@@ -54,20 +54,44 @@ class SmartTagMatcher:
         """
         if not query_text.strip() or not self.category_embeddings:
             return []
-            
-        # 쿼리 임베딩
+        
+        query_lower = query_text.lower().strip()
+        
+        # 1. 키워드 직접 매칭 (정확도 향상)
+        direct_matches = []
+        for category, keywords in self.category_keywords.items():
+            for keyword in keywords:
+                if query_lower in keyword.lower() or keyword.lower() in query_lower:
+                    direct_matches.append((category, 1.0))  # 최대 점수
+                    break
+        
+        # 2. NLP 임베딩 유사도 계산
         query_embedding = embed_texts([query_text])[0]
         
-        # 각 카테고리와의 유사도 계산
-        similarities = []
+        embedding_similarities = []
         for category, category_embedding in self.category_embeddings.items():
             similarity = np.dot(query_embedding, category_embedding)
-            similarities.append((category, float(similarity)))
+            embedding_similarities.append((category, float(similarity)))
         
-        # 유사도 높은 순으로 정렬
-        similarities.sort(key=lambda x: x[1], reverse=True)
+        # 3. 직접 매칭과 임베딩 결과 결합
+        category_scores = {}
         
-        return similarities[:top_k]
+        # 직접 매칭 점수 추가
+        for category, score in direct_matches:
+            category_scores[category] = max(category_scores.get(category, 0), score)
+        
+        # 임베딩 점수 추가 (가중치 0.5)
+        for category, score in embedding_similarities:
+            if category in category_scores:
+                # 직접 매칭이 있으면 임베딩 점수를 보조로만 사용
+                category_scores[category] = max(category_scores[category], score * 0.3 + category_scores[category])
+            else:
+                category_scores[category] = score * 0.7  # 임베딩만 있는 경우 가중치 적용
+        
+        # 점수 순으로 정렬
+        sorted_categories = sorted(category_scores.items(), key=lambda x: x[1], reverse=True)
+        
+        return sorted_categories[:top_k]
     
     def find_matching_keywords(self, query_text: str, category: str, threshold: float = 0.5) -> List[str]:
         """

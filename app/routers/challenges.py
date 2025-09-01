@@ -420,6 +420,73 @@ def get_challenge_recommendations(
             'fallback': True
         }
 
+# 새로운 스마트 검색 API (category_keywords.json 활용)
+@router.get("/smart-search")
+def smart_search_challenges(
+    q: Optional[str] = Query(None, description="검색어 (선택)"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+    status_filter: Literal["recruiting", "active", "completed", "cancelled"] = Query(
+        "recruiting", alias="status"
+    ),
+    location: Optional[str] = Query(None, description="장소 검색어 (선택)"),
+    start_from: Optional[date] = Query(None), start_to: Optional[date] = Query(None),
+    end_from: Optional[date] = Query(None), end_to: Optional[date] = Query(None),
+    sort_by: Literal["created_at", "start_date", "end_date", "title"] = Query("created_at"),
+    sort_dir: Literal["asc", "desc"] = Query("desc"),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+):
+    """스마트 태그 매칭을 활용한 챌린지 검색"""
+    try:
+        # Enhanced Challenge Search 서비스 사용
+        search_service = get_enhanced_challenge_search(db)
+        user_id = current_user.id if current_user else None
+        
+        if q and q.strip():
+            # 스마트 검색 실행
+            search_result = search_service.smart_search(
+                query=q.strip(),
+                limit=page_size * 2,  # 충분한 결과를 확보
+                user_id=user_id,
+                status_filter=status_filter
+            )
+            
+            # 직접 매칭 + 태그 기반 매칭 결합
+            matched_challenges = search_result['direct_matches']
+            recommended_by_tag_challenges = search_result['tag_based_matches']
+            
+            return {
+                "query": q.strip(),
+                "matched_challenges": matched_challenges[:page_size],
+                "recommended_by_tag_challenges": recommended_by_tag_challenges[:8],
+                "suggested_categories": search_result['suggested_categories'],
+                "query_analysis": search_result['query_analysis'],
+                "total": len(matched_challenges) + len(recommended_by_tag_challenges)
+            }
+        else:
+            # 빈 검색어일 때는 기본 dual_search 로직 사용
+            return dual_search(
+                q=q, page=page, page_size=page_size,
+                status_filter=status_filter, location=location,
+                start_from=start_from, start_to=start_to,
+                end_from=end_from, end_to=end_to,
+                sort_by=sort_by, sort_dir=sort_dir,
+                db=db
+            )
+            
+    except Exception as e:
+        logger.error(f"Smart search error: {e}")
+        # 폴백: 기본 검색 사용
+        return dual_search(
+            q=q, page=page, page_size=page_size,
+            status_filter=status_filter, location=location,
+            start_from=start_from, start_to=start_to,
+            end_from=end_from, end_to=end_to,
+            sort_by=sort_by, sort_dir=sort_dir,
+            db=db
+        )
+
 # -------------------------------------------------------------------
 # Create / List / Get / Update / Delete / Status
 # -------------------------------------------------------------------
@@ -494,7 +561,10 @@ async def create_challenge(
     db.add(new_challenge)
     db.flush()
 
-    # 태그 연결
+    # 태그 연결 (수동 태그 + AI 자동 태그)
+    connected_tags = set()
+    
+    # 1. 수동으로 지정된 태그들 연결
     if tags:
         for tag_text in tags:
             t = db.query(Tag).filter(Tag.tag == tag_text).first()
@@ -509,6 +579,39 @@ async def create_challenge(
             )
             if not exists:
                 db.add(ChallengeTag(challenge_id=new_challenge.id, tag_id=t.id))
+                connected_tags.add(tag_text)
+    
+    # 2. AI 자동 태그 예측 및 연결
+    try:
+        # 챌린지 제목과 설명을 합쳐서 분석
+        text_to_analyze = f"{new_challenge.title} {new_challenge.description or ''}".strip()
+        if text_to_analyze:
+            predicted_tag, confidence = predict_category(text_to_analyze)
+            
+            # 신뢰도가 0.3 이상이고 아직 연결되지 않은 태그인 경우 연결
+            if confidence > 0.3 and predicted_tag not in connected_tags:
+                # 예측된 태그가 데이터베이스에 존재하는지 확인
+                predicted_tag_obj = db.query(Tag).filter(
+                    Tag.tag == predicted_tag, 
+                    Tag.is_active == True
+                ).first()
+                
+                if predicted_tag_obj:
+                    # 이미 연결되어 있는지 확인
+                    exists = db.query(ChallengeTag).filter(
+                        ChallengeTag.challenge_id == new_challenge.id,
+                        ChallengeTag.tag_id == predicted_tag_obj.id
+                    ).first()
+                    
+                    if not exists:
+                        db.add(ChallengeTag(
+                            challenge_id=new_challenge.id, 
+                            tag_id=predicted_tag_obj.id
+                        ))
+                        logger.info(f"AI auto-tagged challenge {new_challenge.id} with '{predicted_tag}' (confidence: {confidence:.2f})")
+                        
+    except Exception as e:
+        logger.warning(f"AI auto-tagging failed for challenge {new_challenge.id}: {e}")
 
     # 회차 자동 생성
     await auto_create_rounds_on_challenge_create(db, new_challenge)
@@ -1474,4 +1577,105 @@ def get_challenge_statistics(challenge_id: int, db: Session = Depends(get_db)):
         "status": ch.status.value if hasattr(ch.status, 'value') else ch.status,
         "computed_status": _calculate_status(ch, db, date.today()),
         "payment_required": ch.is_payment_required() if hasattr(ch, 'is_payment_required') else (ch.payment_type != PaymentType.free),
+    }
+
+
+# ===== 태그 관련 API =====
+@router.post("/{challenge_id}/tags/{tag_name}")
+def add_tag_to_challenge(
+    challenge_id: int,
+    tag_name: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """챌린지에 태그 추가"""
+    # 챌린지 존재 확인
+    challenge = db.query(Challenge).filter(Challenge.id == challenge_id).first()
+    if not challenge:
+        raise HTTPException(status_code=404, detail="챌린지를 찾을 수 없습니다.")
+    
+    # 태그 존재 확인 및 생성
+    tag = db.query(Tag).filter(Tag.tag == tag_name, Tag.is_active == True).first()
+    if not tag:
+        tag = Tag(tag=tag_name, is_active=True)
+        db.add(tag)
+        db.flush()
+    
+    # 이미 연결된 태그인지 확인
+    existing = db.query(ChallengeTag).filter(
+        ChallengeTag.challenge_id == challenge_id,
+        ChallengeTag.tag_id == tag.id
+    ).first()
+    
+    if existing:
+        return {"message": "이미 연결된 태그입니다.", "tag": tag_name}
+    
+    # 태그 연결
+    challenge_tag = ChallengeTag(challenge_id=challenge_id, tag_id=tag.id)
+    db.add(challenge_tag)
+    db.commit()
+    
+    return {"message": "태그가 성공적으로 추가되었습니다.", "tag": tag_name}
+
+
+@router.post("/{challenge_id}/auto-tag")
+def auto_tag_challenge(
+    challenge_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """챌린지에 AI 기반 자동 태그 매칭"""
+    from app.services.predictor import predict_category
+    
+    # 챌린지 존재 확인
+    challenge = db.query(Challenge).filter(Challenge.id == challenge_id).first()
+    if not challenge:
+        raise HTTPException(status_code=404, detail="챌린지를 찾을 수 없습니다.")
+    
+    # 챌린지 텍스트로 AI 태그 예측
+    text_to_analyze = f"{challenge.title} {challenge.description or ''}".strip()
+    if not text_to_analyze:
+        raise HTTPException(status_code=400, detail="분석할 텍스트가 없습니다.")
+    
+    predicted_tag, confidence = predict_category(text_to_analyze)
+    
+    # 신뢰도가 낮으면 실패
+    if confidence < 0.3:
+        return {
+            "message": "적절한 태그를 찾지 못했습니다.",
+            "predicted_tag": predicted_tag,
+            "confidence": confidence
+        }
+    
+    # 예측된 태그가 실제로 존재하는지 확인
+    tag = db.query(Tag).filter(Tag.tag == predicted_tag, Tag.is_active == True).first()
+    if not tag:
+        return {
+            "message": f"예측된 태그 '{predicted_tag}'가 데이터베이스에 없습니다.",
+            "predicted_tag": predicted_tag,
+            "confidence": confidence
+        }
+    
+    # 이미 연결된 태그인지 확인
+    existing = db.query(ChallengeTag).filter(
+        ChallengeTag.challenge_id == challenge_id,
+        ChallengeTag.tag_id == tag.id
+    ).first()
+    
+    if existing:
+        return {
+            "message": "이미 연결된 태그입니다.",
+            "predicted_tag": predicted_tag,
+            "confidence": confidence
+        }
+    
+    # 태그 연결
+    challenge_tag = ChallengeTag(challenge_id=challenge_id, tag_id=tag.id)
+    db.add(challenge_tag)
+    db.commit()
+    
+    return {
+        "message": "AI 태그가 성공적으로 추가되었습니다.",
+        "predicted_tag": predicted_tag,
+        "confidence": confidence
     }

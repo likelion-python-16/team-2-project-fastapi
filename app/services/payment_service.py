@@ -107,26 +107,59 @@ class PaymentService:
         return payment
 
     def refund_payment(self, payment_id: int, user: User, amount: int, reason: str) -> Refund:
-        payment = self.db.query(Payment).filter(Payment.id == payment_id).first()
-        if not payment:
-            raise HTTPException(status_code=404, detail="결제를 찾을 수 없습니다")
-        
-        if payment.amount < amount:
-            raise HTTPException(status_code=400, detail="환불 금액이 결제 금액을 초과합니다")
-        
-        refund = Refund(
-            payment_id=payment_id,
-            user_id=user.id,
-            challenge_id=payment.challenge_id,
-            refund_amount=amount,
-            refund_reason=reason,
-            status=PaymentStatus.pending
-        )
-        
-        self.db.add(refund)
-        self.db.commit()
-        self.db.refresh(refund)
-        return refund
+        try:
+            payment = self.db.query(Payment).filter(Payment.id == payment_id).first()
+            if not payment:
+                raise HTTPException(status_code=404, detail="결제를 찾을 수 없습니다")
+            
+            # 중복 환불 방지: 기존 환불 내역 확인
+            existing_refunds = self.db.query(Refund).filter(
+                Refund.payment_id == payment_id,
+                Refund.status.in_([PaymentStatus.completed, PaymentStatus.pending])
+            ).all()
+            
+            total_refunded = sum(r.refund_amount for r in existing_refunds)
+            remaining_amount = payment.amount - total_refunded
+            
+            if remaining_amount <= 0:
+                raise HTTPException(status_code=400, detail="이미 전액 환불된 결제입니다")
+            
+            if amount > remaining_amount:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"환불 가능 금액을 초과합니다. 환불 가능: {remaining_amount}원, 요청: {amount}원"
+                )
+            
+            refund = Refund(
+                payment_id=payment_id,
+                user_id=user.id,
+                challenge_id=payment.challenge_id,
+                refund_amount=amount,
+                refund_reason=reason,
+                status=PaymentStatus.pending
+            )
+            
+            self.db.add(refund)
+            self.db.commit()
+            self.db.refresh(refund)
+            logger.info(f"환불 생성 완료: refund_id={refund.id}, payment_id={payment_id}, amount={amount}")
+            return refund
+        except HTTPException:
+            raise
+        except SQLAlchemyError as e:
+            self.db.rollback()
+            logger.error(f"환불 생성 중 DB 오류: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="환불 처리 중 오류가 발생했습니다"
+            )
+        except Exception as e:
+            self.db.rollback()
+            logger.error(f"환불 생성 중 오류: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="환불 처리 중 오류가 발생했습니다"
+            )
 
     def get_user_payments(self, user_id: int, challenge_id: int = None) -> list[Payment]:
         query = self.db.query(Payment).filter(Payment.user_id == user_id)

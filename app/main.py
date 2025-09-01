@@ -27,6 +27,7 @@ from .utils.logging import logger
 from .routers import (
     users, health, system, challenges, auth, homepage, follow,
     naver_maps, map, files, tags_categories, places, naver_local, pages, tags,
+    users_mypage, users_mypage_chat, users_mypage_more
 )
 from .routers import round_pictures, participations, payments
 from app.routers.challengecreating import router as challengecreating_router
@@ -77,6 +78,10 @@ async def dashboard_page(request: Request):
 @app.get("/users-list", response_class=HTMLResponse, tags=["Pages"])
 async def users_list_page(request: Request):
     return templates.TemplateResponse("users.html", {"request": request})
+
+@app.get("/mypage", response_class=HTMLResponse, tags=["Pages"])
+async def mypage_page(request: Request):
+    return templates.TemplateResponse("mypage.html", {"request": request})
 
 @app.get("/demo", response_class=HTMLResponse, tags=["Pages"])
 def get_demo(request: Request):
@@ -202,6 +207,10 @@ app.include_router(tags.router, prefix="/api/v1")  # AI 태그 검색 기능
 app.include_router(challengecreating_router)
 app.include_router(challengedetail_router)
 app.include_router(place_picker_router)
+app.include_router(users_mypage.router)
+app.include_router(users_mypage_chat.router)
+app.include_router(users_mypage_more.router)
+app.include_router(users_mypage.page_router)
 
 # ---------------------------
 # Seed default tags on startup

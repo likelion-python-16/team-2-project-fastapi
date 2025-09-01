@@ -7,6 +7,24 @@ from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/tags", tags=["Tags"])
 
+@router.get("/", response_model=list)
+def get_all_tags(
+    active_only: bool = Query(True, description="활성 태그만 조회"),
+    limit: int = Query(50, ge=1, le=200, description="조회할 태그 수"), 
+    db: Session = Depends(get_db)
+):
+    """태그 목록 조회 (루트 엔드포인트)"""
+    from app.models import Tag
+    
+    query = db.query(Tag)
+    if active_only:
+        query = query.filter(Tag.is_active == True)
+    
+    tags = query.limit(limit).all()
+    
+    # JavaScript에서 배열을 직접 기대하므로 태그 배열만 반환
+    return [{"id": tag.id, "tag": tag.tag, "is_active": tag.is_active} for tag in tags]
+
 @router.post("/search", response_model=TagAIResponse)
 def search_tags(req: TagAIRequest):
     tag, score = predict_category(req.query)
@@ -109,3 +127,71 @@ def seed_defaults(db: Session = Depends(get_db)):
         inserted += 1
     db.commit()
     return {"inserted": inserted, "skipped": skipped, "total": len(store.centroid_labels)}
+
+@router.post("/seed-categories")
+def seed_categories(db: Session = Depends(get_db)):
+    """category_keywords.json의 카테고리들을 태그로 추가"""
+    import json
+    from pathlib import Path
+    from app.models import Tag
+    
+    # category_keywords.json 로드
+    keywords_path = Path("data/category_keywords.json")
+    if not keywords_path.exists():
+        raise HTTPException(status_code=404, detail="category_keywords.json 파일을 찾을 수 없습니다")
+    
+    with open(keywords_path, 'r', encoding='utf-8') as f:
+        category_keywords = json.load(f)
+    
+    inserted, skipped = 0, 0
+    categories = list(category_keywords.keys())
+    
+    for category in categories:
+        category = category.strip()
+        if not category:
+            continue
+            
+        exists = db.query(Tag).filter(Tag.tag == category).first()
+        if exists:
+            skipped += 1
+            continue
+            
+        tag = Tag(
+            tag=category,
+            is_active=True,
+            icon_url=None,
+            embedding=None,
+            embedding_model=None,
+            embedding_updated_at=None
+        )
+        db.add(tag)
+        inserted += 1
+    
+    db.commit()
+    return {
+        "inserted": inserted, 
+        "skipped": skipped, 
+        "total": len(categories),
+        "categories": categories[:10] if len(categories) > 10 else categories  # 처음 10개만 표시
+    }
+
+@router.get("/list")
+def list_tags(
+    active_only: bool = Query(True, description="활성 태그만 조회"),
+    limit: int = Query(50, ge=1, le=200, description="조회할 태그 수"), 
+    db: Session = Depends(get_db)
+):
+    """데이터베이스의 모든 태그 목록 조회"""
+    from app.models import Tag
+    
+    query = db.query(Tag)
+    if active_only:
+        query = query.filter(Tag.is_active == True)
+    
+    tags = query.limit(limit).all()
+    
+    return {
+        "tags": [{"id": tag.id, "tag": tag.tag, "is_active": tag.is_active} for tag in tags],
+        "count": len(tags),
+        "total": db.query(Tag).count()
+    }
