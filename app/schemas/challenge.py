@@ -1,4 +1,3 @@
-# app/schemas/challenge.py
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -95,8 +94,9 @@ class ChallengeCreate(BaseModel):
     # 기본 정보
     title: str
     description: Optional[str] = None
-    start_date: Optional[date] = None
-    end_date: Optional[date] = None
+    # ▶ DB NOT NULL과 일치: 필수로 변경
+    start_date: date
+    end_date: date
 
     # 요금
     fee: Optional[int] = 0
@@ -339,7 +339,8 @@ class ChallengeOut(BaseModel):
     mode: ChallengeMode
     default_zoom_link: Optional[str] = None
 
-    same_place_for_all_rounds: Optional[bool] = None
+    # ▶ 응답에서 null 방지: bool 로 고정
+    same_place_for_all_rounds: bool
     default_place_name: Optional[str] = None
     default_road_address: Optional[str] = None
     default_address: Optional[str] = None

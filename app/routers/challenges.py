@@ -7,6 +7,7 @@ from typing import List, Optional, Literal
 from datetime import date, time
 
 from app.core.database import get_db
+from app.security import get_current_user
 
 # Models
 from app.models.user import User
@@ -37,9 +38,9 @@ router = APIRouter(prefix="/challenges", tags=["challenges"])
 # -------------------------------------------------------------------
 # Helpers
 # -------------------------------------------------------------------
-def get_current_user_id() -> int:
-    # TODO: replace with real auth
-    return 1
+def get_current_user_id(current_user = Depends(get_current_user)) -> int:
+    """Return authenticated user's id or raise 401 via dependency."""
+    return int(getattr(current_user, 'id'))
 
 def _fee_validation(
     fee: Optional[int],
@@ -276,8 +277,8 @@ def dual_search(
 async def create_challenge(
     challenge_data: ChallengeCreate,
     db: Session = Depends(get_db),
+    me: int = Depends(get_current_user_id),
 ):
-    me = get_current_user_id()
     _validate_common_business_rules(
         challenge_data.start_date, challenge_data.end_date,
         challenge_data.fee, challenge_data.participation_fee,

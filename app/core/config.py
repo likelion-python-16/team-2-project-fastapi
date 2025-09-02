@@ -2,7 +2,8 @@
 import os
 from enum import Enum
 from functools import lru_cache
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
 from dotenv import load_dotenv
 
 # Ensure values from .env override any pre-set envs in container
@@ -19,6 +20,16 @@ class Settings(BaseSettings):
     project_version: str = "1.0.0"
     project_description: str = "팀프로젝트 FastAPI 백엔드"
     id_fingerprint_secret: str
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="forbid",      # 🔒 모르는 키는 금지(엄격 모드로 유지하고 싶으면)
+        case_sensitive=False
+    )
+
+    # ✅ JUSO 키를 정식 필드로 선언(대문자 ENV와 매핑)
+    juso_search_api_key: str | None = Field(default=None, alias="JUSO_SEARCH_API_KEY")
+    juso_coord_api_key:  str | None = Field(default=None, alias="JUSO_COORD_API_KEY")
 
     # NAVER Cloud Platform - Maps
     naver_maps_client_id: str = os.getenv("NAVER_MAPS_CLIENT_ID", "")
@@ -124,10 +135,6 @@ class Settings(BaseSettings):
         if missing_keys:
             raise RuntimeError(f"Missing required environment variables: {', '.join(missing_keys)}")
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
-
 class DevelopmentSettings(Settings):
     environment: Environment = Environment.DEVELOPMENT
     debug: bool = True
@@ -166,3 +173,4 @@ AWS_REGION = settings.aws_region
 AWS_ACCESS_KEY_ID = settings.aws_access_key_id
 AWS_SECRET_ACCESS_KEY = settings.aws_secret_access_key
 S3_BUCKET = settings.s3_bucket
+

@@ -1,10 +1,10 @@
-# app/models/challenge.py 업데이트
-
 from sqlalchemy import Column, Integer, String, Text, Date, Boolean, ForeignKey, DateTime, func, Enum, Float
 from sqlalchemy.orm import relationship
 from .base import Base
 from app.models.round_manager import RoundManager  # 필요시 상대 import 대신 문자열로도 가능
 from datetime import date
+# ✅ 추가: SAEnum 별칭 import (기존 Enum과 충돌 방지)
+from sqlalchemy import Enum as SAEnum
 
 class Challenge(Base):
     __tablename__ = "challenges"
@@ -16,8 +16,16 @@ class Challenge(Base):
     creator_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=False)
-    status = Column(String(20), default="recruiting", comment="챌린지 상태")
+    # ✅ 교체: String(20) -> SAEnum (ENUM 제약 + DEFAULT)
+    status = Column(
+        SAEnum("recruiting", "active", "completed", "cancelled", name="challenge_status_enum"),
+        nullable=False,
+        server_default="recruiting",
+        comment="챌린지 상태",
+    )
     created_at = Column(DateTime, default=func.now())
+    # ✅ 추가: updated_at (onupdate)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
     
     # 🆕 1단계: 핵심 필드들 (결제/참가 관련)
     fee = Column(Integer, default=0, comment="회비 (원)")
@@ -77,7 +85,8 @@ class Challenge(Base):
 
 
     # 모드 & 기본값
-    mode = Column(Enum("online", "offline", "hybrid", name="challenge_mode_enum"), nullable=True)
+    mode = Column(Enum("online", "offline", "hybrid", name="challenge_mode_enum"),
+              nullable=False, server_default="hybrid")
     default_zoom_link = Column(Text, nullable=True)
     default_place_name = Column(String(255), nullable=True)
     default_road_address = Column(String(255), nullable=True)
