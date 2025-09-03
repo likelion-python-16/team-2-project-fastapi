@@ -157,12 +157,12 @@ def get_home_sections(
     # -----------------------------
     follow_cards: List[ChallengeCard] = []
     if current_user:
-        # following 테이블: (follower_id -> followee_id)
+        # following 테이블: (follower_id -> following_id)
         # 모델명이 Following이라면 import: from app.models.following import Following
         from app.models.following import Following  # 루프 상단 import를 피하기 위해 여기서 import
 
         followee_ids_subq = (
-            db.query(Following.followee_id)
+            db.query(Following.following_id)
             .filter(Following.follower_id == current_user.id)
             .subquery()
         )

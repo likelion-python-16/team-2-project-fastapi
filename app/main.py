@@ -5,6 +5,7 @@ from pathlib import Path
 from datetime import datetime
 
 from fastapi import FastAPI, Request
+from fastapi import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -29,6 +30,12 @@ from app.web.routes_verify import router as verify_pages_router
 from app.routers.pages import router as pages_router  # ✅ /signup 등 페이지 라우터
 from app.routers import auth_social
 from starlette.middleware.sessions import SessionMiddleware
+from app.core.database import SessionLocal as _SessionLocal
+from app.security import verify_token as _verify_token
+
+# Admin routers
+from app.routers import admin_auth as _admin_auth
+from app.routers import admin_pages as _admin_pages
 
 app = FastAPI(
     title=settings.project_name,
@@ -58,12 +65,76 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
+# Graceful redirects for admin HTML requests when unauthorized
+@app.exception_handler(HTTPException)
+async def http_exception_to_redirect(request: Request, exc: HTTPException):
+    try:
+        path = request.url.path or ''
+        accepts_html = 'text/html' in (request.headers.get('accept') or '')
+        if path.startswith('/admin') and accepts_html:
+            # 401/403 → redirect to proper admin page
+            if exc.status_code in (401, 403):
+                # If logged-in admin present in request.state → go to /admin
+                try:
+                    u = getattr(request.state, 'user', None)
+                    if u is not None and getattr(u, 'is_admin', False):
+                        return RedirectResponse(url='/admin', status_code=303)
+                except Exception:
+                    pass
+                # Otherwise go to admin login
+                return RedirectResponse(url='/admin/login', status_code=303)
+    except Exception:
+        pass
+    # Fallback: default JSON error
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+# Lightweight middleware to inject current user + admin_mode flag from cookie
+@app.middleware("http")
+async def inject_current_user_from_cookie(request, call_next):
+    try:
+        token = request.cookies.get("access_token")
+        if token:
+            payload = _verify_token(token)
+            if payload and payload.get("sub"):
+                # DB lookup
+                db = _SessionLocal()
+                try:
+                    from app.models.user import User as _User
+                    uid = payload.get("sub")
+                    user = None
+                    try:
+                        user = db.query(_User).filter(_User.id == int(uid)).first()
+                    except Exception:
+                        pass
+                    if not user and uid:
+                        # fallback to username
+                        if hasattr(_User, "username"):
+                            user = db.query(_User).filter(_User.username == str(uid)).first()
+                    if user:
+                        request.state.user = user
+                        # propagate admin_mode for templates
+                        try:
+                            request.state.admin_mode = bool(payload.get("admin_mode"))
+                        except Exception:
+                            request.state.admin_mode = False
+                finally:
+                    db.close()
+    except Exception:
+        pass
+    response = await call_next(request)
+    return response
+
 # ---------------------------
 # Pages (여기서 직접 라우팅)
 # ---------------------------
 @app.get("/home", response_class=HTMLResponse, tags=["Pages"])
 async def home_page(request: Request):
     return templates.TemplateResponse("home.html", {"request": request})
+
+@app.get("/admin/welcome", response_class=HTMLResponse, tags=["Admin Pages"])
+async def admin_welcome_page(request: Request):
+    return templates.TemplateResponse("welcome.html", {"request": request})
 
 @app.get("/login", response_class=HTMLResponse, tags=["Pages"])
 async def login_page(request: Request):
@@ -180,6 +251,8 @@ app.include_router(files.router, prefix="/api/v1")
 app.include_router(tags_categories.router, prefix="/api/v1")  # ✅ 한 번만
 app.include_router(place_picker_router)                         # /pages/place-picker
 app.include_router(pages_router)                                # ✅ /signup, /signup/step2, ...
+app.include_router(_admin_auth.router)                          # /admin auth (signup/login/logout)
+app.include_router(_admin_pages.router)                         # /admin pages & management
 
 # 이메일 인증 성공/실패 페이지
 app.include_router(verify_pages_router)
@@ -201,6 +274,13 @@ def seed_tags_if_empty():
         db.commit()
     finally:
         db.close()
+
+
+@app.on_event("startup")
+def seed_master_admin_if_needed():
+    # With single User model, master admin seeding is optional and can be done via DB or API.
+    # Keeping placeholder in case we later want to auto-create a master user.
+    return
 
 if __name__ == "__main__":
     import uvicorn

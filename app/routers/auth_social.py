@@ -9,7 +9,14 @@ import secrets
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.user import User
-from app.security import create_access_token, create_refresh_token, validate_password_strength
+from app.security import (
+    create_access_token,
+    create_refresh_token,
+    validate_password_strength,
+    id_fingerprint,
+    normalize_phone,
+)
+from sqlalchemy.exc import IntegrityError
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -490,7 +497,74 @@ async def social_finalize(request: Request, payload: dict = Body(...), db: Sessi
     user.region_living = payload.get('region_living') or ''
     user.region_active = payload.get('region_active') or ''
 
-    db.add(user); db.commit(); db.refresh(user)
+    # 선제 중복 검사: 전화번호/식별번호 충돌 시 명확한 409 반환
+    try:
+        if payload.get('phone'):
+            try:
+                p_norm = normalize_phone(payload.get('phone'))
+                p_fp = id_fingerprint(p_norm) if p_norm else None
+                if p_fp:
+                    exists_phone = db.query(User.id).filter(User.phone_fingerprint == p_fp).first()
+                    if exists_phone:
+                        raise HTTPException(409, '이미 사용 중인 전화번호입니다')
+            except Exception:
+                # normalize 실패 등은 set_phone 단계에서 형식 오류로 처리되지 않으므로 무시
+                pass
+        if payload.get('identification_number'):
+            try:
+                ident_fp = id_fingerprint(payload.get('identification_number'))
+                if ident_fp:
+                    exists_ident = db.query(User.id).filter(User.identification_fingerprint == ident_fp).first()
+                    if exists_ident:
+                        raise HTTPException(409, '이미 사용 중인 주민등록번호입니다')
+            except Exception:
+                pass
+
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    except HTTPException:
+        # 위에서 올린 409 그대로 전달
+        raise
+    except IntegrityError:
+        # 유니크 제약 위반 등
+        db.rollback()
+        raise HTTPException(409, '중복된 정보가 있어 가입을 완료할 수 없습니다')
+    
+    # 태그 처리: introduction이 JSON 형태면 파싱해서 UserTag 테이블에 저장
+    intro_data = payload.get('introduction', '')
+    if intro_data:
+        try:
+            import json
+            from app.models.tag import Tag, UserTag
+            parsed = json.loads(intro_data)
+            if isinstance(parsed, dict) and 'interests' in parsed:
+                keywords = parsed.get('interests', {}).get('keywords', [])
+                # bio만 introduction에 저장
+                user.introduction = parsed.get('bio', '').strip()
+                
+                # 태그들을 UserTag 테이블에 저장
+                for keyword in keywords:
+                    if keyword and isinstance(keyword, str):
+                        keyword = keyword.strip()
+                        # 태그가 존재하지 않으면 생성
+                        tag = db.query(Tag).filter(Tag.tag == keyword).first()
+                        if not tag:
+                            tag = Tag(tag=keyword, is_active=True)
+                            db.add(tag)
+                            db.commit()
+                            db.refresh(tag)
+                        
+                        # 중복 방지: 이미 연결되어 있지 않으면 UserTag 생성
+                        existing = db.query(UserTag).filter(UserTag.user_id == user.id, UserTag.tag_id == tag.id).first()
+                        if not existing:
+                            user_tag = UserTag(user_id=user.id, tag_id=tag.id)
+                            db.add(user_tag)
+                
+                db.commit()
+        except (json.JSONDecodeError, Exception):
+            # JSON 파싱 실패 시 그냥 텍스트로 저장
+            pass
 
     # 세션 비우기
     try:

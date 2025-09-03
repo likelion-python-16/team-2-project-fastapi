@@ -1,0 +1,39 @@
+{% extends "final.html" %}
+{% block title %}로그인 유형 선택 - Team Project{% endblock %}
+{% block content %}
+<style> body { flex-direction: column; } </style>
+<div class="flex items-center justify-center grow">
+  <div class="kt-card max-w-[420px] w-full mt-10">
+    <div class="kt-card-content flex flex-col gap-5 p-10">
+      <div class="text-center mb-6">
+        <h3 class="text-lg font-medium leading-none mb-2.5">로그인 유형 선택</h3>
+        <div class="text-sm text-muted-foreground">
+          어떤 유형으로 로그인하시겠습니까?
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-3">
+        <button id="hasAccountBtn" class="kt-btn kt-btn-primary flex justify-center">
+          일반 계정을 갖고 계신가요?
+        </button>
+        
+        <button id="newUserBtn" class="kt-btn kt-btn-outline flex justify-center">
+          Challengers를 처음 가입하시는 걸까요?
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// 일반 계정이 있는 경우 - 관리자 신청하기로 이동
+document.getElementById('hasAccountBtn').addEventListener('click', function() {
+  window.location.href = '/admin/signup-request1';
+});
+
+// 새 사용자인 경우 - 관리자 회원가입 신청으로 이동
+document.getElementById('newUserBtn').addEventListener('click', function() {
+  window.location.href = '/admin/signup-request2';
+});
+</script>
+{% endblock %}

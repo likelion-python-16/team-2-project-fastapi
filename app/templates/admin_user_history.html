@@ -1,0 +1,63 @@
+{% extends "final.html" %}
+{% block title %}관리자 권한 히스토리 - Team Project{% endblock %}
+{% block content %}
+<style> body { flex-direction: column; } </style>
+<div class="max-w-[900px] mx-auto py-8 w-full">
+  <h2 class="text-lg font-semibold mb-3">관리자 권한 히스토리</h2>
+  <div class="mb-4 text-sm">대상: {{ target.name }} ({{ target.username }}) · {{ target.email }}</div>
+  <div class="grid grid-cols-1 md:grid-cols-1 gap-4">
+    <div class="kt-card">
+      <div class="kt-card-content p-4">
+        <div class="font-medium mb-2">신청 이력(AdminRequest)</div>
+        {% if reqs %}
+        <table class="kt w-full">
+          <thead><tr><th>ID</th><th>상태</th><th>신청일</th><th>처리일</th></tr></thead>
+          <tbody>
+          {% for r in reqs %}
+            <tr>
+              <td>#{{ r.id }}</td>
+              <td>{{ '대기중' if r.status=='pending' else ('승인됨' if r.status=='approved' else '거절됨') }}</td>
+              <td>{{ r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else '-' }}</td>
+              <td>{{ r.reviewed_at.strftime('%Y-%m-%d %H:%M') if r.reviewed_at else '-' }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+          <div class="text-sm text-muted-foreground">신청 이력이 없습니다.</div>
+        {% endif %}
+      </div>
+    </div>
+    {% if audits and audits|length > 0 %}
+      <div class="kt-card">
+        <div class="kt-card-content p-4">
+          <div class="font-medium mb-2">관리 액션 로그</div>
+          <table class="kt w-full">
+            <thead><tr><th>시간</th><th>액션</th><th>처리자</th></tr></thead>
+            <tbody>
+            {% for a in audits %}
+              <tr>
+                <td>{{ a.created_at.strftime('%Y-%m-%d %H:%M') if a.created_at else '-' }}</td>
+                <td>
+                  {% if a.action=='applied' %}신청{% endif %}
+                  {% if a.action=='approved' %}승인{% endif %}
+                  {% if a.action=='rejected' %}거절{% endif %}
+                  {% if a.action=='auto_rejected' %}자동 거절{% endif %}
+                  {% if a.action=='promoted_super' %}책임관리자 임명{% endif %}
+                  {% if a.action=='demoted_super_only' %}책임관리자만 해제{% endif %}
+                  {% if a.action=='demoted_all' %}모든 권한 해제{% endif %}
+                </td>
+                <td>{{ a.actor.username if a.actor else '-' }}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+  <div class="mt-4">
+    <a href="/admin" class="kt-btn">뒤로</a>
+  </div>
+</div>
+{% endblock %}

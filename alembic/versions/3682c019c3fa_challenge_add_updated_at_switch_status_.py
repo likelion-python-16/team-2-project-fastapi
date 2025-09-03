@@ -17,49 +17,79 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _column_exists(table: str, column: str) -> bool:
+    conn = op.get_bind()
+    sql = sa.text("""
+        SELECT COUNT(*) AS cnt
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = :t
+          AND COLUMN_NAME = :c
+    """)
+    return bool(conn.execute(sql, {"t": table, "c": column}).scalar())
+
+
 def upgrade() -> None:
-    # 1) updated_at 추가 (임시 default now())
-    op.add_column(
-        "challenges",
-        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False),
-    )
-    #   └ MySQL에서 ON UPDATE CURRENT_TIMESTAMP 보장 (Alembic 표현 미흡 → RAW SQL로 보정)
-    op.execute(
-        """
-        ALTER TABLE challenges
-        MODIFY COLUMN updated_at DATETIME
-        NOT NULL DEFAULT CURRENT_TIMESTAMP
-        ON UPDATE CURRENT_TIMESTAMP
-        """
-    )
+    # 1) updated_at: 없으면 추가
+    if not _column_exists("challenges", "updated_at"):
+        op.add_column(
+            "challenges",
+            sa.Column("updated_at", sa.DateTime(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False),
+        )
+
+    # 1-1) ON UPDATE CURRENT_TIMESTAMP 보정 (이미 되어있어도 통과)
+    try:
+        op.execute(
+            """
+            ALTER TABLE challenges
+            MODIFY COLUMN updated_at DATETIME
+            NOT NULL DEFAULT CURRENT_TIMESTAMP
+            ON UPDATE CURRENT_TIMESTAMP
+            """
+        )
+    except Exception:
+        pass
 
     # 2) status 사전정리(혹시 모를 NULL/빈값)
-    op.execute("UPDATE challenges SET status='recruiting' WHERE status IS NULL OR status=''")
+    try:
+        op.execute("UPDATE challenges SET status=recruiting WHERE status IS NULL OR status=")
+    except Exception:
+        pass
 
-    # 3) status: VARCHAR(20) → ENUM + NOT NULL + DEFAULT 'recruiting'
-    op.alter_column(
-        "challenges",
-        "status",
-        existing_type=mysql.VARCHAR(length=20),
-        type_=sa.Enum("recruiting", "active", "completed", "cancelled", name="challenge_status_enum"),
-        existing_nullable=True,                 # 자동생성본 힌트 값, 실상태와 무관
-        nullable=False,                         # 확실히 NOT NULL
-        existing_comment="챌린지 상태",
-        server_default=sa.text("'recruiting'"), # 기본값 보장
-    )
+    # 3) status: VARCHAR(20) → ENUM + NOT NULL + DEFAULT recruiting
+    try:
+        op.alter_column(
+            "challenges",
+            "status",
+            existing_type=mysql.VARCHAR(length=20),
+            type_=sa.Enum("recruiting", "active", "completed", "cancelled", name="challenge_status_enum"),
+            existing_nullable=True,
+            nullable=False,
+            existing_comment="챌린지 상태",
+            server_default=sa.text("recruiting"),
+        )
+    except Exception:
+        pass
 
 
 def downgrade() -> None:
     # status: ENUM → VARCHAR(20) (NOT NULL + DEFAULT 유지)
-    op.alter_column(
-        "challenges",
-        "status",
-        existing_type=sa.Enum("recruiting", "active", "completed", "cancelled", name="challenge_status_enum"),
-        type_=mysql.VARCHAR(length=20),
-        nullable=False,                          # ← nullable=True 였던 자동본을 수정
-        existing_comment="챌린지 상태",
-        server_default=sa.text("'recruiting'"),
-    )
+    try:
+        op.alter_column(
+            "challenges",
+            "status",
+            existing_type=sa.Enum("recruiting", "active", "completed", "cancelled", name="challenge_status_enum"),
+            type_=mysql.VARCHAR(length=20),
+            nullable=False,
+            existing_comment="챌린지 상태",
+            server_default=sa.text("recruiting"),
+        )
+    except Exception:
+        pass
 
-    # updated_at 제거
-    op.drop_column("challenges", "updated_at")
+    # updated_at: 있으면 제거
+    try:
+        if _column_exists("challenges", "updated_at"):
+            op.drop_column("challenges", "updated_at")
+    except Exception:
+        pass

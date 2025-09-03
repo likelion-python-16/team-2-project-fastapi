@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Body, Request
+from fastapi.responses import JSONResponse
 from fastapi.responses import RedirectResponse
 from sqlalchemy import or_, func
 from sqlalchemy.orm import Session
@@ -184,6 +185,42 @@ def signup(payload: SignUpIn, db: Session = Depends(get_db)):
         db.add(user)
         db.commit()
         db.refresh(user)
+        
+        # 태그 처리: introduction이 JSON 형태면 파싱해서 UserTag 테이블에 저장
+        intro_data = payload.introduction or ""
+        if intro_data:
+            try:
+                import json
+                from app.models.tag import Tag, UserTag
+                parsed = json.loads(intro_data)
+                if isinstance(parsed, dict) and 'interests' in parsed:
+                    keywords = parsed.get('interests', {}).get('keywords', [])
+                    # bio만 introduction에 저장
+                    user.introduction = parsed.get('bio', '').strip()
+                    
+                    # 태그들을 UserTag 테이블에 저장
+                    for keyword in keywords:
+                        if keyword and isinstance(keyword, str):
+                            keyword = keyword.strip()
+                            # 태그가 존재하지 않으면 생성
+                            tag = db.query(Tag).filter(Tag.tag == keyword).first()
+                            if not tag:
+                                tag = Tag(tag=keyword, is_active=True)
+                                db.add(tag)
+                                db.commit()
+                                db.refresh(tag)
+                            
+                            # 중복 방지: 이미 연결되어 있지 않으면 UserTag 생성
+                            existing = db.query(UserTag).filter(UserTag.user_id == user.id, UserTag.tag_id == tag.id).first()
+                            if not existing:
+                                user_tag = UserTag(user_id=user.id, tag_id=tag.id)
+                                db.add(user_tag)
+                    
+                    db.commit()
+            except (json.JSONDecodeError, Exception):
+                # JSON 파싱 실패 시 그냥 텍스트로 저장
+                pass
+        
         logger.info(f"회원가입(미인증) 생성: user_id={user.id}, username={user.username}")
 
         # 정책: 이메일 인증 요구 여부
@@ -286,7 +323,20 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
             detail={"code": "EMAIL_NOT_VERIFIED", "message": "이메일 인증이 필요합니다."},
         )
     if not user.is_active:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="비활성화된 계정입니다.")
+        # 관리자 권한 신청 중인 상태 확인
+        from app.models.admin_request import AdminRequest
+        pending_request = db.query(AdminRequest).filter(
+            AdminRequest.user_id == user.id,
+            AdminRequest.status == "pending"
+        ).first()
+        
+        if pending_request:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN, 
+                detail="승인 절차 중입니다. 좀 더 기다려주세요."
+            )
+        else:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="비활성화된 계정입니다.")
 
     try:
         user.token_version = (user.token_version or 0) + 1
@@ -646,7 +696,12 @@ def request_password_reset(payload: dict = Body(...), db: Session = Depends(get_
         expires_at=datetime.now(timezone.utc) + timedelta(minutes=settings.email_token_expire_minutes),
     )
     db.add(ev); db.commit()
-    html, text = build_password_reset_email(token, user.username)
+    flow = (payload.get("flow") or "").strip() or None
+    return_to = (payload.get("return_to") or "").strip() or None
+    # 안전 위하여 내부 경로만 허용 (http, // 등 시작 제거)
+    if return_to and not return_to.startswith('/'):
+        return_to = None
+    html, text = build_password_reset_email(token, user.username, flow, return_to)
     send_email(user.email, "[Challengers] 비밀번호 재설정", html, text)
     return {"message": "비밀번호 재설정 메일을 보냈습니다. 메일함을 확인해 주세요."}
 
@@ -710,8 +765,15 @@ def refresh_token(payload: RefreshTokenIn, db: Session = Depends(get_db)):
     return TokenOut(access_token=new_access, refresh_token=new_refresh, token_type="bearer")
 
 @router.post("/logout")
-def logout():
-    return {"message": "로그아웃되었습니다"}
+def logout(request: Request):
+    """브라우저 폼에서 호출되는 로그아웃: 쿠키 제거 후 관리자 로그인으로 이동."""
+    resp = RedirectResponse(url="/admin/login", status_code=303)
+    # access_token 쿠키 제거로 세션 정리
+    try:
+        resp.delete_cookie("access_token", path="/")
+    except Exception:
+        pass
+    return resp
 
 # ------------------------
 # 인증 메일 재전송 (email 직접)
@@ -912,7 +974,16 @@ def _front_base_from_request(request: Request) -> str:
 # 비밀번호 재설정 링크 → 프론트로 리디렉션
 # ------------------------
 @router.get('/password-reset/redirect')
-def password_reset_redirect(token: str, request: Request):
+def password_reset_redirect(token: str, request: Request, flow: str | None = None, return_to: str | None = None):
     base = _front_base_from_request(request)
-    url = f"{base}/login?reset_token={token}"
+    from urllib.parse import quote_plus
+    parts = []
+    if flow:
+        parts.append(f"flow={quote_plus(flow)}")
+    if return_to:
+        # 내부 경로만 허용
+        if return_to.startswith('/'):
+            parts.append(f"return_to={quote_plus(return_to)}")
+    qs = ("&"+"&".join(parts)) if parts else ""
+    url = f"{base}/login?reset_token={quote_plus(token)}{qs}"
     return RedirectResponse(url, status_code=303)

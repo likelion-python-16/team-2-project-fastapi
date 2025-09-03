@@ -1,0 +1,199 @@
+{% extends "final.html" %}
+{% block title %}관리자 신청 (신규 가입) - Team Project{% endblock %}
+{% block content %}
+<style> body { flex-direction: column; } .hint{font-size:12px;color:#6b7280} </style>
+<div class="flex items-center justify-center grow">
+  <div class="kt-card max-w-[520px] w-full mt-10">
+    <form id="adminApplyForm" class="kt-card-content flex flex-col gap-4 p-10" action="/admin/signup-request" method="post">
+      <div class="text-center mb-2.5">
+        <h3 class="text-lg font-medium leading-none mb-2.5">관리자 신청 (신규 가입)</h3>
+        <div class="text-sm text-muted-foreground">
+          이미 계정이 있으신가요?
+          <a class="link" href="/admin/login">관리자 로그인</a>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 gap-3">
+        {% if error %}
+        <div class="text-center">
+          <div class="text-red-600 text-sm font-medium">{{ error }}</div>
+        </div>
+        {% endif %}
+        <div id="dupError2" class="hidden">
+          <div class="kt-alert kt-alert-danger p-3 rounded-lg text-sm">중복된 항목이 있습니다. 입력값을 확인해 주세요.</div>
+        </div>
+        <!-- 이름 -->
+        <div class="flex flex-col gap-1">
+          <label class="kt-form-label font-normal">이름 <span class="text-danger">*</span></label>
+          <input class="kt-input" name="name" placeholder="예: 김철수" required />
+        </div>
+        <!-- 사용자명 -->
+        <div class="flex flex-col gap-1">
+          <label class="kt-form-label font-normal">사용자명 <span class="text-danger">*</span></label>
+          <input class="kt-input" name="username" placeholder="영문/숫자, 3~50자" minlength="3" maxlength="50" required />
+          <div id="errUsername" class="text-xs text-red-600 hidden">이미 사용 중인 사용자명입니다.</div>
+        </div>
+        <!-- 이메일: 분리 입력 후 hidden 합치기 -->
+        <div class="flex flex-col gap-1">
+          <label class="kt-form-label font-normal">이메일 <span class="text-danger">*</span></label>
+          <div class="flex gap-2">
+            <input class="kt-input flex-1" id="email_id" placeholder="아이디" required />
+            <span class="self-center">@</span>
+            <select class="kt-input w-40" id="email_domain_sel">
+              <option value="gmail.com">gmail.com</option>
+              <option value="naver.com">naver.com</option>
+              <option value="hotmail.com">hotmail.com</option>
+              <option value="hanmail.net">hanmail.net</option>
+              <option value="custom">직접 입력</option>
+            </select>
+          </div>
+          <input class="kt-input mt-2 hidden" id="email_domain_custom" placeholder="도메인 직접 입력" />
+          <input type="hidden" name="email" id="email_full" />
+          <div class="hint">아이디와 도메인을 선택(또는 직접 입력)하세요.</div>
+          <div id="errEmail" class="text-xs text-red-600 hidden">이미 사용 중인 이메일입니다.</div>
+        </div>
+        <!-- 전화번호 -->
+        <div class="flex flex-col gap-1">
+          <label class="kt-form-label font-normal">전화번호</label>
+          <input class="kt-input" name="phone" id="phone" placeholder="010-1234-5678" />
+          <div class="hint">010으로 시작하는 11자리만 허용됩니다.</div>
+          <div id="errPhone" class="text-xs text-red-600 hidden">이미 등록된 전화번호입니다.</div>
+        </div>
+        <!-- 주민등록번호 -->
+        <div class="flex flex-col gap-1">
+          <label class="kt-form-label font-normal">주민등록번호</label>
+          <input class="kt-input" name="ident" id="ident" placeholder="YYMMDD-XXXXXXX" />
+          <div class="hint" id="ident_hint">입력 시 암호화되어 안전하게 저장됩니다.</div>
+          <div id="errIdent" class="text-xs text-red-600 hidden">이미 등록된 주민등록번호입니다.</div>
+        </div>
+        <!-- 비밀번호/확인 -->
+        <div class="flex flex-col gap-1">
+          <label class="kt-form-label font-normal">비밀번호 <span class="text-danger">*</span></label>
+          <input class="kt-input" type="password" name="password" id="pw" placeholder="비밀번호" required />
+          <ul class="text-xs mt-1" id="pw_rules">
+            <li data-k="len">✗ 8자 이상</li>
+            <li data-k="upper">✗ 대문자 포함</li>
+            <li data-k="lower">✗ 소문자 포함</li>
+            <li data-k="digit">✗ 숫자 포함</li>
+            <li data-k="special">✗ 특수문자 포함</li>
+          </ul>
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="kt-form-label font-normal">비밀번호 확인 <span class="text-danger">*</span></label>
+          <input class="kt-input" type="password" name="password_confirm" id="pw2" placeholder="비밀번호 확인" required />
+          <div class="hint" id="pw_match_hint">8자 이상 · 대/소문자 · 숫자 · 특수문자 포함 권장</div>
+        </div>
+      </div>
+
+      <label class="kt-label m-0 flex items-center gap-2">
+        <input class="kt-checkbox kt-checkbox-sm" type="checkbox" name="also_user" value="1" />
+        <span class="kt-checkbox-label">일반 회원 계정으로 사용시에는 추가 정보 입력이 필요합니다.</span>
+      </label>
+
+      <div class="text-xs text-muted-foreground">제출 시 일반 회원 계정이 생성되고 동시에 관리자 권한 신청이 접수됩니다. 체크 시 다음 단계에서 추가 정보를 입력합니다.</div>
+
+      <button class="kt-btn kt-btn-primary flex justify-center" type="submit">신청하기</button>
+    </form>
+  </div>
+</div>
+<script>
+function formatIdentification(v){ let n=String(v||'').replace(/\D/g,'').slice(0,13); if(n.length<=6) return n; return n.replace(/(\d{6})(\d{1,7})/,'$1-$2'); }
+function isValidRRN13(n13){ if(!/^\d{13}$/.test(n13)) return false; const m=parseInt(n13.slice(2,4),10), d=parseInt(n13.slice(4,6),10); if(!(m>=1&&m<=12)) return false; if(!(d>=1&&d<=31)) return false; if(!/[1-8]/.test(n13[6])) return false; return true; }
+function formatPhoneOnInput010(v){ const d=String(v||'').replace(/\D/g,'').slice(0,11); if(d.length<=3) return d; if(d.length<=7) return d.slice(0,3)+'-'+d.slice(3); return d.slice(0,3)+'-'+d.slice(3,7)+'-'+d.slice(7); }
+(function init(){
+  const domainSel = document.getElementById('email_domain_sel');
+  const domainCustom = document.getElementById('email_domain_custom');
+  const emailId = document.getElementById('email_id');
+  const emailFull = document.getElementById('email_full');
+  const phone = document.getElementById('phone');
+  const ident = document.getElementById('ident');
+  const identHint = document.getElementById('ident_hint');
+  const pw = document.getElementById('pw');
+  const pw2 = document.getElementById('pw2');
+  const pwRules = document.getElementById('pw_rules');
+  function updateDomainInput(){ const v=domainSel.value; domainCustom.classList.toggle('hidden', v!=='custom'); }
+  domainSel.addEventListener('change', updateDomainInput); updateDomainInput();
+  phone.addEventListener('input', ()=>{ phone.value = formatPhoneOnInput010(phone.value); });
+  ident.addEventListener('input', ()=>{
+    ident.value = formatIdentification(ident.value);
+    const d13 = ident.value.replace(/\D/g,'');
+    const ok = d13.length===13 && isValidRRN13(d13);
+    if(identHint){ identHint.textContent = ok? '형식이 올바릅니다.' : '주민번호 형식이 올바르지 않습니다.'; identHint.style.color = ok? '#059669' : '#dc2626'; }
+  });
+
+  function mark(rule, ok){
+    const el = pwRules.querySelector('[data-k="'+rule+'"]'); if(!el) return;
+    el.textContent = (ok? '✓' : '✗') + ' ' + el.textContent.replace(/^.?\s/,'');
+    el.style.color = ok? '#059669' : '#dc2626';
+  }
+  function checkPw(){
+    const v = pw.value || '';
+    const r = {
+      len: v.length>=8,
+      upper: /[A-Z]/.test(v),
+      lower: /[a-z]/.test(v),
+      digit: /\d/.test(v),
+      special: /[!@#$%^&*()_+\-=[\]{}|;:',.<>/?]/.test(v),
+    };
+    Object.entries(r).forEach(([k,ok])=> mark(k, ok));
+    const allOk = r.len && r.upper && r.lower && r.digit && r.special;
+    pw.setCustomValidity(allOk? '' : 'weak');
+    const m = (pw2.value||'');
+    const match = v && m && v===m; const mh = document.getElementById('pw_match_hint');
+    if(mh){ mh.textContent = match? '비밀번호가 일치합니다.' : '비밀번호가 일치하지 않습니다.'; mh.style.color = match? '#059669' : '#dc2626'; }
+    pw2.setCustomValidity(match? '' : 'mismatch');
+  }
+  pw.addEventListener('input', checkPw);
+  pw2.addEventListener('input', checkPw);
+  document.getElementById('adminApplyForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const local = (emailId.value||'').trim();
+    let domain = domainSel.value;
+    if(domain==='custom') domain = (domainCustom.value||'').trim();
+    const fullEmail = local && domain ? (local+'@'+domain) : '';
+    emailFull.value = fullEmail;
+    const username = (document.querySelector('input[name="username"]').value||'').trim();
+    const phoneVal = (document.getElementById('phone').value||'').trim();
+    const identVal = (document.getElementById('ident').value||'').trim();
+    const dupBox = document.getElementById('dupError2');
+    const errPhone = document.getElementById('errPhone');
+    const errIdent = document.getElementById('errIdent');
+    const errUsername = document.getElementById('errUsername');
+    const errEmail = document.getElementById('errEmail');
+    dupBox.classList.add('hidden');
+    errPhone.classList.add('hidden');
+    errIdent.classList.add('hidden');
+    errUsername.classList.add('hidden');
+    errEmail.classList.add('hidden');
+
+    try{
+      const q = new URLSearchParams();
+      if (username) q.set('username', username.toLowerCase());
+      if (fullEmail) q.set('email', fullEmail.toLowerCase());
+      if (phoneVal) q.set('phone', phoneVal.replace(/\D+/g,''));
+      if (identVal) q.set('identification_number', identVal.replace(/\D+/g,''));
+      const res = await fetch('/api/v1/auth/check-duplicates?'+q.toString());
+      const j = await res.json();
+      const t = (j && j.taken) ? j.taken : {};
+      if (t.username || t.email || t.phone || t.identification_number) {
+        dupBox.classList.remove('hidden');
+        // 세부 필드 메시지
+        if (t.username) errUsername.classList.remove('hidden');
+        if (t.email) errEmail.classList.remove('hidden');
+        if (t.phone) errPhone.classList.remove('hidden');
+        if (t.identification_number) errIdent.classList.remove('hidden');
+        // 첫 오류로 포커스 이동
+        if (t.username) { document.querySelector('input[name="username"]').focus(); return; }
+        if (t.email)    { document.getElementById('email_id').focus(); return; }
+        if (t.phone)    { document.getElementById('phone').focus(); return; }
+        if (t.identification_number) { document.getElementById('ident').focus(); return; }
+        return; // block submit
+      }
+    }catch(_){ }
+
+    if(pw.checkValidity()===false || pw2.checkValidity()===false){ return; }
+    e.target.submit();
+  });
+})();
+</script>
+{% endblock %}

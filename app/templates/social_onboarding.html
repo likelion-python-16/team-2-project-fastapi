@@ -1,6 +1,7 @@
 {% extends "final.html" %}
 {% block title %}소셜 가입 안내{% endblock %}
 {% block content %}
+<style> body { flex-direction: column; } </style>
 <div class="flex items-center justify-center grow">
   <!-- Width aligned with login.html (420px) -->
   <div class="kt-card max-w-[420px] w-full">
@@ -39,7 +40,7 @@
 document.addEventListener('DOMContentLoaded', async function(){
   // 최근 소셜 식별 정보를 세션에서 받아 정확한 이메일을 출력
   try{
-    const r = await fetch('/api/v1/auth/identity/last');
+    const r = await fetch('/api/v1/auth/identity/last', { credentials: 'include' });
     if (r.ok){
       const j = await r.json();
       const wrap = document.getElementById('miniIdentity');

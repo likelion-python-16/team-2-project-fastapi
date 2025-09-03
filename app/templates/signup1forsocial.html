@@ -1,6 +1,7 @@
 {% extends "final.html" %}
 {% block title %}소셜 회원가입 1단계 - Team Project{% endblock %}
 {% block content %}
+<style> body { flex-direction: column; } </style>
 <div class="flex items-start justify-center grow py-8">
   <div class="kt-card max-w-[420px] w-full">
     <form class="kt-card-content flex flex-col gap-5 p-10" id="socialStep1" method="post" novalidate>
@@ -427,7 +428,10 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     const login=(document.getElementById('linkLogin').value||'').trim();
     const url=new URL('/login', window.location.origin);
     url.searchParams.set('find','pw');
+    url.searchParams.set('flow','social');
     if(login) url.searchParams.set('u', login);
+  // 비밀번호 찾기 → 재설정 완료 후 돌아올 경로를 병합 페이지로 지정
+  try{ localStorage.setItem('pw_flow','social'); localStorage.setItem('pw_return_to','/social/merge'); }catch(_){ }
     window.location.href = url.toString();
   });
 

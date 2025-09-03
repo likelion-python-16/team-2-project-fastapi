@@ -1,8 +1,9 @@
 {% extends "final.html" %}
 {% block title %}회원 정보 수정 - Team Project{% endblock %}
 {% block content %}
+<style> body { flex-direction: column; } </style>
 <div class="flex items-start justify-center grow py-8">
-  <div class="kt-card max-w-[520px] w-full">
+  <div class="kt-card max-w-[500px] w-full">
     <div class="kt-card-content p-8">
       <h3 class="text-lg font-medium text-mono mb-2.5">회원 정보 수정</h3>
       <div id="gateNote" class="text-sm text-muted-foreground mb-4">보안을 위해 먼저 비밀번호를 확인합니다.</div>
@@ -104,11 +105,23 @@ function normalizePhone(v){ return String(v||'').replace(/\D/g,''); }
 
 async function api(path, options){
   const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token') || '';
-  const headers = Object.assign({ 'Content-Type':'application/json', Authorization:'Bearer '+token }, options?.headers||{});
-  const res = await fetch(path, Object.assign({}, options||{}, { headers }));
-  const j = await res.json().catch(()=>({}));
-  return { ok: res.ok, status: res.status, json: j };
+  const cookieMap = {
+    '/api/v1/users/me': '/api/v1/users/me-cookie',
+    '/api/v1/users/me/phone-masked': '/api/v1/users/me/phone-masked-cookie',
+    '/api/v1/users/me/verify-password': '/api/v1/users/me/verify-password-cookie',
+    '/api/v1/users/me/username': '/api/v1/users/me/username-cookie',
+    '/api/v1/users/me/phone': '/api/v1/users/me/phone-cookie',
+    '/api/v1/users/me/change-password': '/api/v1/users/me/change-password-cookie',
+  };
+  const url = (!token && cookieMap[path]) ? cookieMap[path] : path;
+  const headers = Object.assign({ 'Content-Type':'application/json' }, (options && options.headers) || {});
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  const res = await fetch(url, Object.assign({ headers, credentials: (!token ? 'include':'same-origin') }, options||{}));
+  let json = null; try{ json = await res.json(); } catch(_){}
+  return { ok: res.ok, status: res.status, json };
 }
+
+/* duplicate api() removed: keep cookie-fallback version above */
 
 document.addEventListener('DOMContentLoaded', async ()=>{
   // 토글

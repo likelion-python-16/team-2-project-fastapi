@@ -1,6 +1,10 @@
 {% extends "final.html" %}
 {% block title %}로그인 - Team Project{% endblock %}
 {% block content %}
+<style>
+  /* 페이지 한정: 본 페이지에서만 헤더와 컨텐츠를 세로 배치 */
+  body { flex-direction: column; }
+</style>
 <div id="pageBg" class="flex items-center justify-center grow">
   <div class="kt-card max-w-[420px] w-full">
     <form class="kt-card-content flex flex-col gap-5 p-10" id="signinForm" method="post" novalidate>
@@ -96,8 +100,13 @@ function showAlert(message, type) {
     const params = new URLSearchParams(location.search);
     const find = (params.get('find')||'').toLowerCase();
     const u = (params.get('u')||'').trim();
+    const flow = (params.get('flow')||'').toLowerCase();
     if(u){ try{ document.getElementById('username').value = u; }catch(_){} }
     if(find === 'pw'){
+      // 소셜 플로우: 재설정 완료 후 병합 페이지로 돌아오도록 기본값 저장
+      if (flow === 'social') {
+        try { localStorage.setItem('pw_flow','social'); localStorage.setItem('pw_return_to','/social/merge'); } catch(_) {}
+      }
       // 열기 약간 지연해 DOM 이벤트 바인딩 이후 실행
       setTimeout(()=>{
         if(u){ const fpu=document.getElementById('fp_username'); if(fpu) fpu.value=u; }
@@ -443,7 +452,11 @@ document.getElementById('fp_ok').addEventListener('click', async ()=>{
 
   if(uErr.textContent || nErr.textContent || iErr.textContent || eErr.textContent){ msg.textContent='입력값을 확인해 주세요.'; return; }
   try{
-    const r = await fetch('/api/v1/auth/request-password-reset', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username, name, identification: ident, email }) });
+    // 현재 URL의 flow(social 등) 전파
+    const sp = new URLSearchParams(location.search);
+    const flow = (sp.get('flow')||'');
+    const return_to = (sp.get('return_to')|| (function(){ try{return localStorage.getItem('pw_return_to')||'';}catch(_){return ''} })());
+    const r = await fetch('/api/v1/auth/request-password-reset', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username, name, identification: ident, email, flow, return_to }) });
     const j = await r.json();
     if(r.ok){
       msg.textContent = '이메일을 보냈습니다. 받은 메일에서 비밀번호 재설정 버튼을 눌러 주세요.';
@@ -469,6 +482,9 @@ __fp_ident?.addEventListener('input', ()=>{
   try{
     const params = new URLSearchParams(location.search);
     const t = params.get('reset_token');
+    let flow = (params.get('flow')||'').toLowerCase();
+    if(!flow){ try{ const m=localStorage.getItem('pw_flow'); if(m) flow = m.toLowerCase(); }catch(_){ flow=''; } }
+    const return_to = (params.get('return_to') || (function(){ try{return localStorage.getItem('pw_return_to')||'';}catch(_){return ''} })());
     if(!t) return;
     openDlg('dlgResetPw');
     document.getElementById('rp_ok').onclick = async ()=>{
@@ -479,7 +495,21 @@ __fp_ident?.addEventListener('input', ()=>{
       try{
         const r = await fetch('/api/v1/auth/reset-password', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token: t, new_password: p1 }) });
         const j = await r.json();
-        if(r.ok){ alert('비밀번호가 변경되었습니다. 이제 로그인해 주세요.'); closeDlg('dlgResetPw'); const url = new URL(location.href); url.search = ''; history.replaceState({}, '', url.toString()); }
+        if(r.ok){
+          // 안내 문구: 소셜 플로우에서는 연동 안내로 표현
+          if (flow === 'social') {
+            alert('비밀번호가 변경되었습니다.\n소셜 계정 연동 후 로그인해 주세요.');
+          } else {
+            alert('비밀번호가 변경되었습니다. 이제 로그인해 주세요.');
+          }
+          // 소셜 플로우는 항상 병합 페이지로. (이전 링크의 return_to가 남아있어도 우선)
+          let dest = (flow === 'social') ? '/social/merge' : '/login';
+          const safeReturnTo = (return_to && return_to.startsWith('/')) ? return_to : '';
+          if (flow !== 'social' && safeReturnTo) dest = safeReturnTo;
+          window.location.href = dest;
+          try{ localStorage.removeItem('pw_flow'); localStorage.removeItem('pw_return_to'); }catch(_){ }
+          return;
+        }
         else { m.textContent = (j.detail || '변경에 실패했습니다'); }
       }catch(_){ m.textContent='변경에 실패했습니다'; }
     };

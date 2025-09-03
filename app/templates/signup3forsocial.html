@@ -1,6 +1,7 @@
 {% extends "final.html" %}
 {% block title %}소셜 회원가입 3단계 - Team Project{% endblock %}
 {% block content %}
+<style> body { flex-direction: column; } </style>
 <div class="flex items-center justify-center grow">
   <div class="kt-card max-w-[420px] w-full">
     <form class="kt-card-content flex flex-col gap-5 p-10" id="socialStep3" method="post" novalidate>
@@ -60,7 +61,7 @@
       </div>
 
       <div class="text-center text-xs text-muted-foreground mt-2">
-        💡 나중에 프로필에서 언제든 수정할 수 있습니다
+        💡 나중에 프로필에서 언제든 수정할 수 있습니다<br>
         <a href="#" id="linkSkip" class="text-primary font-medium">나중에 설정</a>
       </div>
     </form>

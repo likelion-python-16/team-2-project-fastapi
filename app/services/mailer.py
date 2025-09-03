@@ -10,16 +10,23 @@ def build_verify_url(token: str) -> str:
     """
     return f"{settings.verification_link_base}/auth/verify-email/redirect?token={token}"
 
-def build_password_reset_url(token: str) -> str:
+def build_password_reset_url(token: str, flow: str | None = None, return_to: str | None = None) -> str:
     """
     비밀번호 재설정 링크: 백엔드 리디렉트 엔드포인트로 유도하여
     배포 환경(도메인/포트)에서도 자동으로 프론트 URL을 계산하도록 합니다.
     """
     base = settings.verification_link_base.rstrip('/') or 'http://localhost:8000/api/v1'
-    return f"{base}/auth/password-reset/redirect?token={token}"
+    from urllib.parse import quote_plus
+    parts = []
+    if flow:
+        parts.append(f"flow={quote_plus(flow)}")
+    if return_to:
+        parts.append(f"return_to={quote_plus(return_to)}")
+    suffix = ("&"+"&".join(parts)) if parts else ""
+    return f"{base}/auth/password-reset/redirect?token={quote_plus(token)}{suffix}"
 
-def build_password_reset_email(token: str, username: str) -> tuple[str, str]:
-    url = build_password_reset_url(token)
+def build_password_reset_email(token: str, username: str, flow: str | None = None, return_to: str | None = None) -> tuple[str, str]:
+    url = build_password_reset_url(token, flow, return_to)
     html = f"""
     <table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"font-family:Arial, Helvetica, sans-serif; background:#ffffff;\">
       <tr>

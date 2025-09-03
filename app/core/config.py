@@ -95,6 +95,10 @@ class Settings(BaseSettings):
     api_base_url: str = os.getenv("API_BASE_URL", "http://localhost:8001/api/v1")
     front_base_url: str = os.getenv("FRONT_BASE_URL", "http://localhost:8000")
     session_secret: str = os.getenv("SESSION_SECRET", "dev-session-secret")
+    # Admin master approver (optional)
+    admin_master_username: str = os.getenv("ADMIN_MASTER_USERNAME", "")
+    admin_master_email: str = os.getenv("ADMIN_MASTER_EMAIL", "")
+    admin_master_password: str = os.getenv("ADMIN_MASTER_PASSWORD", "")
     # Email verification policy (general signup)
     require_email_verification: bool = os.getenv("REQUIRE_EMAIL_VERIFICATION", "false").lower() in ("1","true","yes")
 
@@ -173,4 +177,3 @@ AWS_REGION = settings.aws_region
 AWS_ACCESS_KEY_ID = settings.aws_access_key_id
 AWS_SECRET_ACCESS_KEY = settings.aws_secret_access_key
 S3_BUCKET = settings.s3_bucket
-

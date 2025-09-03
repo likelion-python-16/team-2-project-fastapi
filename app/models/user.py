@@ -53,6 +53,7 @@ class User(Base):
     total_points = Column(Integer, default=0, nullable=False, index=True)
     penalty_total = Column(Integer, default=0, nullable=False)
     is_admin = Column(Boolean, default=False, nullable=False)
+    is_superadmin = Column(Boolean, default=False, nullable=False)
 
     # ★ 엄격모드: 기본 비활성/미인증
     is_active = Column(Boolean, default=False, nullable=False, index=True)

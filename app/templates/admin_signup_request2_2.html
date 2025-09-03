@@ -1,0 +1,54 @@
+{% extends "final.html" %}
+{% block title %}관리자 신청 - 추가 정보{% endblock %}
+{% block content %}
+<style> body { flex-direction: column; } </style>
+<div class="flex items-start justify-center grow py-8">
+  <div class="kt-card max-w-[440px] w-full">
+    <form class="kt-card-content flex flex-col gap-5 p-10" id="reqStep2Form" method="post">
+      <div class="text-center mb-2.5">
+        <h3 class="text-lg font-medium mb-2.5">📋 관리자 신청 - 추가 정보</h3>
+        <div class="flex justify-center items-center gap-1 text-sm text-muted-foreground mb-4 whitespace-nowrap">
+          <div class="flex items-center gap-2"><span class="w-7 h-7 rounded-full bg-green-500 text-white font-bold text-sm leading-none flex items-center justify-center">✓</span><span>기본 정보</span></div>
+          <span>→</span>
+          <div class="flex items-center gap-2"><span class="w-7 h-7 rounded-full bg-primary text-primary-foreground font-bold text-sm leading-none flex items-center justify-center">2</span><span>추가 정보</span></div>
+          <span>→</span>
+          <div class="flex items-center gap-2 text-muted-foreground/50"><span class="w-7 h-7 rounded-full bg-muted text-muted-foreground font-bold text-sm leading-none flex items-center justify-content-center">3</span><span>프로필</span></div>
+        </div>
+        <div class="text-sm text-muted-foreground">선택 입력이며, 나중에 프로필에서 변경할 수 있습니다</div>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label">성별</label>
+        <select class="kt-input" id="gender" name="gender">
+          <option value="">선택하지 않음</option>
+          <option value="male">남성</option>
+          <option value="female">여성</option>
+          <option value="other">기타</option>
+        </select>
+      </div>
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label">거주 지역</label>
+        <input class="kt-input" id="region_living" name="region_living" placeholder="예: 경기도 성남시 분당구" />
+      </div>
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label">활동 지역</label>
+        <input class="kt-input" id="region_active" name="region_active" placeholder="예: 서울특별시" />
+      </div>
+
+      <div class="flex gap-3">
+        <button type="button" id="btnPrev" class="kt-btn kt-btn-light flex-1">이전 단계</button>
+        <button type="submit" id="submitBtn" class="kt-btn kt-btn-primary flex-1">다음 단계</button>
+      </div>
+      <div class="text-center text-xs text-muted-foreground mt-2">
+        <a href="#" id="linkSkip" class="text-primary font-medium">건너뛰기</a>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+  document.getElementById('reqStep2Form').addEventListener('submit',(e)=>{ e.preventDefault(); window.location.href='/admin/signup-request2_3'; });
+  document.getElementById('btnPrev').addEventListener('click',()=>{ window.location.href='/admin/signup-request2'; });
+  document.getElementById('linkSkip').addEventListener('click',(e)=>{ e.preventDefault(); window.location.href='/admin/signup-request2_3'; });
+</script>
+{% endblock %}
+

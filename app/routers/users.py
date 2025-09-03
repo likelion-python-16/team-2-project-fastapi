@@ -1,19 +1,22 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
 from pydantic import EmailStr
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional
 from datetime import datetime
+import json
 
 # ✅ 기존 임포트에 get_current_user 추가
 from app.security import normalize_phone, id_fingerprint, get_current_user
 from ..core.database import get_db
 from ..models.user import User
+from ..models.tag import Tag, UserTag
 from ..schemas.auth import UserOut
 from ..utils.logging import logger
 from app.security import create_access_token, create_refresh_token
 from app.security import validate_password_strength
 from fastapi import Body
+from app.core.deps import get_current_user_from_cookie
 
 # 라우터 생성
 router = APIRouter(
@@ -98,9 +101,46 @@ def update_onboarding(payload: dict, db: Session = Depends(get_db), current_user
         # 프로필 이미지
         if (payload.get('profile_image') or '').strip():
             current_user.profile_image = (payload.get('profile_image') or '').strip()
-        # 소개
+        # 소개 및 태그 처리 (JSON 형태로 파싱 후 bio는 introduction에, 태그는 UserTag 테이블에 저장)
         if 'introduction' in payload:
-            current_user.introduction = (payload.get('introduction') or '').strip()
+            intro_data = payload.get('introduction') or ''
+            if isinstance(intro_data, str):
+                try:
+                    # JSON 문자열이면 파싱해서 태그 처리
+                    intro_parsed = json.loads(intro_data)
+                    if isinstance(intro_parsed, dict) and 'interests' in intro_parsed:
+                        keywords = intro_parsed.get('interests', {}).get('keywords', [])
+                        # bio만 introduction에 저장
+                        current_user.introduction = intro_parsed.get('bio', '').strip()
+                        
+                        # 기존 사용자 태그 삭제 (새로 설정)
+                        from app.models.tag import Tag, UserTag
+                        db.query(UserTag).filter(UserTag.user_id == current_user.id).delete()
+                        
+                        # 새 태그들을 UserTag 테이블에 저장
+                        for keyword in keywords:
+                            if keyword and isinstance(keyword, str):
+                                keyword = keyword.strip()
+                                # 태그가 존재하지 않으면 생성
+                                tag = db.query(Tag).filter(Tag.tag == keyword).first()
+                                if not tag:
+                                    tag = Tag(tag=keyword, is_active=True)
+                                    db.add(tag)
+                                    db.commit()
+                                    db.refresh(tag)
+                                
+                                # UserTag 생성
+                                user_tag = UserTag(user_id=current_user.id, tag_id=tag.id)
+                                db.add(user_tag)
+                    else:
+                        # 일반 문자열이면 그냥 bio로 저장
+                        current_user.introduction = intro_data.strip()
+                except json.JSONDecodeError:
+                    # JSON이 아닌 일반 문자열
+                    current_user.introduction = intro_data.strip()
+            else:
+                current_user.introduction = str(intro_data).strip()
+        
         # 소셜 가입자는 이메일 인증 없이 사용 가능
         current_user.is_active = True
         current_user.email_verified = True
@@ -408,6 +448,188 @@ async def delete_user(user_id: int, db: Session = Depends(get_db)):
     db.delete(user)
     db.commit()
     return {"message": f"사용자 {user_id}가 삭제되었습니다"}
+
+# ------------------------
+# 쿠키 인증 기반: 내 프로필/태그 업데이트
+# ------------------------
+@router.post("/me/profile")
+def update_profile_cookie(
+    payload: dict = Body(...),
+    request: Request = None,
+    db: Session = Depends(get_db),
+):
+    me = get_current_user_from_cookie(request, db)
+    if not me:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다")
+
+    # 기본 프로필 필드
+    img = (payload.get("profile_image") or "").strip()
+    intro = (payload.get("introduction") or "").strip()
+    bio = (payload.get("bio") or "").strip()
+    
+    if img:
+        me.profile_image = img
+    if ("introduction" in payload):
+        me.introduction = intro
+    if ("bio" in payload):
+        me.introduction = bio  # bio를 introduction 필드에 저장
+
+    # 태그 처리: tags, interests_keywords, interests.keywords 배열 수용
+    interests = payload.get("interests", {})
+    interests_keywords = interests.get("keywords", []) if isinstance(interests, dict) else []
+    raw_tags = payload.get("tags") or payload.get("interests_keywords") or interests_keywords or []
+    cleaned = []
+    try:
+        for t in raw_tags:
+            name = (t or "").strip()
+            if not name:
+                continue
+            if len(name) > 255:
+                name = name[:255]
+            cleaned.append(name)
+    except Exception:
+        cleaned = []
+    # 중복 제거 및 제한
+    cleaned = list(dict.fromkeys(cleaned))[:50]
+
+    if cleaned is not None:
+        # 태그 마스터 확보/생성 + 연결 싱크
+        tag_ids = []
+        for name in cleaned:
+            tag = db.query(Tag).filter(Tag.tag == name).first()
+            if not tag:
+                tag = Tag(tag=name, is_active=True)
+                db.add(tag)
+                db.flush()
+            tag_ids.append(tag.id)
+
+        existing = db.query(UserTag).filter(UserTag.user_id == me.id).all()
+        existing_ids = {ut.tag_id for ut in existing}
+        desired = set(tag_ids)
+        # 추가
+        for tid in desired - existing_ids:
+            db.add(UserTag(tag_id=tid, user_id=me.id))
+        # 제거
+        if existing_ids - desired:
+            db.query(UserTag).filter(
+                UserTag.user_id == me.id,
+                UserTag.tag_id.in_(list(existing_ids - desired))
+            ).delete(synchronize_session=False)
+
+    db.commit(); db.refresh(me)
+    return {"ok": True, "user_id": me.id, "tags": cleaned}
+
+# ------------------------
+# 쿠키 인증 기반: 내 정보/검증/수정 (account_edit용)
+# ------------------------
+@router.get("/me-cookie")
+def read_me_cookie(request: Request, db: Session = Depends(get_db)):
+    me = get_current_user_from_cookie(request, db)
+    if not me:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다")
+    img = getattr(me, "profile_image", None) or DEFAULT_AVATAR
+    return {
+        "id": me.id,
+        "username": me.username,
+        "name": me.name,
+        "email": me.email,
+        "profile_image_url": img,
+        "is_active": me.is_active,
+        "provider": getattr(me, 'provider', None) or None,
+        "provider_linked": bool(getattr(me, 'provider', None) and getattr(me, 'provider_id', None)),
+    }
+
+@router.get("/me/phone-masked-cookie")
+def get_phone_masked_cookie(request: Request, db: Session = Depends(get_db)):
+    me = get_current_user_from_cookie(request, db)
+    if not me:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다")
+    def _mask_phone_str(raw: str | None) -> str | None:
+        if not raw:
+            return None
+        digits = normalize_phone(raw)
+        if not digits or len(digits) < 7:
+            return None
+        if len(digits) == 11 and digits.startswith('010'):
+            return f"010-****-**{digits[-2:]}"
+        head = digits[:3]
+        tail2 = digits[-2:]
+        return f"{head}-****-**{tail2}"
+    try:
+        decrypted = me.get_phone()
+    except Exception:
+        decrypted = None
+    masked = _mask_phone_str(decrypted)
+    if not masked:
+        masked = _mask_phone_str(me.phone)
+    return {"phone_masked": masked}
+
+@router.post("/me/verify-password-cookie")
+def verify_password_cookie(payload: dict = Body(...), request: Request = None, db: Session = Depends(get_db)):
+    me = get_current_user_from_cookie(request, db)
+    if not me:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다")
+    pw = payload.get('password') or ''
+    if not me.verify_password(pw):
+        raise HTTPException(status_code=401, detail="비밀번호가 올바르지 않습니다")
+    return {"ok": True}
+
+@router.patch("/me/username-cookie")
+def update_username_cookie(payload: dict = Body(...), request: Request = None, db: Session = Depends(get_db)):
+    me = get_current_user_from_cookie(request, db)
+    if not me:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다")
+    username = (payload.get('username') or '').strip().lower()
+    if not username:
+        raise HTTPException(400, "username이 필요합니다")
+    if db.query(User.id).filter(User.username == username, User.id != me.id).first():
+        raise HTTPException(409, "이미 사용 중인 아이디입니다")
+    me.username = username
+    me.token_version = (me.token_version or 0) + 1
+    db.commit(); db.refresh(me)
+    claims = {"sub": me.username, "user_id": me.id, "tv": me.token_version}
+    return {
+        "access_token": create_access_token(data=claims),
+        "refresh_token": create_refresh_token(data=claims),
+        "token_type": "bearer",
+    }
+
+@router.patch("/me/phone-cookie")
+def update_phone_cookie(payload: dict = Body(...), request: Request = None, db: Session = Depends(get_db)):
+    me = get_current_user_from_cookie(request, db)
+    if not me:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다")
+    raw = (payload.get('phone') or '').strip()
+    norm = normalize_phone(raw)
+    if not (norm and len(norm) == 11 and norm.startswith('010')):
+        raise HTTPException(400, "전화번호 형식이 올바르지 않습니다")
+    formatted = f"010-{norm[3:7]}-{norm[7:]}"
+    if db.query(User.id).filter(User.phone == formatted, User.id != me.id).first():
+        raise HTTPException(409, "이미 사용 중인 전화번호입니다")
+    me.set_phone(norm)
+    db.commit(); db.refresh(me)
+    return {"message": "전화번호가 변경되었습니다"}
+
+@router.post("/me/change-password-cookie")
+def change_password_cookie(payload: dict = Body(...), request: Request = None, db: Session = Depends(get_db)):
+    me = get_current_user_from_cookie(request, db)
+    if not me:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다")
+    new_password = payload.get('new_password') or ''
+    if not validate_password_strength(new_password):
+        raise HTTPException(400, "비밀번호가 요구사항을 충족하지 않습니다")
+    if me.verify_password(new_password):
+        raise HTTPException(400, "새 비밀번호가 현재 비밀번호와 같습니다")
+    me.set_password(new_password)
+    me.token_version = (me.token_version or 0) + 1
+    db.commit(); db.refresh(me)
+    claims = {"sub": me.username, "user_id": me.id, "tv": me.token_version}
+    return {
+        "access_token": create_access_token(data=claims),
+        "refresh_token": create_refresh_token(data=claims),
+        "token_type": "bearer",
+        "message": "비밀번호가 변경되었습니다"
+    }
 
 # -------------------------------
 # 중복 검사 (회원가입/수정 전)
