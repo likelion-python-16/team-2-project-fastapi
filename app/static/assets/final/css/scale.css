@@ -1,0 +1,42 @@
+/* static/assets/final/css/custom.css */
+#pageScale {
+  transform-origin: top left;
+  will-change: transform;
+}
+
+@media (max-width: 1400px) { #pageScale { transform: scale(0.9); } }
+@media (max-width: 1200px) { #pageScale { transform: scale(0.85); } }
+@media (max-width: 992px)  { #pageScale { transform: scale(0.8); } }
+@media (max-width: 768px)  { #pageScale { transform: scale(0.75); } }
+@media (max-width: 560px)  { #pageScale { transform: scale(0.7); } }
+
+html, body { height: 100%; overflow-x: hidden; }
+
+/* 글자를 가로쓰기 고정 + 버튼 등에서 줄바꿈 금지 */
+html, body, button, input, a, span, div { writing-mode: horizontal-tb !important; }
+
+.btn, .toggle-chip, .badge, .avatar {
+  white-space: nowrap;     /* 줄바꿈 금지 */
+  word-break: keep-all;    /* 한국어 임의 줄바꿈 방지 */
+}
+
+/* (선택) 버튼 너무 좁아지지 않게 */
+.btn { min-width: 72px; }
+
+/* 버튼 텍스트 정확히 가운데 정렬 */
+.btn{
+  display: inline-flex;          /* 이미 있으나 한번 더 확정 */
+  align-items: center;           /* 수직 가운데 */
+  justify-content: center;       /* 수평 가운데 */
+  line-height: 1;                /* 한글 폰트 라인박스 튀는 것 방지 */
+  height: 38px;                  /* 기존 고정 높이 유지 */
+  padding: 0 16px;               /* 좌우 여백 살짝 넉넉히 */
+  white-space: nowrap;           /* 줄바꿈 방지 */
+  vertical-align: middle;        /* 인라인 컨텍스트 정렬 보정 */
+  gap: 6px;                      /* 아이콘+텍스트용 간격(없으면 영향 없음) */
+}
+
+/* 둥근 알약 버튼이라면 패딩/높이만 살짝 조절해서 균형 맞추기 (선택) */
+.btn.primary{
+  line-height: 1;                /* 상속 보장 */
+}

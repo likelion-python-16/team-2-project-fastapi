@@ -1,0 +1,36 @@
+{% extends "final.html" %}
+{% block title %}신청 승인 확인 - Team Project{% endblock %}
+{% block content %}
+<style> body { flex-direction: column; } </style>
+
+<div class="flex items-center justify-center grow">
+  <div class="kt-card max-w-[400px] w-full mt-10">
+    <div class="kt-card-content flex flex-col gap-5 p-8">
+      <h3 class="text-lg font-medium">관리자 권한 신청 승인</h3>
+      <div class="rounded-lg p-3 border border-green-200 bg-green-50 text-sm">
+        아래 신청을 승인하시겠습니까?
+      </div>
+
+      <div class="rounded-lg p-3 border">
+        <div class="text-sm"><b>신청자:</b> {{ req.user.name }} ({{ req.user.username }})</div>
+        <div class="text-sm"><b>이메일:</b> {{ req.user.email }}</div>
+        <div class="text-sm"><b>신청일:</b> {{ req.created_at.strftime('%Y-%m-%d %H:%M') if req.created_at else '-' }}</div>
+      </div>
+
+      <form method="post" action="/admin/approve-request">
+        <input type="hidden" name="request_id" value="{{ req.id }}" />
+        <div class="mb-4">
+          <label class="block text-sm font-medium mb-2">승인 메모 (선택)</label>
+          <textarea name="note" class="kt-input w-full" rows="3" placeholder="승인 관련 메모를 입력하세요..."></textarea>
+        </div>
+        
+        <div class="flex gap-3">
+          <a class="kt-btn kt-btn-light flex-1" href="/admin">취소</a>
+          <button class="kt-btn kt-btn-primary flex-1" type="submit">승인 확정</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  
+</div>
+{% endblock %}

@@ -1,0 +1,119 @@
+{% extends "final.html" %}
+{% block title %}계정 생성 완료 - 이메일 인증 필요{% endblock %}
+
+{% block content %}
+<style> body { flex-direction: column; } </style>
+<div class="flex items-start justify-center overflow-y-auto min-h-[100dvh] w-full py-8">
+  <!-- 폭 고정 래퍼 -->
+  <div class="w-full max-w-[500px] mx-auto px-4">
+    <div class="kt-card w-full">
+      <div class="kt-card-content flex flex-col gap-6 p-10 text-center">
+
+        <!-- 초록 체크 아이콘 -->
+        <div class="flex justify-center">
+          <div class="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center">
+            <i class="ki-filled ki-check text-3xl text-white"></i>
+          </div>
+        </div>
+
+        <!-- 헤더 -->
+        <div>
+          <h1 class="text-3xl font-bold text-mono leading-snug mb-1">계정 생성 완료</h1>
+          <h2 class="text-lg font-medium text-foreground/90">이메일 인증만 남았어요</h2>
+        </div>
+
+        <!-- 완료된 단계 -->
+        <div class="bg-muted/20 rounded-lg p-4">
+          <div class="text-sm text-muted-foreground mb-3">완료된 단계</div>
+          <div class="flex justify-center gap-2 text-sm">
+            <span class="inline-flex items-center gap-2 whitespace-nowrap">
+              <span class="w-7 h-7 inline-flex items-center justify-center rounded-full bg-green-500 text-white font-bold leading-none">✓</span>기본 정보
+            </span>
+            <span>→</span>
+            <span class="inline-flex items-center gap-2 whitespace-nowrap">
+              <span class="w-7 h-7 inline-flex items-center justify-center rounded-full bg-green-500 text-white font-bold leading-none">✓</span>개인 정보
+            </span>
+            <span>→</span>
+            <span class="inline-flex items-center gap-2 whitespace-nowrap">
+              <span class="w-7 h-7 inline-flex items-center justify-center rounded-full bg-green-500 text-white font-bold leading-none">✓</span>프로필 설정
+            </span>
+          </div>
+        </div>
+
+        <!-- 인증 안내 패널(본문만 남기고 버튼 제거) -->
+        <div class="rounded-lg text-left border border-amber-200 bg-amber-50">
+          <div class="p-5 flex flex-col gap-4">
+            <div class="text-sm text-muted-foreground">
+              가입 이메일로 전송된 메일의 <b>‘인증하기’</b> 버튼을 눌러 주세요.
+              <span id="expireHint"></span>
+            </div>
+
+            <!-- 인증 후 가능 -->
+            <div class="rounded-md p-4 border border-muted bg-muted/20">
+              <h4 class="text-sm font-medium text-foreground mb-2">이메일 인증 후 가능해져요</h4>
+              <ul class="text-sm text-muted-foreground space-y-1">
+                <li>✨ 새로운 챌린지를 직접 만들기</li>
+                <li>👥 참여 신청 및 포인트 적립/환전</li>
+                <li>📝 리뷰 작성 및 ‘도움돼요’ 교류</li>
+                <li>🔔 알림/초대/환급 등 중요 메일 수신</li>
+              </ul>
+            </div>
+
+            <!-- 단일 버튼: 홈 화면 -->
+            <div class="flex">
+              <button id="btnHome" class="kt-btn kt-btn-primary w-full">
+                <i class="ki-filled ki-home-2 me-2"></i> 홈 화면
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 하단 공유 -->
+        <div class="border-t border-border pt-4">
+          <p class="text-xs text-muted-foreground mb-3">challengers 를 통해 친구와 함께 성장하세요</p>
+          <div class="flex justify-center">
+            <button class="kt-btn kt-btn-sm kt-btn-light" onclick="copyInviteLink()">
+              <i class="ki-filled ki-copy me-1"></i> 링크 복사
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // 배경 이미지는 사용하지 않습니다
+
+  // ===== 설정 값 =====
+  const VERIFY_EXPIRE_MIN = Number('{{ verify_expire_min|default(30) }}'); // 없으면 30
+
+  // 라우팅/유틸
+  function goToDashboard(){ window.location.href = '/home'; }
+  function copyInviteLink(){
+    const invite = 'http://localhost:8001/home';
+    if(navigator.clipboard){
+      navigator.clipboard.writeText(invite).then(()=>showToast('링크가 복사되었습니다! 📋'));
+    }else{
+      const ta=document.createElement('textarea'); ta.value=invite; document.body.appendChild(ta);
+      ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+      showToast('링크가 복사되었습니다! 📋');
+    }
+  }
+  function showToast(msg, isErr=false){
+    const t=document.createElement('div');
+    t.className=`fixed top-4 right-4 ${isErr?'bg-red-500':'bg-green-500'} text-white px-4 py-2 rounded-lg shadow-lg z-50`;
+    t.textContent=msg;
+    document.body.appendChild(t);
+    setTimeout(()=>{ t.style.transition='opacity .3s'; t.style.opacity='0'; setTimeout(()=>t.remove(),300); }, 2500);
+  }
+
+  // 초기 바인딩
+  document.addEventListener('DOMContentLoaded', ()=>{
+    const exp = document.getElementById('expireHint');
+    if(exp) exp.textContent = ` (유효시간: 약 ${VERIFY_EXPIRE_MIN}분)`;
+    document.getElementById('btnHome').addEventListener('click', goToDashboard);
+  });
+</script>
+{% endblock %}

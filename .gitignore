@@ -1,4 +1,53 @@
-venv/
-.env
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+*.egg-info/
+
+# FastAPI
+.env
+.env.production
+# Database
+*.db
+*.sqlite3
+
+# Docker
+.dockerignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Test
+.pytest_cache/
+.coverage
+htmlcov/
+
+# EC2 키파일
+*.pem
+*.key
+# asset
+app/static/assets/**/media/*
+app/static/assets/**/js/widgets/*
+app/static/assets/**/js/layouts/*
+
+# 캐시
+.cache/
+app/.cache/

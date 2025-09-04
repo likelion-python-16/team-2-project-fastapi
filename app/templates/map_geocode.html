@@ -1,0 +1,35 @@
+<!-- app/templates/map_geocode.html -->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>Address → Coord (Geocoding)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>body{font-family:system-ui; padding:16px;} input{padding:8px; width:300px;} button{padding:8px 12px;}</style>
+</head>
+<body>
+  <h3>주소 → 좌표</h3>
+  <input id="address" placeholder="예: 서울 종로구 사직로 161" />
+  <button id="go">검색</button>
+  <pre id="out">-</pre>
+
+  <script>
+    function run() {
+      const addr = document.getElementById("address").value.trim();
+      if (!addr) return;
+      naver.maps.Service.geocode({ query: addr }, function(status, response) {
+        if (status !== naver.maps.Service.Status.OK) {
+          document.getElementById("out").textContent = "지오코딩 실패";
+          return;
+        }
+        const items = response.v2.addresses || [];
+        document.getElementById("out").textContent = JSON.stringify(items[0] || {}, null, 2);
+      });
+    }
+    document.getElementById("go").addEventListener("click", run);
+    document.getElementById("address").addEventListener("keydown", e => { if (e.key==="Enter") run(); });
+  </script>
+
+  <script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId={{ NCP_KEY_ID }}"></script>
+</body>
+</html>

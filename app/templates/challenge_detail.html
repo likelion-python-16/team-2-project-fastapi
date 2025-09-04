@@ -1,0 +1,952 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Challenge Detail</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="{{ url_for('static', path='assets/final/css/styles.css') }}">
+  <style>
+    :root{--card-bg:#fff;--muted:#777;--br:#eee}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Noto Sans KR,Apple SD Gothic Neo,Helvetica,Arial,sans-serif;margin:16px}
+    .panel{border:1px solid var(--br);border-radius:12px;padding:12px;margin:12px 0;background:#fff}
+    .muted{color:var(--muted);font-size:12px}
+    .w-100{width:100%}
+    .btn{padding:6px 10px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer}
+    .btn:hover{background:#f7f7f7}
+    table{width:100%;border-collapse:collapse}
+    th,td{border-top:1px solid var(--br);padding:8px;vertical-align:top}
+    th{background:#fafafa;text-align:left}
+    .ok{color:#0a7}.err{color:#c00}
+    .row-flex{display:flex;gap:6px;align-items:center}
+    .tiny{font-size:12px}
+    .cards-row{display:grid;grid-template-columns:repeat(2,minmax(260px,1fr));gap:12px}
+    .card{border:1px solid var(--br);border-radius:12px;background:var(--card-bg);padding:12px;display:flex;flex-direction:column;gap:8px}
+    .card-head{display:flex;justify-content:space-between;align-items:center}
+    .badge{display:inline-block;border:1px solid #ddd;border-radius:999px;padding:3px 8px;font-size:12px}
+    .desc{font-size:13px;line-height:1.4;color:#333;white-space:pre-line;max-height:5.6em;overflow:hidden}
+    .kv{display:flex;gap:8px;font-size:13px;align-items:center}
+    .pagination{display:flex;gap:8px;align-items:center;justify-content:center;margin-top:8px}
+    .edit-only{display:none}
+    /* simple switch */
+    .switch{position:relative;display:inline-block;width:38px;height:20px}
+    .switch input{display:none}
+    .switch .slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#e5e7eb;border-radius:999px;transition:.2s}
+    .switch .slider:before{content:"";position:absolute;height:16px;width:16px;left:2px;top:2px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+    .switch input:checked + .slider{background:#2563eb}
+    .switch input:checked + .slider:before{transform:translateX(18px)}
+    @media (max-width:960px){.cards-row{grid-template-columns:repeat(2,minmax(220px,1fr));}}
+    @media (max-width:640px){.cards-row{grid-template-columns:1fr;}}
+  </style>
+</head>
+<body>
+
+<h2>Challenge Detail</h2>
+
+<div class="panel">
+  <div id="challengeHeader" class="muted" style="margin-bottom:8px">Loading...</div>
+  <!-- 상세 정보 카드 (Team Info 스타일 요약) -->
+  <div id="chDetailCard" style="border:1px solid var(--br);border-radius:10px;overflow:hidden">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--br)">
+      <h3 style="margin:0;font-size:16px">개요</h3>
+      <div style="display:flex;align-items:center;gap:12px">
+        <button class="btn tiny edit-only" id="btnEditOverview">개요 수정</button>
+        <label class="kt-label edit-only" style="display:flex;align-items:center;gap:8px;font-size:13px;color:#555">
+          Visible to all
+          <span class="switch"><input id="visAll" type="checkbox"><span class="slider"></span></span>
+        </label>
+      </div>
+    </div>
+    <table style="width:100%;border-collapse:collapse">
+      <tr>
+        <td style="padding:10px;width:140px;color:#555">Thumbnail</td>
+        <td id="fld-thumb" style="padding:10px;color:#555">대표 이미지 (선택)</td>
+        <td style="padding:10px;text-align:center;width:100px">
+          <div style="width:56px;height:56px;border:2px solid #16a34a;border-radius:50%;overflow:hidden;margin:0 auto;background:#f1f5f9;display:flex;align-items:center;justify-content:center">
+            <img id="chCover" alt="" style="max-width:100%;max-height:100%;display:none">
+            <span id="chCoverPlaceholder" style="font-size:11px;color:#64748b">No img</span>
+          </div>
+          <div style="margin-top:6px">
+            <span class="switch"><input type="checkbox" data-row-toggle data-target="fld-thumb" checked><span class="slider"></span></span>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:10px;color:#555">Title</td>
+        <td id="fld-title" style="padding:10px;color:#111827"><span id="chTitle"></span></td>
+        <td style="padding:10px;text-align:center"><span class="switch"><input type="checkbox" data-row-toggle data-target="fld-title" checked><span class="slider"></span></span></td>
+      </tr>
+      <tr>
+        <td style="padding:10px;color:#555">Description</td>
+        <td id="fld-desc" style="padding:10px;color:#374151"><span id="chDesc"></span></td>
+        <td style="padding:10px;text-align:center"><span class="switch"><input type="checkbox" data-row-toggle data-target="fld-desc" checked><span class="slider"></span></span></td>
+      </tr>
+      <tr>
+        <td style="padding:10px;color:#555">관련 검색어</td>
+        <td id="fld-tags" style="padding:10px"><div id="chTags"></div></td>
+        <td style="padding:10px;text-align:center"><span class="switch"><input type="checkbox" data-row-toggle data-target="fld-tags" checked><span class="slider"></span></span></td>
+      </tr>
+      <tr>
+        <td style="padding:10px;color:#555">Mode</td>
+        <td id="fld-mode" style="padding:10px">
+          <select id="chModeSel">
+            <option value="hybrid">온/오프라인</option>
+            <option value="online">온라인</option>
+            <option value="offline">오프라인</option>
+          </select>
+          <button class="btn tiny" id="btnSaveMode" style="margin-left:8px">저장</button>
+          <span id="saveModeMsg" class="muted" style="margin-left:8px"></span>
+        </td>
+        <td style="padding:10px;text-align:center"><span class="switch"><input type="checkbox" data-row-toggle data-target="fld-mode" checked><span class="slider"></span></span></td>
+      </tr>
+      <tr>
+        <td style="padding:10px;color:#555">대표 장소</td>
+        <td id="fld-place" style="padding:10px">
+          <div id="chPlaceName" style="font-weight:600"></div>
+          <div id="chPlaceRoad" class="muted" style="font-size:12px"></div>
+          <div id="chPlaceAddr" class="muted" style="font-size:12px"></div>
+          <div style="margin-top:4px; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+            <a id="chPlaceLink" href="#" target="_blank" rel="noopener">네이버 장소 링크</a>
+            <button class="btn tiny edit-only" id="btnEditPlace">대표 장소 수정</button>
+          </div>
+        </td>
+        <td style="padding:10px;text-align:center"><span class="switch"><input type="checkbox" data-row-toggle data-target="fld-place" checked><span class="slider"></span></span></td>
+      </tr>
+      <tr>
+        <td style="padding:10px;color:#555">기간</td>
+        <td id="fld-period" style="padding:10px">
+          <span id="chStart"></span>
+          <span class="muted"> ~ </span>
+          <span id="chEnd"></span>
+        </td>
+        <td style="padding:10px;text-align:center"><span class="switch"><input type="checkbox" data-row-toggle data-target="fld-period" checked><span class="slider"></span></span></td>
+      </tr>
+      <tr>
+        <td style="padding:10px;color:#555">금액</td>
+        <td id="fld-price" style="padding:10px">
+          <span class="badge" id="chFee"></span>
+          <span class="badge" id="chPFee" style="margin-left:6px"></span>
+        </td>
+        <td style="padding:10px;text-align:center"><span class="switch"><input type="checkbox" data-row-toggle data-target="fld-price" checked><span class="slider"></span></span></td>
+      </tr>
+      <tr>
+        <td style="padding:10px;color:#555">방장 계정</td>
+        <td id="fld-owner" style="padding:10px"><span id="chOwner"></span></td>
+        <td style="padding:10px;text-align:center"><span class="switch"><input type="checkbox" data-row-toggle data-target="fld-owner" checked><span class="slider"></span></span></td>
+      </tr>
+    </table>
+  </div>
+  <!-- 디버그 원본 데이터는 필요 시 개발자도구에서 확인 -->
+</div>
+
+<!-- 공통 장소 패널 제거: 대표 장소는 상단 Details 박스에서 표시 -->
+
+<!-- 장소 설정 패널은 생성 화면에만 유지. 상세 페이지에서는 중복 UX로 혼선이 있어 숨김 처리 -->
+
+<div class="panel" style="display:none">
+  <h3>회차 목록(관리전용)</h3>
+  <table id="roundTable"><tbody id="roundTbody"></tbody></table>
+  <style>#roundTable{display:none}</style>
+  <!-- 관리 기능 유지를 위한 숨김 영역 -->
+</div>
+
+<div class="panel">
+  <h3>생성된 회차</h3>
+  <div id="cardWrap" class="cards-row"></div>
+  <div class="pagination">
+    <button class="btn" onclick="prevPage()">이전</button>
+    <span id="pageInfo" class="muted"></span>
+    <button class="btn" onclick="nextPage()">다음</button>
+  </div>
+</div>
+
+<div class="panel">
+  <h3>참여 예정자(선택 회차)</h3>
+  <div style="margin-bottom:6px">
+    <label>Round ID <input id="selRoundId" type="number" style="width:120px"></label>
+    <button class="btn" onclick="loadPlanned()">불러오기</button>
+  </div>
+  <div id="planned"></div>
+</div>
+
+<script>
+  const CHALLENGE_ID = JSON.parse('{{ challenge_id|default(none)|tojson }}');
+
+  // API Prefix
+  const API_CH = '/api/v1'; // challenges 등
+  const API_ROOT = '';      // pictures는 루트로 노출
+
+  function authHeader(){
+    const t = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+    return t ? { 'Authorization': 'Bearer ' + t } : {};
+  }
+
+  async function safeFetchJSON(url, options = {}) {
+    const res = await fetch(url, {
+      credentials: 'include',
+      headers: { 'Accept': 'application/json', ...authHeader(), ...(options.headers||{}) },
+      ...options,
+    });
+    const ct = res.headers.get('content-type') || '';
+    const isJSON = ct.includes('application/json');
+    const body = isJSON ? await res.json() : await res.text();
+    if (!isJSON) throw new Error(`Expected JSON but got ${ct} ${res.status}: ${String(body).slice(0,200)}`);
+    if (!res.ok) throw new Error(body?.detail || `HTTP ${res.status}`);
+    return body;
+  }
+
+  const S = { challenge:null, rounds:[], page:1, pageSize:6, me:null, canEdit:false };
+
+  function fmtDate(d){
+    if(!d) return '';
+    try{ const x = new Date(d); if(!isNaN(x)) return x.toISOString().slice(0,10); }catch(e){}
+    return String(d);
+  }
+
+  document.addEventListener('DOMContentLoaded', async () => {
+    if (CHALLENGE_ID == null) {
+      document.getElementById('challengeHeader').innerHTML = '<span class="err">challenge_id 없음</span>';
+      return;
+    }
+    initVisibilityToggles();
+    await loadChallenge();
+    await loadMe();
+    applyEditVisibility();
+    await loadRounds();
+  });
+
+  async function loadMe(){
+    try{
+      S.me = await safeFetchJSON(`${API_CH}/users/me`);
+    }catch(e){ S.me = null; }
+    S.canEdit = !!(S.me && S.challenge && (S.me.id === S.challenge.creator_id));
+  }
+
+  function applyEditVisibility(){
+    const on = !!S.canEdit;
+    document.querySelectorAll('.edit-only, [data-row-toggle], #btnSaveMode, #btnAddRound').forEach(el=>{
+      if(!el) return;
+      const isSwitch = el.hasAttribute?.('data-row-toggle');
+      if (isSwitch) { if(!on) el.closest('td')?.classList.add('hidden'); }
+      if (on) el.style.display=''; else el.style.display='none';
+    });
+  }
+
+  // ===== Visibility (frontend only) =====
+  function initVisibilityToggles(){
+    const VIS_KEY = `ch_vis_all_${CHALLENGE_ID}`;
+    const SEC_KEY = `ch_sections_${CHALLENGE_ID}`;
+    const savedVis = localStorage.getItem(VIS_KEY);
+    const visAll = document.getElementById('visAll');
+    if (visAll){
+      visAll.checked = savedVis ? savedVis === '1' : true;
+      visAll.addEventListener('change', ()=>{
+        localStorage.setItem(VIS_KEY, visAll.checked ? '1' : '0');
+      });
+    }
+
+    let sections = {};
+    try{ sections = JSON.parse(localStorage.getItem(SEC_KEY)||'{}') || {}; }catch(e){ sections = {}; }
+    document.querySelectorAll('[data-row-toggle]').forEach(sw=>{
+      const target = sw.getAttribute('data-target');
+      const el = document.getElementById(target);
+      const key = target;
+      const on = sections[key] !== false; // default on
+      sw.checked = on;
+      if (el) el.style.display = on ? '' : 'none';
+      sw.addEventListener('change', ()=>{
+        const nowOn = sw.checked;
+        if (el) el.style.display = nowOn ? '' : 'none';
+        sections[key] = nowOn;
+        localStorage.setItem(SEC_KEY, JSON.stringify(sections));
+      });
+    });
+  }
+
+  async function loadChallenge(){
+    const ch = await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}`);
+    S.challenge = ch;
+    document.getElementById('challengeHeader').innerHTML =
+      `<b>#${ch.id}</b> ${ch.title || ''} · ${ch.mode || ''} · ${ch.status || ''}`;
+    // 상세 카드 채우기
+    const cover = ch.cover_image_url || ch.default_cover_url || '';
+    const coverEl = document.getElementById('chCover');
+    const coverPh = document.getElementById('chCoverPlaceholder');
+    if (cover) { coverEl.src = cover; coverEl.style.display='block'; coverPh.style.display='none'; }
+    document.getElementById('chTitle').textContent = ch.title || '';
+    document.getElementById('chDesc').textContent  = ch.description || '';
+    const tags = Array.isArray(ch.tags) ? ch.tags : (Array.isArray(ch.categories)? ch.categories: []);
+    document.getElementById('chTags').innerHTML = (tags||[]).map(t=>`<span class="badge" style="margin-right:6px">${t}</span>`).join('');
+
+    // 대표 장소는 상단 표시에만 사용
+  
+    // 대표 장소 표기
+    document.getElementById('chPlaceName').textContent = ch.default_place_name || '';
+    document.getElementById('chPlaceRoad').textContent = ch.default_road_address ? `도로명: ${ch.default_road_address}` : '';
+    document.getElementById('chPlaceAddr').textContent = ch.default_address ? `지번: ${ch.default_address}` : '';
+    const placeLink = document.getElementById('chPlaceLink');
+    if (placeLink) placeLink.href = ch.default_map_url || '#';
+
+    // 기간
+    document.getElementById('chStart').textContent = fmtDate(ch.start_date);
+    document.getElementById('chEnd').textContent   = fmtDate(ch.end_date);
+
+    // 금액표
+    const feeBadge = document.getElementById('chFee');
+    const pBadge = document.getElementById('chPFee');
+    const fee = Number(ch.fee||0), pfee = Number(ch.participation_fee||0);
+    feeBadge.textContent = `회비 ${fee.toLocaleString()}원`;
+    pBadge.textContent = `참가비 ${pfee.toLocaleString()}원`;
+    if (fee===0 && pfee===0){ feeBadge.textContent = '무료'; pBadge.style.display='none'; }
+
+    // 방장 계정 (username만)
+    try{
+      const owner = await safeFetchJSON(`/api/v1/users/${ch.creator_id}`);
+      const uname = owner.username || ('user#'+owner.id);
+      document.getElementById('chOwner').textContent = `${uname}`;
+    }catch(e){
+      document.getElementById('chOwner').textContent = `user#${ch.creator_id}`;
+    }
+
+    // 모드 선택 초기화
+    const sel = document.getElementById('chModeSel');
+    if (sel){ sel.value = (ch.mode||'').toLowerCase(); }
+    const btn = document.getElementById('btnSaveMode');
+    const msg = document.getElementById('saveModeMsg');
+    btn?.addEventListener('click', async () => {
+      try{
+        msg.textContent = '저장 중...';
+        await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}`, {
+          method:'PUT',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ mode: sel.value })
+        });
+        msg.textContent = '저장됨';
+        await loadRounds(); // 모드 변경에 따른 카드 재렌더
+      }catch(e){ msg.textContent = '실패: ' + (e?.message || ''); }
+    });
+
+    // 회차 추가 버튼
+    document.getElementById('btnAddRound')?.addEventListener('click', () => {
+      openRoundCreator();
+    });
+
+    // 대표 장소 수정 버튼
+    document.getElementById('btnEditPlace')?.addEventListener('click', openPlaceEditor);
+    // 개요 수정 버튼
+    document.getElementById('btnEditOverview')?.addEventListener('click', openOverviewModal);
+  }
+
+  async function loadRounds(){
+    const list = await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}/rounds`);
+    const today = new Date(); today.setHours(0,0,0,0);
+    list.sort((a,b)=>{
+      const ad = new Date(a.processing_at);
+      const bd = new Date(b.processing_at);
+      const apast = ad < today;
+      const bpast = bd < today;
+      if (apast !== bpast) return apast ? 1 : -1;
+      return ad - bd;
+    });
+    S.rounds = list;
+    renderRounds();
+    renderRoundCards();
+    const totalEl = document.getElementById('totalRounds');
+    if (totalEl) totalEl.textContent = String(S.rounds.length);
+  }
+
+  function isHybrid(){ return (S.challenge?.mode || '').toLowerCase() === 'hybrid'; }
+
+  function renderRounds(){
+    const tb = document.getElementById('roundTbody');
+    tb.innerHTML = S.rounds.map(r => {
+      const rid = r.id;
+
+      const modeCell = isHybrid()
+        ? `<select data-k="mode">
+             <option value="online"  ${r.mode==='online'?'selected':''}>온라인</option>
+             <option value="offline" ${r.mode==='offline'?'selected':''}>오프라인</option>
+           </select>`
+        : (r.mode || '');
+
+      return `
+      <tr data-rid="${rid}">
+        <td>${r.round}</td>
+        <td>${modeCell}</td>
+        <td>${r.processing_at || ''}</td>
+        <td><input type="time" value="${(r.start_time||'').slice(0,5)}" data-k="start_time"></td>
+        <td><input type="time" value="${(r.finish_time||'').slice(0,5)}" data-k="finish_time"></td>
+
+        <td>
+          <textarea class="w-100" data-k="description" rows="2" placeholder="설명">${r.description || ''}</textarea>
+        </td>
+
+        <td>
+          <div class="row-flex">
+            <input type="text" class="w-100" value="${r.place_name || ''}" data-k="place_name" placeholder="장소명" ${r.mode==='online'?'disabled':''}>
+            <button class="btn tiny" onclick="openPlacePicker('row', ${rid})" ${r.mode==='online'?'disabled':''}>검색</button>
+          </div>
+        </td>
+
+        <td>
+          <input type="text" class="w-100" value="${(r.mode==='online' ? (r.url||'') : (r.map_url||''))}" data-k="map_url" placeholder="회의/지도 URL">
+          <div class="muted tiny">온라인→url 저장 · 오프라인→map_url 저장</div>
+        </td>
+
+        <td>
+          <label class="tiny">
+            <input type="checkbox" data-k="reward_toggle"> 리워드
+          </label>
+          <input type="text" class="w-100" data-k="reward_text" placeholder="예: 인증 시 스탬프 2배" style="display:none;margin-top:4px">
+        </td>
+
+        <td>
+          <button class="btn" onclick="attend(${rid})">참석</button>
+          <button class="btn" onclick="decline(${rid})">불참</button>
+          <div class="muted" id="attendMsg-${rid}"></div>
+        </td>
+
+        <td>
+          <input type="file" accept="image/*" id="pic-${rid}">
+          <button class="btn" onclick="uploadPic(${rid})">업로드</button>
+          <div class="muted" id="picMsg-${rid}"></div>
+        </td>
+
+        <td>
+          <button class="btn" onclick="saveRound(${rid})">저장</button>
+          <button class="btn" onclick="delRound(${rid})">삭제</button>
+        </td>
+      </tr>`;
+    }).join('');
+
+    // 리워드 토글
+    document.querySelectorAll('#roundTbody tr').forEach(tr=>{
+      const toggle = tr.querySelector('[data-k="reward_toggle"]');
+      const input  = tr.querySelector('[data-k="reward_text"]');
+      toggle?.addEventListener('change', ()=>{ input.style.display = toggle.checked ? 'block' : 'none'; });
+    });
+
+    // 하이브리드: 모드 변경 시 입력 활성화/비활성
+    if (isHybrid()){
+      document.querySelectorAll('#roundTbody tr').forEach(tr=>{
+        const sel = tr.querySelector('[data-k="mode"]');
+        sel?.addEventListener('change', ()=>{
+          const isOn = sel.value === 'online';
+          const placeName = tr.querySelector('[data-k="place_name"]');
+          const placeBtn  = tr.querySelector('button[onclick^="openPlacePicker"]');
+          placeName.disabled = isOn;
+          placeBtn.disabled  = isOn;
+        });
+      });
+    }
+  }
+
+  // 카드 + 페이지네이션
+  function renderRoundCards(){
+    const wrap = document.getElementById('cardWrap');
+    const pageInfo = document.getElementById('pageInfo');
+    const total = S.rounds.length;
+    const pages = Math.max(1, Math.ceil(total / S.pageSize));
+    if (S.page > pages) S.page = pages;
+
+    const start = (S.page - 1) * S.pageSize;
+    const slice = S.rounds.slice(start, start + S.pageSize);
+
+    wrap.innerHTML = slice.map(r=>{
+      const spanTime = `${(r.start_time||'').slice(0,5)} - ${(r.finish_time||'').slice(0,5)}`;
+      const urlForMode = r.mode === 'online' ? (r.url||'') : (r.map_url||'');
+      const where = (r.mode === 'online') ? '온라인' : (r.place_name || '오프라인');
+      const appLink = makeNmapLink({ lat: r.lat, lng: r.lon, title: r.place_name });
+      return `
+        <div class="card" data-rid="${r.id}">
+          <div class="card-head">
+            <div>
+              <div style="font-weight:600">Round ${r.round}</div>
+              <div class="muted">${r.processing_at || ''}</div>
+            </div>
+            <div class="row-flex">
+              <span class="badge">${r.mode === 'online' ? 'Online' : 'Offline'}</span>
+              <button class="btn tiny edit-only" onclick="openRoundEditor(${r.id})">수정</button>
+              <button class="btn tiny edit-only" onclick="delRound(${r.id})">삭제</button>
+            </div>
+          </div>
+          <div class="kv"><span>⏱️</span><span>${spanTime}</span></div>
+          <div class="kv"><span>📍</span><span>${where}</span></div>
+          ${urlForMode ? `<div class="kv"><span>🔗</span><a href="${urlForMode}" target="_blank" rel="noopener">${urlForMode}</a></div>` : ''}
+          ${r.mode==='offline' ? `<div class="kv"><span>📱</span><a href="${appLink}" target="_blank">네이버지도 앱으로 열기</a></div>` : ''}
+          <div class="desc">${r.description || ''}</div>
+        </div>`;
+    }).join('');
+
+    pageInfo.textContent = `${S.page} / ${Math.max(1, Math.ceil(total / S.pageSize))} 페이지`;
+  }
+  function prevPage(){ if (S.page > 1){ S.page--; renderRoundCards(); } }
+  function nextPage(){
+    const pages = Math.max(1, Math.ceil(S.rounds.length / S.pageSize));
+    if (S.page < pages){ S.page++; renderRoundCards(); }
+  }
+
+  // ===== 회차 수정/추가 모달 =====
+  function ensureModal(){
+    if (document.getElementById('roundModal')) return;
+    const html = `
+    <div id="roundModal" style="position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:50">
+      <div style="width:720px;max-width:95vw;background:#fff;border-radius:12px;overflow:hidden;border:1px solid var(--br)">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--br)">
+          <h3 id="rm_title" style="margin:0">회차 수정</h3>
+          <button class="btn tiny" onclick="closeRoundModal()">닫기</button>
+        </div>
+        <div style="padding:12px;display:flex;flex-direction:column;gap:8px">
+          <div id="rm_mode_wrap" style="display:none">
+            <label>모드
+              <select id="rm_mode">
+                <option value="online">온라인</option>
+                <option value="offline">오프라인</option>
+              </select>
+            </label>
+          </div>
+          <label>진행 날짜 <input id="rm_date" type="date"></label>
+          <div class="row-flex">
+            <label>시작 <input id="rm_start" type="time"></label>
+            <label>종료 <input id="rm_finish" type="time"></label>
+          </div>
+          <label>설명<br><textarea id="rm_desc" rows="3" class="w-100"></textarea></label>
+          <div id="rm_online" style="display:none">
+            <label>회의 URL <input id="rm_url" class="w-100" placeholder="https://..."></label>
+          </div>
+          <div id="rm_offline" style="display:none">
+            <div class="row-flex">
+              <label style="flex:1">장소명 <input id="rm_place" class="w-100" placeholder="장소명"></label>
+              <button class="btn tiny" onclick="openPlacePicker('row', window.__editingRid)">장소 검색</button>
+              <button class="btn tiny" onclick="openMapPickerRow(window.__editingRid)">지도상 검색</button>
+            </div>
+            <label>웹 링크 <input id="rm_mapurl" class="w-100" placeholder="네이버 지도 링크"></label>
+            <input id="rm_lat" type="hidden"><input id="rm_lon" type="hidden">
+          </div>
+          <div id="rm_msg" class="muted"></div>
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button class="btn" id="rm_save" onclick="saveRoundModal()">저장</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+    // 모드에 따라 필드 토글
+    const sel = document.getElementById('rm_mode');
+    sel?.addEventListener('change', ()=>showFieldsForMode(sel.value));
+  }
+
+  function showFieldsForMode(mode){
+    document.getElementById('rm_online').style.display = (mode==='online')?'block':'none';
+    document.getElementById('rm_offline').style.display = (mode==='offline')?'block':'none';
+  }
+
+  function openRoundEditor(rid){
+    ensureModal();
+    window.__editingRid = rid; // existing
+    const r = S.rounds.find(x=>x.id===rid);
+    const chMode = (S.challenge?.mode||'').toLowerCase();
+    const hybrid = chMode === 'hybrid';
+    document.getElementById('rm_mode_wrap').style.display = hybrid ? 'block':'none';
+    document.getElementById('rm_mode').value = r.mode;
+    showFieldsForMode(r.mode);
+    document.getElementById('rm_date').value = (r.processing_at||'').slice(0,10);
+    document.getElementById('rm_start').value = (r.start_time||'').slice(0,5);
+    document.getElementById('rm_finish').value = (r.finish_time||'').slice(0,5);
+    document.getElementById('rm_desc').value = r.description || '';
+    document.getElementById('rm_url').value = r.url || '';
+    document.getElementById('rm_place').value = r.place_name || '';
+    document.getElementById('rm_mapurl').value = r.map_url || '';
+    document.getElementById('rm_lat').value = r.lat ?? '';
+    document.getElementById('rm_lon').value = r.lon ?? '';
+    document.getElementById('rm_title').textContent = `회차 수정 – #${r.round}`;
+    document.getElementById('rm_msg').textContent = '';
+    document.getElementById('roundModal').style.display = 'flex';
+  }
+
+  async function openRoundCreator(){
+    ensureModal();
+    window.__editingRid = null; // new
+    const chMode = (S.challenge?.mode||'').toLowerCase();
+    const hybrid = chMode === 'hybrid';
+    const defaultMode = (hybrid ? (S.challenge?.default_place_name ? 'offline' : 'online') : chMode);
+    document.getElementById('rm_mode_wrap').style.display = hybrid ? 'block':'none';
+    document.getElementById('rm_mode').value = defaultMode;
+    showFieldsForMode(defaultMode);
+    const last = S.rounds[S.rounds.length-1];
+    const d = last ? new Date(last.processing_at) : new Date();
+    d.setDate(d.getDate()+1);
+    document.getElementById('rm_date').valueAsDate = d;
+    document.getElementById('rm_start').value = '09:00';
+    document.getElementById('rm_finish').value = '10:00';
+    document.getElementById('rm_desc').value = `자동 생성 라운드 #${(S.rounds[S.rounds.length-1]?.round||0)+1}`;
+    document.getElementById('rm_url').value = '';
+    document.getElementById('rm_place').value = '';
+    document.getElementById('rm_mapurl').value = '';
+    document.getElementById('rm_lat').value = '';
+    document.getElementById('rm_lon').value = '';
+    document.getElementById('rm_title').textContent = '회차 추가';
+    document.getElementById('rm_msg').textContent = '';
+    document.getElementById('roundModal').style.display = 'flex';
+  }
+
+  function closeRoundModal(){ document.getElementById('roundModal').style.display = 'none'; }
+
+  async function saveRoundModal(){
+    const rid = window.__editingRid;
+    const mode = (document.getElementById('rm_mode')?.value) || (S.challenge?.mode||'online');
+    const processing_at = document.getElementById('rm_date').value;
+    const start_time = document.getElementById('rm_start').value;
+    const finish_time = document.getElementById('rm_finish').value;
+    const description = document.getElementById('rm_desc').value || '';
+    const url = document.getElementById('rm_url').value || null;
+    const place_name = document.getElementById('rm_place').value || null;
+    const map_url = document.getElementById('rm_mapurl').value || null;
+    const lat = document.getElementById('rm_lat').value || null;
+    const lon = document.getElementById('rm_lon').value || null;
+    const msg = document.getElementById('rm_msg');
+
+    try{
+      if (rid){
+        // update
+        const payload = { mode, processing_at, start_time, finish_time, description };
+        if (mode==='online'){ payload.url = url; }
+        else { Object.assign(payload, { place_name, map_url, lat: lat?Number(lat):null, lon: lon?Number(lon):null }); }
+        await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}/rounds/${rid}`, {
+          method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+        });
+      }else{
+        // create
+        const nextRound = (S.rounds[S.rounds.length-1]?.round || 0) + 1;
+        if (nextRound > 50) { msg.textContent = '최대 50회차까지 생성 가능합니다.'; return; }
+        const payload = {
+          challenge_id: CHALLENGE_ID,
+          mode,
+          round: nextRound,
+          processing_at,
+          start_time,
+          finish_time,
+          description,
+        };
+        if (mode==='online') payload.url = url;
+        else Object.assign(payload, { place_name, map_url, lat: lat?Number(lat):null, lon: lon?Number(lon):null });
+        await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}/rounds`, {
+          method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+        });
+      }
+      closeRoundModal();
+      await loadRounds();
+    }catch(e){ msg.textContent = e.message || '저장 실패'; }
+  }
+
+  // ===== 대표 장소 수정 모달 =====
+  function ensurePlaceModal(){
+    if (document.getElementById('placeModal')) return;
+    const html = `
+    <div id="placeModal" style="position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:50">
+      <div style="width:760px;max-width:95vw;background:#fff;border-radius:12px;overflow:hidden;border:1px solid var(--br)">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--br)">
+          <h3 style="margin:0">대표 장소 수정</h3>
+          <button class="btn tiny" onclick="closePlaceModal()">닫기</button>
+        </div>
+        <div style="padding:12px;display:flex;gap:12px;align-items:flex-start">
+          <img id="dp_img" alt="map preview" style="width:260px;height:160px;object-fit:cover;border-radius:6px;border:1px solid #eee">
+          <div style="flex:1">
+            <div><b id="dp_title"></b></div>
+            <div id="dp_road" class="muted" style="font-size:12px"></div>
+            <div id="dp_addr" class="muted" style="font-size:12px"></div>
+            <div class="muted" style="font-size:12px;margin-top:4px">위도 <span id="dp_lat">-</span> / 경도 <span id="dp_lng">-</span></div>
+            <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap; align-items:center">
+              <a id="dp_link" href="#" target="_blank" rel="noopener">네이버 장소 링크(웹에서 열기)</a>
+              <a id="dp_link_app" href="#">앱에서 열기</a>
+            </div>
+            <div class="muted" style="font-size:12px;margin-top:4px" id="dp_link_hint"></div>
+            <div style="margin-top:8px; display:flex; gap:8px; align-items:center">
+              <button class="btn" onclick="openPlacePicker('challenge')">장소 검색</button>
+              <button class="btn" onclick="openMapPickerChallenge()">지도상 검색</button>
+              <button class="btn" onclick="savePlaceModal()">저장</button>
+              <span id="dp_msg" class="muted"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+  }
+
+  // 개요(제목/설명) 수정 모달
+  function ensureOverviewModal(){
+    if (document.getElementById('ovModal')) return;
+    const html = `
+    <div id=ovModal style="position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:50">
+      <div style="width:680px;max-width:95vw;background:#fff;border-radius:12px;border:1px solid var(--br)">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--br)">
+          <h3 style="margin:0">개요 수정</h3>
+          <button class=\"btn tiny\" onclick=\"closeOverviewModal()\">닫기</button>
+        </div>
+        <div style="padding:12px;display:flex;flex-direction:column;gap:8px">
+          <label>제목 <input id=ov_title class=\"w-100\"></label>
+          <label>설명 <textarea id=ov_desc rows=4 class=\"w-100\"></textarea></label>
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button class=\"btn\" onclick=\"saveOverviewModal()\">저장</button>
+          </div>
+          <div id=ov_msg class=muted></div>
+        </div>
+      </div>
+    </div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+  }
+  function openOverviewModal(){ if(!S.canEdit) return; ensureOverviewModal(); document.getElementById('ov_title').value=S.challenge?.title||''; document.getElementById('ov_desc').value=S.challenge?.description||''; document.getElementById('ovModal').style.display='flex'; }
+  function closeOverviewModal(){ document.getElementById('ovModal').style.display='none'; }
+  async function saveOverviewModal(){
+    const title=(document.getElementById('ov_title').value||'').trim();
+    const description=(document.getElementById('ov_desc').value||'').trim();
+    const msg=document.getElementById('ov_msg');
+    if(!title){ msg.textContent='제목은 필수입니다.'; return; }
+    try{
+      await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ title, description })});
+      msg.textContent='저장됨';
+      await loadChallenge();
+    }catch(e){ msg.textContent=e.message||'저장 실패'; }
+  }
+
+  function openPlaceEditor(){
+    if (!S.canEdit) return;
+    ensurePlaceModal();
+    const m = document.getElementById('placeModal');
+    updateDpPreview({
+      title: S.challenge?.default_place_name,
+      road:  S.challenge?.default_road_address,
+      addr:  S.challenge?.default_address,
+      lat:   S.challenge?.default_latitude,
+      lng:   S.challenge?.default_longitude,
+      link:  S.challenge?.default_map_url
+    });
+    m.style.display='flex';
+  }
+  function closePlaceModal(){ document.getElementById('placeModal').style.display='none'; }
+  function openMapPickerChallenge(){ window.__editingRid = null; window.open('/map','mapPicker','width=1200,height=800'); }
+
+  function updateDpPreview({title, road, addr, lat, lng, link}){
+    const img = document.getElementById('dp_img');
+    if (lat!=null && lng!=null) img.src = `/places/staticmap?lat=${lat}&lng=${lng}&w=360&h=220&scale=2&level=16`;
+    else img.removeAttribute('src');
+    document.getElementById('dp_title').textContent = title || '';
+    document.getElementById('dp_road').textContent  = road ? `도로명주소: ${road}` : '';
+    document.getElementById('dp_addr').textContent  = addr ? `지번: ${addr}` : '';
+    document.getElementById('dp_lat').textContent   = (lat!=null?lat:'-');
+    document.getElementById('dp_lng').textContent   = (lng!=null?lng:'-');
+    document.getElementById('dp_link').href = link || '#';
+    const app = makeNmapLink({lat,lng,title});
+    const a2 = document.getElementById('dp_link_app'); a2.href = app;
+    document.getElementById('dp_link_hint').textContent = link ? '검색결과 화면으로 이동합니다(좌표 센터 고정).' : '';
+    // stash to dataset for save
+    const box = document.getElementById('placeModal');
+    box.dataset.title = title||''; box.dataset.road = road||''; box.dataset.addr = addr||''; box.dataset.lat = lat??''; box.dataset.lng = lng??''; box.dataset.link = link||'';
+  }
+
+  async function savePlaceModal(){
+    const box = document.getElementById('placeModal');
+    const payload = {
+      default_place_name: box.dataset.title || null,
+      default_road_address: box.dataset.road || null,
+      default_address: box.dataset.addr || null,
+      default_latitude: box.dataset.lat ? Number(box.dataset.lat) : null,
+      default_longitude: box.dataset.lng ? Number(box.dataset.lng) : null,
+      default_map_url: box.dataset.link || null,
+    };
+    const msg = document.getElementById('dp_msg');
+    try{
+      await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+      msg.textContent = '저장됨';
+      await loadChallenge();
+    }catch(e){ msg.textContent = e.message || '저장 실패'; }
+  }
+
+  // (공통 장소 패널 제거로 인한 관련 함수 삭제)
+
+  // 저장
+  async function saveRound(rid){
+    const tr = document.querySelector(`tr[data-rid="${rid}"]`) || document.querySelector(`#cardWrap [data-rid="${rid}"]`);
+    if (!tr) return;
+    const val = k => tr.querySelector(`[data-k="${k}"]`)?.value || null;
+    const has = k => !!tr.querySelector(`[data-k="${k}"]`);
+
+    const payload = {
+      start_time: val('start_time'),
+      finish_time: val('finish_time'),
+      description: buildDescriptionWithReward(val('description'), tr),
+      place_name: val('place_name'),
+    };
+
+    if (has('mode')) payload.mode = tr.querySelector('[data-k="mode"]').value;
+
+    const effectiveUrl = val('map_url');
+    const modeNow = payload.mode || (S.rounds.find(r=>r.id===rid)?.mode || S.challenge?.mode || '');
+    if (modeNow === 'online')      payload.url = effectiveUrl;
+    else if (modeNow === 'offline') payload.map_url = effectiveUrl;
+    else {
+      const round = S.rounds.find(r=>r.id===rid);
+      if (round?.mode === 'online') payload.url = effectiveUrl;
+      else payload.map_url = effectiveUrl;
+    }
+
+    if (has('lat')) payload.lat = val('lat');
+    if (has('lon')) payload.lon = val('lon');
+
+    await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}/rounds/${rid}`, {
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload),
+    });
+    await loadRounds();
+    alert('저장 완료');
+  }
+
+  function buildDescriptionWithReward(desc, tr){
+    const toggle = tr.querySelector('[data-k="reward_toggle"]');
+    const input  = tr.querySelector('[data-k="reward_text"]');
+    const reward = (toggle?.checked ? (input?.value || '').trim() : '');
+    if (!reward) return desc || '';
+    const base = (desc || '').trim();
+    const tag  = `[리워드] ${reward}`;
+    if (!base) return tag;
+    if (base.includes(tag)) return base;
+    return base + '\n' + tag;
+  }
+
+  async function delRound(rid){
+    if(!confirm('이 회차를 삭제하시겠습니까?')) return;
+    await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}/rounds/${rid}`, { method:'DELETE' });
+    await loadRounds();
+    alert('삭제 완료 (총 라운드 수 자동 갱신)');
+  }
+
+  // 참석/불참
+  async function attend(rid){
+    try{
+      await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}/rounds/${rid}/attend`, { method:'POST' });
+      document.getElementById(`attendMsg-${rid}`).innerHTML = '<span class="ok">참석 처리됨</span>';
+    }catch(e){
+      document.getElementById(`attendMsg-${rid}`).innerHTML = `<span class="err">${e.message}</span>`;
+    }
+  }
+  async function decline(rid){
+    try{
+      await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}/rounds/${rid}/decline`, { method:'POST' });
+      document.getElementById(`attendMsg-${rid}`).innerHTML = '<span class="ok">불참 처리됨</span>';
+    }catch(e){
+      document.getElementById(`attendMsg-${rid}`).innerHTML = `<span class="err">${e.message}</span>`;
+    }
+  }
+
+  // 참석 예정자
+  async function loadPlanned(){
+    const rid = parseInt(document.getElementById('selRoundId').value||'0');
+    if(!rid) return;
+    const list = await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}/rounds/${rid}/attendees?planned_only=true`);
+    document.getElementById('planned').innerHTML =
+      list.map(u => `<div>${u.username || u.name || ('user#'+u.user_id)} (id:${u.user_id})</div>`).join('');
+  }
+
+  // 장소 검색 팝업
+  function openPlacePicker(scope, rid){
+    const url = `/pages/place-picker?scope=${encodeURIComponent(scope)}${rid?`&rid=${rid}`:''}`;
+    window.open(url, 'placePicker', 'width=720,height=640,menubar=no,toolbar=no,location=no');
+  }
+
+  // 지도상 검색(동적 맵)
+  function openMapPickerRow(rid){
+    window.__ridForMap = rid;
+    window.open('/map', 'mapPicker', 'width=1200,height=800');
+  }
+
+  // 팝업에서 값 받기
+  window.addEventListener('message', (e) => {
+    if (e.origin !== window.location.origin) return;
+    const d = e.data || {};
+    // 1) place_picker.html 결과 처리
+    if (d.type === 'place-picked' && d.place){
+      const p = d.place;
+      if (d.scope === 'row' && d.rid) {
+        const tr = document.querySelector(`#cardWrap [data-rid="${d.rid}"]`) || document.querySelector(`tr[data-rid="${d.rid}"]`);
+        if (!tr) return;
+        const q = k => tr.querySelector(`[data-k="${k}"]`);
+        if (q('place_name')) q('place_name').value = p.place_name || '';
+        if (q('map_url'))   q('map_url').value   = p.map_url || '';
+        if (q('lat')) q('lat').value = p.lat ?? '';
+        if (q('lon')) q('lon').value = p.lon ?? '';
+        const selMode = tr.querySelector('[data-k="mode"]');
+        if (selMode && selMode.value === 'online') selMode.value = 'offline';
+      } else if (d.scope === 'challenge') {
+        ensurePlaceModal();
+        updateDpPreview({ title: p.place_name, road: p.road_address, addr: p.address, lat: p.lat, lng: p.lon, link: p.map_url });
+        document.getElementById('placeModal').style.display='flex';
+      }
+      return;
+    }
+
+    // 2) 동적 지도 /map 결과 처리
+    if (d.type === 'placePicked'){
+      const rid = window.__ridForMap;
+      if (rid){
+        const tr = document.querySelector(`#cardWrap [data-rid="${rid}"]`) || document.querySelector(`tr[data-rid="${rid}"]`);
+        if (!tr) return;
+        const q = k => tr.querySelector(`[data-k="${k}"]`);
+        if (q('place_name')) q('place_name').value = d.title || '';
+        if (q('map_url'))   q('map_url').value   = d.link || '';
+        if (q('lat')) q('lat').value = (d.lat != null ? d.lat : '');
+        if (q('lon')) q('lon').value = (d.lng != null ? d.lng : '');
+        const selMode = tr.querySelector('[data-k="mode"]');
+        if (selMode && selMode.value === 'online') selMode.value = 'offline';
+        window.__ridForMap = null;
+      } else {
+        // 대표 장소 편집용
+        ensurePlaceModal();
+        updateDpPreview({ title: d.title, road: d.road, addr: d.addr, lat: d.lat, lng: d.lng, link: d.link });
+        document.getElementById('placeModal').style.display='flex';
+      }
+    }
+  });
+
+  // nmap 딥링크
+  function makeNmapLink({ placeId, lat, lng, title } = {}){
+    const appname = 'com.challengers.web';
+    if (placeId) return `nmap://place?id=${encodeURIComponent(String(placeId))}&appname=${encodeURIComponent(appname)}`;
+    if (lat != null && lng != null) return `nmap://map?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}&zoom=15&appname=${encodeURIComponent(appname)}`;
+    const key = encodeURIComponent((title || '').trim());
+    return `nmap://search?query=${key}&appname=${encodeURIComponent(appname)}`;
+  }
+
+  // 사진 업로드
+  async function uploadPic(rid){
+    const f = document.getElementById(`pic-${rid}`).files?.[0];
+    if(!f){ alert('파일을 선택하세요'); return; }
+    const fd = new FormData();
+    fd.append('file', f);
+
+    const res = await fetch(`${API_ROOT}/challenges/${CHALLENGE_ID}/rounds/${rid}/pictures`, {
+      method:'POST',
+      credentials:'include',
+      headers: { ...authHeader() }, // multipart는 Content-Type 지정 금지
+      body: fd
+    });
+    if(!res.ok){
+      const t = await res.text();
+      document.getElementById(`picMsg-${rid}`).innerHTML = `<span class="err">업로드 실패: ${t.slice(0,200)}</span>`;
+      return;
+    }
+    document.getElementById(`picMsg-${rid}`).innerHTML = '<span class="ok">업로드 성공</span>';
+  }
+</script>
+</body>
+</html>
+      <tr>
+        <td style="padding:10px;color:#555">총 회차수</td>
+        <td id="fld-total" style="padding:10px">
+          <span id="totalRounds">-</span>
+          <button class="btn tiny" id="btnAddRound" style="margin-left:8px">회차 추가</button>
+          <span class="muted" style="margin-left:8px">최대 50회차</span>
+          <span id="addRoundMsg" class="muted" style="margin-left:8px"></span>
+        </td>
+        <td style="padding:10px;text-align:center"><span class="switch"><input type="checkbox" data-row-toggle data-target="fld-total" checked><span class="slider"></span></span></td>
+      </tr>

@@ -1,0 +1,95 @@
+"""challenge: add updated_at, switch status to ENUM, add cover fields
+
+Revision ID: 3682c019c3fa
+Revises: 7cc008d3ced4
+Create Date: 2025-09-01 23:27:40.158367
+"""
+from typing import Sequence, Union
+
+from alembic import op
+import sqlalchemy as sa
+from sqlalchemy.dialects import mysql
+
+# revision identifiers, used by Alembic.
+revision: str = "3682c019c3fa"
+down_revision: Union[str, Sequence[str], None] = "7cc008d3ced4"
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
+
+def _column_exists(table: str, column: str) -> bool:
+    conn = op.get_bind()
+    sql = sa.text("""
+        SELECT COUNT(*) AS cnt
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = :t
+          AND COLUMN_NAME = :c
+    """)
+    return bool(conn.execute(sql, {"t": table, "c": column}).scalar())
+
+
+def upgrade() -> None:
+    # 1) updated_at: 없으면 추가
+    if not _column_exists("challenges", "updated_at"):
+        op.add_column(
+            "challenges",
+            sa.Column("updated_at", sa.DateTime(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False),
+        )
+
+    # 1-1) ON UPDATE CURRENT_TIMESTAMP 보정 (이미 되어있어도 통과)
+    try:
+        op.execute(
+            """
+            ALTER TABLE challenges
+            MODIFY COLUMN updated_at DATETIME
+            NOT NULL DEFAULT CURRENT_TIMESTAMP
+            ON UPDATE CURRENT_TIMESTAMP
+            """
+        )
+    except Exception:
+        pass
+
+    # 2) status 사전정리(혹시 모를 NULL/빈값)
+    try:
+        op.execute("UPDATE challenges SET status=recruiting WHERE status IS NULL OR status=")
+    except Exception:
+        pass
+
+    # 3) status: VARCHAR(20) → ENUM + NOT NULL + DEFAULT recruiting
+    try:
+        op.alter_column(
+            "challenges",
+            "status",
+            existing_type=mysql.VARCHAR(length=20),
+            type_=sa.Enum("recruiting", "active", "completed", "cancelled", name="challenge_status_enum"),
+            existing_nullable=True,
+            nullable=False,
+            existing_comment="챌린지 상태",
+            server_default=sa.text("recruiting"),
+        )
+    except Exception:
+        pass
+
+
+def downgrade() -> None:
+    # status: ENUM → VARCHAR(20) (NOT NULL + DEFAULT 유지)
+    try:
+        op.alter_column(
+            "challenges",
+            "status",
+            existing_type=sa.Enum("recruiting", "active", "completed", "cancelled", name="challenge_status_enum"),
+            type_=mysql.VARCHAR(length=20),
+            nullable=False,
+            existing_comment="챌린지 상태",
+            server_default=sa.text("recruiting"),
+        )
+    except Exception:
+        pass
+
+    # updated_at: 있으면 제거
+    try:
+        if _column_exists("challenges", "updated_at"):
+            op.drop_column("challenges", "updated_at")
+    except Exception:
+        pass

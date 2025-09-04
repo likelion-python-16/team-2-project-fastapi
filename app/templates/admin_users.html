@@ -1,0 +1,50 @@
+{% extends "final.html" %}
+{% block title %}관리자 목록{% endblock %}
+{% block content %}
+<style> body { flex-direction: column; } </style>
+<div class="flex gap-6 p-6">
+  <div class="flex-1">
+    <h2 class="text-xl font-semibold mb-4">관리자 목록</h2>
+
+    <table class="w-full text-sm border">
+      <thead class="bg-muted/50">
+        <tr>
+          <th class="p-2 border">ID</th>
+          <th class="p-2 border">Username</th>
+          <th class="p-2 border">Email</th>
+          <th class="p-2 border">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in admins %}
+        <tr>
+          <td class="p-2 border">{{ u.id }}</td>
+          <td class="p-2 border">{{ u.username }}</td>
+          <td class="p-2 border">{{ u.email }}</td>
+          <td class="p-2 border">
+            <form class="inline" method="post" action="/admin/users/{{u.id}}/demote">
+              <button class="kt-btn kt-btn-outline" type="submit">강등</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td class="p-4 text-center text-muted-foreground" colspan="4">관리자 없음</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="w-[320px]">
+    <div class="kt-card">
+      <div class="kt-card-content p-4 text-sm text-muted-foreground">
+        <div class="font-medium mb-2">안내</div>
+        <ul class="list-disc ms-4">
+          <li>관리자 계정은 사용자(User) 레코드에 is_admin=True로 표시됩니다.</li>
+          <li>강등하면 관리자 권한이 즉시 해제되어 관리자 페이지 접근이 불가합니다.</li>
+          <li>승격은 사용자 상세에서 처리하거나 API를 사용할 수 있습니다.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  
+</div>
+{% endblock %}

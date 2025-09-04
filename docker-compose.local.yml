@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  # FastAPI 애플리케이션
+  api:
+    build: .
+    container_name: team-api-local
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    ports:
+      - "8001:8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      # 환경 설정
+      - ENVIRONMENT=development
+
+      - NAVER_SEARCH_CLIENT_ID=${NAVER_SEARCH_CLIENT_ID}
+      - NAVER_SEARCH_CLIENT_SECRET=${NAVER_SEARCH_CLIENT_SECRET}
+      - NAVER_MAPS_CLIENT_ID=${NAVER_MAPS_CLIENT_ID}
+      - NAVER_MAPS_CLIENT_SECRET=${NAVER_MAPS_CLIENT_SECRET}
+      
+      # MySQL 설정
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=team_user
+      - MYSQL_PASSWORD=team_password_123
+      - MYSQL_DATABASE=team_project_db
+      
+      # 보안 관련 (.env에서 가져오기)
+      - JWT_SECRET=${JWT_SECRET:-default-dev-secret-change-in-production}
+      - FERNET_KEY=${FERNET_KEY:-}
+      
+      # AWS 설정 (.env에서 가져오기)
+      - AWS_REGION=${AWS_REGION:-}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - S3_BUCKET=${S3_BUCKET:-}
+      
+      # 기타 설정
+      - DEBUG=True
+      - HF_HOME=/app/.cache
+      - TRANSFORMERS_CACHE=/app/.cache
+      - SENTENCE_TRANSFORMERS_HOME=/app/.cache
+      - XDG_CACHE_HOME=/app/.cache
+
+    volumes:
+      - ./app:/app/app
+      - ./alembic:/app/alembic
+      - ./.env:/app/.env:ro
+      - ./app/static:/app/static
+      - ./app/.cache:/app/.cache   
+    networks:
+      - team-network-local
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # MySQL 데이터베이스
+  mysql:
+    image: mysql:8.0
+    container_name: team-mysql-local
+    environment:
+      - MYSQL_ROOT_PASSWORD=root_password_123
+      - MYSQL_DATABASE=team_project_db
+      - MYSQL_USER=team_user
+      - MYSQL_PASSWORD=team_password_123
+      - REQUIRE_EMAIL_VERIFICATION=true
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data_local:/var/lib/mysql
+    networks:
+      - team-network-local
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mysql_data_local:
+
+networks:
+  team-network-local:
+    driver: bridge

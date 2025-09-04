@@ -1,0 +1,166 @@
+{% extends "final.html" %}
+{% block title %}관리자 신청 히스토리 - Team Project{% endblock %}
+{% block content %}
+<style>
+  body { flex-direction: column; }
+  table.kt { width:100%; border-collapse:collapse }
+  table.kt th, table.kt td { border-bottom:1px solid #eee; padding:10px 8px; text-align:left; font-size:14px }
+  table.kt th { color:#6b7280; font-weight:600 }
+  .status-badge{display:inline-block;padding:4px 10px;border-radius:9999px;font-weight:700;font-size:12px;color:#fff}
+  .status-applied{background:#6b7280}
+  .status-imminent{background:#dc2626}
+  .status-approved{background:#16a34a}
+  .status-rejected{background:#f59e0b}
+  .status-reapproved{background:#2563eb}
+  .status-revoked{background:#dc2626}
+  .status-clickable{cursor:pointer;transition:opacity 0.2s}
+  .status-clickable:hover{opacity:0.8}
+  
+  /* 알림 박스 스타일 */
+  .alert-box {
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    color: white;
+    font-weight: 500;
+  }
+  .alert-approved { background-color: #059669; }
+</style>
+
+<main class="max-w-[1120px] mx-auto p-6 w-full">
+  <!-- 상태 알림 박스 -->
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const success = urlParams.get('success');
+    if (success) {
+      let alertHtml = '';
+      if (success === 'reapproved') {
+        alertHtml = '<div class="alert-box alert-approved">관리자 권한이 재승인되었습니다.</div>';
+      }
+      if (alertHtml) {
+        document.addEventListener('DOMContentLoaded', function() {
+          const main = document.querySelector('main');
+          const firstChild = main.firstElementChild;
+          const alertDiv = document.createElement('div');
+          alertDiv.innerHTML = alertHtml;
+          main.insertBefore(alertDiv.firstElementChild, firstChild);
+        });
+      }
+    }
+  </script>
+  <div class="flex items-center justify-between mb-3">
+    <h1 class="text-xl font-semibold">관리자 신청 히스토리</h1>
+    <div class="flex items-center gap-2">
+      <form class="flex items-center gap-1" method="get" action="/admin/requests-history">
+        <input type="text" name="q" value="{{ search_query or '' }}" placeholder="신청자 검색" class="kt-input" style="height:32px;padding:0 10px;" />
+        <select name="action" class="kt-input" style="height:32px;padding:0 8px;">
+          <option value="">모든 이벤트</option>
+          <option value="applied" {% if action_filter == 'applied' %}selected{% endif %}>대기중</option>
+          <option value="approved" {% if action_filter == 'approved' %}selected{% endif %}>승인</option>
+          <option value="rejected" {% if action_filter == 'rejected' %}selected{% endif %}>거절</option>
+          <option value="demoted_all" {% if action_filter == 'demoted_all' %}selected{% endif %}>권한 해제</option>
+        </select>
+        <select name="sort" class="kt-input" style="height:32px;padding:0 8px;">
+          <option value="time_desc" {% if sort_option == 'time_desc' %}selected{% endif %}>시간 최신순</option>
+          <option value="time_asc" {% if sort_option == 'time_asc' %}selected{% endif %}>시간 오래된순</option>
+          <option value="name_asc" {% if sort_option == 'name_asc' %}selected{% endif %}>이름 가나다순</option>
+          <option value="name_desc" {% if sort_option == 'name_desc' %}selected{% endif %}>이름 역순</option>
+        </select>
+        <button class="kt-btn kt-btn-sm" type="submit" style="height:32px;">검색</button>
+      </form>
+      <a href="/admin" class="kt-btn">관리자 페이지</a>
+    </div>
+  </div></main>
+
+  <div class="kt-card">
+    <div class="kt-card-content p-4">
+      {% if rows and rows|length > 0 %}
+      <table class="kt">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>신청자</th>
+            <th>이메일</th>
+            <th>이벤트</th>
+            <th>신청일</th>
+            <th>처리일</th>
+            <th>실행자</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr>
+            <td>#{{ r.id }}</td>
+            <td>{{ r.user.name if r.user else '-' }} ({{ r.user.username if r.user else '-' }})</td>
+            <td>{{ r.user.email if r.user else '-' }}</td>
+            <td>
+              {% set label_map = {
+                'applied':'승인 신청','approved':'승인','reapproved':'재승인','rejected':'거절',
+                'promoted_super':'책임관리자 임명','demoted_super_only':'책임관리자 해제','demoted_all':'권한해제','auto_rejected':'자동 거절'
+              } %}
+              {% set base = 'status-' + (r.action or 'applied') %}
+              {% set is_pending_now = (r.action == 'applied' and pending_left_map.get(r.user_id) is not none) %}
+              {% set left = pending_left_map.get(r.user_id) if is_pending_now else None %}
+              {% set cls = base + (' status-imminent' if (left is not none and left <= imminent_threshold_sec) else '') %}
+              {% if r.note %}
+                <span class="status-badge status-clickable {{ cls }}" onclick="showNoteModal('{{ r.note|e }}')">{{ label_map.get(r.action, r.action) }}</span>
+              {% else %}
+                <span class="status-badge {{ cls }}">{{ label_map.get(r.action, r.action) }}</span>
+              {% endif %}
+            </td>
+            <td>{{ (applied_map.get(r.user_id)).strftime('%Y-%m-%d %H:%M') if applied_map.get(r.user_id) else '-' }}</td>
+            <td>{% if r.action == 'applied' %}-{% else %}{{ r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else '-' }}{% endif %}</td>
+            <td>{{ r.actor.name if r.actor else '-' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+        <div class="text-gray-500">표시할 히스토리가 없습니다.</div>
+      {% endif %}
+  </div>
+</div>
+
+<script>
+  function showNoteModal(note){
+    if(!note){ return; }
+    alert(note);
+  }
+</script>
+
+  <!-- Note 모달 -->
+  <div id="noteModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50" onclick="hideNoteModal()">
+    <div class="flex items-center justify-center min-h-screen p-4">
+      <div class="bg-white rounded-lg p-6 max-w-md w-full" onclick="event.stopPropagation()">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="text-lg font-semibold">사유</h3>
+          <button onclick="hideNoteModal()" class="text-gray-400 hover:text-gray-600">&times;</button>
+        </div>
+        <div id="noteContent" class="text-gray-700 mb-4"></div>
+        <div class="flex justify-end">
+          <button onclick="hideNoteModal()" class="kt-btn kt-btn-sm">닫기</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+function showNoteModal(note) {
+  document.getElementById('noteContent').textContent = note;
+  document.getElementById('noteModal').classList.remove('hidden');
+}
+
+function hideNoteModal() {
+  document.getElementById('noteModal').classList.add('hidden');
+}
+
+// ESC 키로 모달 닫기
+document.addEventListener('keydown', function(event) {
+  if (event.key === 'Escape') {
+    hideNoteModal();
+  }
+});
+</script>
+
+{% endblock %}

@@ -1,0 +1,49 @@
+<!-- app/templates/map_static.html -->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>Static Map 미리보기</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>body{font-family:system-ui; padding:16px;} input{padding:8px; width:140px;}</style>
+</head>
+<body>
+  <h3>Static Map (원격 이미지 – 서버 저장 아님)</h3>
+  <div>
+    위도(lat): <input id="lat" value="37.579617" />
+    경도(lng): <input id="lng" value="126.977041" />
+    확대(zoom): <input id="z" value="14" />
+    <button id="btn">미리보기</button>
+  </div>
+  <p>※ Static Map은 **네이버 서버의 이미지를 바로 로드**하는 것이라, 우리 Docker 용량에 저장되지 않아.</p>
+  <div id="wrap" style="margin-top:12px;">
+    <img id="img" alt="Static Map" style="max-width:100%; border:1px solid #eee;"/>
+    <div><small id="url"></small></div>
+  </div>
+
+  <script>
+    // 문서: https://maps.apigw.ntruss.com/map-static/v2
+    // scale=2 옵션 포함(레티나 느낌)
+    function buildStaticUrl(lat, lng, zoom) {
+      const center = `${lng},${lat}`;
+      const w = 600, h = 400;   // 필요시 조절
+      const scale = 2;          // 네가 원하는 값
+      const markers = `type:d|size:mid|pos:${lng}%20${lat}`;
+      const clientId = "{{ NCP_KEY_ID }}";
+      // Static Map은 키를 헤더가 아니라 쿼리로 받음: X-NCP-APIGW API-GATEWAY는 서버-서버일 때 헤더, 브라우저는 쿼리키 사용
+      return `https://maps.apigw.ntruss.com/map-static/v2/raster?w=${w}&h=${h}&scale=${scale}&center=${center}&level=${zoom}&markers=${encodeURIComponent(markers)}&X-NCP-APIGW-API-KEY-ID=${clientId}`;
+    }
+
+    function preview() {
+      const lat = parseFloat(document.getElementById("lat").value);
+      const lng = parseFloat(document.getElementById("lng").value);
+      const z = parseInt(document.getElementById("z").value, 10);
+      const url = buildStaticUrl(lat, lng, z);
+      document.getElementById("img").src = url;
+      document.getElementById("url").textContent = url;
+    }
+    document.getElementById("btn").addEventListener("click", preview);
+    window.addEventListener("load", preview);
+  </script>
+</body>
+</html>

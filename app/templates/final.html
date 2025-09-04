@@ -1,0 +1,135 @@
+<!-- templates/final.html -->
+<!DOCTYPE html>
+<html class="h-full" data-kt-theme="true" data-kt-theme-mode="light" dir="ltr" lang="ko">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>{% block title %}Team Project{% endblock %}</title>
+  <!-- 파비콘 링크 제거: 기본 브라우저 아이콘 사용 -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"/>
+  <link rel="stylesheet" href="{{ url_for('static', path='assets/final/vendors/apexcharts/apexcharts.css') }}"/>
+  <link rel="stylesheet" href="{{ url_for('static', path='assets/final/vendors/keenicons/styles.bundle.css') }}"/>
+  <link rel="stylesheet" href="{{ url_for('static', path='assets/final/css/styles.css') }}"/>
+  
+  <!-- Admin 프로필 드롭다운 스타일 -->
+  <style>
+    .admin-profile-dropdown{position:relative}
+    .admin-profile-avatar{width:36px; height:36px; border-radius:50%; overflow:hidden; border:1px solid #e5e7eb; cursor:pointer; display:flex; align-items:center; justify-content:center; background:#f8fafc; font-size:12px; color:#475569}
+    .admin-profile-dropdown-menu{position:absolute; right:0; top:44px; width:200px; background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:8px; box-shadow:0 10px 30px rgba(0,0,0,.08); display:none; z-index:20}
+    .admin-profile-dropdown.open .admin-profile-dropdown-menu{display:block}
+    .admin-profile-dropdown-item{display:flex; align-items:center; gap:8px; padding:10px 10px; border-radius:10px; color:#1f2937; text-decoration:none}
+    .admin-profile-dropdown-item:hover{background:#F9FAFB}
+    .admin-profile-divider{height:1px; background:#e5e7eb; margin:6px 0}
+  </style>
+</head>
+<body class="antialiased flex h-full text-base text-foreground bg-background">
+  <header class="w-full border-b border-input bg-white">
+    <nav class="max-w-[1120px] mx-auto flex items-center gap-4 py-3 px-4 text-sm">
+      <a href="/home" class="kt-link font-semibold text-xl md:text-2xl">Challengers</a>
+      <div class="grow"></div>
+      {% set cu = request.state.user if request and request.state and request.state.user is defined else None %}
+      {% set cam = request.state.admin_mode if request and request.state and request.state.admin_mode is defined else False %}
+      {% set path = request.url.path if request and request.url else '' %}
+      {% set on_admin = path.startswith('/admin') %}
+      {% set on_login = path == '/login' %}
+      {% set on_signup = path.startswith('/signup') %}
+      {% set on_social = path.startswith('/signup/social') or path.startswith('/social') %}
+      {% set on_account = path.startswith('/account') %}
+      {% if cu %}
+        {# 비관리자 페이지: 어떤 관리자/프로필 아이콘도 표시하지 않음 #}
+        {# on_admin이 아닐 때는 헤더 우측은 비워 둠 #}
+        
+        {# Admin 페이지에서는 별도의 admin 프로필 드롭다운 표시 #}
+        {% if on_admin and cu and cu.is_admin %}
+          <div class="admin-profile-dropdown" id="admin-profile-dropdown">
+            <div class="admin-profile-avatar" id="admin-profile-trigger">
+              {% set profile_img = cu.profile_image or '/static/pictures/defaultprofile.jpeg' %}
+              <img src="{{ profile_img }}" alt="프로필" style="width:100%;height:100%;object-fit:cover;" 
+                   onerror="this.style.display='none'; this.parentNode.innerHTML='{{ cu.name[:1] if cu.name else cu.username[:1]|upper }}';">
+            </div>
+            <div class="admin-profile-dropdown-menu" id="admin-profile-menu">
+              <div class="admin-profile-dropdown-item">
+                <div class="flex items-center gap-2">
+                  {% set profile_img = cu.profile_image or '/static/pictures/defaultprofile.jpeg' %}
+                  <img src="{{ profile_img }}" alt="프로필" class="w-8 h-8 rounded-full object-cover" 
+                       onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                  <div class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-sm font-medium" style="display:none;">
+                    {{ cu.name[:1] if cu.name else cu.username[:1]|upper }}
+                  </div>
+                  <div>
+                    <div class="font-medium text-sm">{{ cu.name or cu.username }}</div>
+                    <div class="text-xs text-gray-500">
+                      {{ '책임관리자' if cu.is_superadmin else '관리자' }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="admin-profile-divider"></div>
+              <a href="/profile" class="admin-profile-dropdown-item">
+                <i class="ki-filled ki-user" style="font-size:16px"></i>
+                <span>프로필 보기</span>
+              </a>
+              <a href="/account/edit" class="admin-profile-dropdown-item">
+                <i class="ki-filled ki-setting-2" style="font-size:16px"></i>
+                <span>회원정보 수정</span>
+              </a>
+              <div class="admin-profile-divider"></div>
+              <a href="#" class="admin-profile-dropdown-item" onclick="adminLogout()">
+                <i class="ki-filled ki-entrance-left" style="font-size:16px"></i>
+                <span>로그아웃</span>
+              </a>
+            </div>
+          </div>
+        {% endif %}
+      {% else %}
+        {% if not on_admin and not on_login and not on_signup and not on_social and not on_account %}
+          <a href="/login" class="kt-link">로그인</a>
+          <a href="/signup" class="kt-link">회원가입</a>
+        {% endif %}
+      {% endif %}
+    </nav>
+  </header>
+
+  {% block content %}{% endblock %}
+
+  <script src="{{ url_for('static', path='assets/final/js/core.bundle.js') }}"></script>
+  <script src="{{ url_for('static', path='assets/final/vendors/ktui/ktui.min.js') }}"></script>
+  <script src="{{ url_for('static', path='assets/final/vendors/apexcharts/apexcharts.min.js') }}"></script>
+  
+  <!-- Admin 프로필 드롭다운 JavaScript -->
+  <script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const adminProfileDropdown = document.getElementById('admin-profile-dropdown');
+    const adminProfileTrigger = document.getElementById('admin-profile-trigger');
+    
+    if (adminProfileTrigger) {
+      adminProfileTrigger.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        adminProfileDropdown.classList.toggle('open');
+      });
+    }
+    
+    // 드롭다운 외부 클릭 시 닫기
+    document.addEventListener('click', function(e) {
+      if (adminProfileDropdown && !adminProfileDropdown.contains(e.target)) {
+        adminProfileDropdown.classList.remove('open');
+      }
+    });
+  });
+
+  // 관리자 로그아웃 함수
+  function adminLogout() {
+    if (confirm('로그아웃 하시겠습니까?')) {
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = '/admin/logout';
+      document.body.appendChild(form);
+      form.submit();
+    }
+  }
+  </script>
+  
+  {% block scripts %}{% endblock %}
+</body>
+</html>
