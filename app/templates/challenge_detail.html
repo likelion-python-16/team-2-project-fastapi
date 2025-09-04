@@ -203,6 +203,18 @@
   <div id="participationMsg" style="margin-top:8px;font-size:14px;color:#555"></div>
 </div>
 
+<!-- 회차별 월회비 결제 섹션 -->
+<div class="panel" id="roundPaymentPanel" style="display:none">
+  <h3>💰 회차별 월회비 결제</h3>
+  <div id="roundPaymentList" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
+    <!-- 회차별 결제 버튼들이 여기에 동적으로 추가됩니다 -->
+  </div>
+  <div style="margin-top:8px;font-size:12px;color:#888">
+    💡 각 회차 시작 7일 전부터 결제 가능합니다<br>
+    📅 회차별로 별도 결제가 필요하며, 결제하지 않으면 해당 회차 참여가 제한됩니다
+  </div>
+</div>
+
 <!-- 결제 모달 -->
 <div id="paymentModal" class="payment-modal">
   <div class="payment-modal-content">
@@ -372,11 +384,26 @@
   window.addEventListener('message', function(event) {
     if (event.data && event.data.type === 'PAYMENT_SUCCESS') {
       console.log('팝업에서 결제 성공 메시지 받음:', event.data);
-      alert('결제가 완료되었습니다! 챌린지 모집이 시작됩니다.');
-      // 페이지 새로고침하여 상태 업데이트
-      window.location.reload();
+      
+      if (event.data.payment_type === 'monthly') {
+        alert('월회비 결제가 완료되었습니다!');
+        // 월회비 결제 버튼 상태만 업데이트
+        updateRoundPayments(S.challenge);
+      } else {
+        if (event.data.serverError) {
+          alert('결제가 완료되었습니다! 서버 처리 중 오류가 있었지만 결제는 성공했습니다. 페이지를 새로고침합니다.');
+        } else {
+          alert('결제가 완료되었습니다! 챌린지 모집이 시작됩니다.');
+        }
+        // 명시적으로 챌린지 데이터 새로고침
+        setTimeout(async () => {
+          await loadChallenge();
+          await refreshParticipationStatus();
+        }, 1000);
+      }
     } else if (event.data && event.data.type === 'PAYMENT_FAIL') {
-      alert('결제가 실패했습니다: ' + (event.data.error || '알 수 없는 오류'));
+      const failType = event.data.payment_type === 'monthly' ? '월회비' : '';
+      alert(`${failType} 결제가 실패했습니다: ` + (event.data.error || '알 수 없는 오류'));
     }
   });
 
@@ -476,6 +503,144 @@
     await updateCreatorFollowPanel(ch);
   }
 
+  // 회차별 결제 버튼 생성
+  async function updateRoundPayments(challenge) {
+    if (!challenge || challenge.payment_type !== 'both') return;
+    
+    const roundPaymentList = document.getElementById('roundPaymentList');
+    if (!roundPaymentList) return;
+    
+    try {
+      // 실제 회차 정보 가져오기
+      const rounds = await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}/rounds`);
+      const monthlyFee = challenge.monthly_fee || 0;
+      
+      // 사용자의 월회비 결제 상태 확인
+      let userPayments = {};
+      try {
+        const payments = await safeFetchJSON(`${API_CH}/payments/monthly/${CHALLENGE_ID}`);
+        console.log('월회비 결제 상태 조회 결과:', payments);
+        // 회차별 결제 상태를 객체로 변환 (round_id -> payment_status)
+        userPayments = payments.reduce((acc, payment) => {
+          console.log(`회차 ${payment.round_id} 결제 상태: ${payment.status}`);
+          acc[payment.round_id] = payment.status;
+          return acc;
+        }, {});
+      } catch (e) {
+        console.log('월회비 결제 상태 조회 실패:', e);
+        // API가 구현되지 않은 경우 빈 객체로 처리
+      }
+      
+      let buttonsHtml = '';
+      rounds.forEach(round => {
+        const roundDate = new Date(round.processing_at);
+        const today = new Date();
+        const daysDiff = Math.ceil((roundDate - today) / (1000 * 60 * 60 * 24));
+        
+        // 결제 상태 확인
+        const paymentStatus = userPayments[round.id];
+        const isPaid = paymentStatus === 'completed';
+        console.log(`회차 ${round.id} (${round.round}회차): paymentStatus=${paymentStatus}, isPaid=${isPaid}`);
+        
+        // 회차 시작 7일 전부터 결제 가능
+        const canPay = daysDiff <= 7 && daysDiff >= 0;
+        const isPast = daysDiff < 0;
+        
+        let buttonClass = 'btn';
+        let buttonStyle = 'margin:4px;';
+        let buttonText = '';
+        let disabled = '';
+        
+        if (isPaid) {
+          buttonClass += ' disabled';
+          buttonStyle += 'background:#10b981;color:white;';
+          buttonText = `${round.round}회차 결제완료`;
+          disabled = 'disabled';
+        } else if (isPast) {
+          buttonClass += ' disabled';
+          buttonStyle += 'background:#6b7280;color:white;';
+          buttonText = `${round.round}회차 종료됨`;
+          disabled = 'disabled';
+        } else if (canPay) {
+          buttonStyle += 'background:#f59e0b;color:white;';
+          buttonText = `${round.round}회차 결제 (${monthlyFee.toLocaleString()}원)`;
+        } else {
+          buttonClass += ' disabled';
+          buttonStyle += 'background:#e5e7eb;color:#6b7280;';
+          buttonText = `${round.round}회차 (${daysDiff}일 후 결제가능)`;
+          disabled = 'disabled';
+        }
+        
+        buttonsHtml += `
+          <button class="${buttonClass}" 
+                  id="btnPayRound${round.id}" 
+                  style="${buttonStyle}"
+                  onclick="payMonthlyFee(${round.id}, ${monthlyFee})"
+                  ${disabled}>
+            ${buttonText}
+          </button>
+        `;
+      });
+      
+      roundPaymentList.innerHTML = buttonsHtml;
+      
+    } catch (e) {
+      console.error('회차별 결제 버튼 생성 실패:', e);
+      roundPaymentList.innerHTML = '<div style="color:#dc2626">회차 정보를 불러올 수 없습니다</div>';
+    }
+  }
+
+  // 월회비 결제 함수
+  async function payMonthlyFee(roundId, amount) {
+    try {
+      if (!confirm(`${amount.toLocaleString()}원의 월회비를 결제하시겠습니까?`)) {
+        return;
+      }
+
+      // 월회비 결제 준비
+      const ready = await safeFetchJSON(`/api/v1/payments/monthly/ready`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('access_token') || ''}`
+        },
+        body: JSON.stringify({ 
+          challenge_id: CHALLENGE_ID,
+          round_id: roundId,
+          amount: amount
+        })
+      });
+
+      const { orderId, orderName, clientKey } = ready;
+
+      // Toss Payments로 결제 진행
+      if (!window.TossPayments) {
+        alert('결제 시스템을 로드하는 중입니다. 잠시 후 다시 시도해주세요.');
+        return;
+      }
+
+      const toss = window.TossPayments(clientKey);
+      toss.requestPayment('카드', {
+        amount,
+        orderId,
+        orderName,
+        successUrl: `${window.location.origin}/payments/success?challenge_id=${CHALLENGE_ID}&round_id=${roundId}&type=monthly&popup=true`,
+        failUrl: `${window.location.origin}/payments/fail?challenge_id=${CHALLENGE_ID}&round_id=${roundId}&type=monthly&popup=true`
+      }).catch(function (error) {
+        if (error.code === 'USER_CANCEL') {
+          alert('결제가 취소되었습니다.');
+          return;
+        }
+        console.error('월회비 결제 오류:', error);
+        alert('결제 중 오류가 발생했습니다: ' + error.message);
+      });
+
+    } catch (error) {
+      console.error('월회비 결제 준비 실패:', error);
+      alert('결제 준비 중 오류가 발생했습니다: ' + error.message);
+    }
+  }
+
   async function updatePaymentButtonStatus(challenge) {
     const btnJoin = document.getElementById('btnJoinWithPayment');
     const btnLeave = document.getElementById('btnLeaveChallenge');
@@ -492,10 +657,40 @@
     
     // 사용자 참여 상태에 따른 버튼 제어
     if (isCreator) {
-      btnJoin.disabled = true;
-      btnJoin.textContent = '생성자';
-      btnLeave.style.display = 'none';
-      msg.innerHTML = '<span style="color:#888">👑 챌린지 생성자입니다. 관리 패널을 이용해 주세요.</span>';
+      // 생성자의 결제 완료 여부 확인
+      const paymentType = challenge.payment_type || 'free';
+      const isPaymentCompleted = userParticipation && userParticipation.status === 'active';
+      
+      if (isDraft && paymentType !== 'free' && !isPaymentCompleted) {
+        btnJoin.disabled = false;
+        btnJoin.textContent = '결제하고 모집 시작';
+        btnJoin.style.background = '#dc2626';
+        btnJoin.style.color = 'white';
+        btnLeave.style.display = 'none';
+        let feeMessage = '';
+        if (paymentType === 'entry_fee') {
+          feeMessage = `${challenge.entry_fee?.toLocaleString() || 0}원 (입장비)`;
+        } else if (paymentType === 'monthly_fee') {
+          feeMessage = `${challenge.monthly_fee?.toLocaleString() || 0}원 (월회비)`;
+        } else if (paymentType === 'both') {
+          const entryFee = challenge.entry_fee?.toLocaleString() || 0;
+          feeMessage = `${entryFee}원 (참가비)`;
+        }
+        msg.innerHTML = `<span style="color:#dc2626">💳 생성자는 ${feeMessage} 결제 후 모집을 시작할 수 있습니다. 월회비는 각 회차별로 별도 결제됩니다.</span>`;
+      } else {
+        btnJoin.disabled = true;
+        btnJoin.textContent = '생성자';
+        btnLeave.style.display = 'none';
+        
+        // 결제 완료된 생성자에게는 회차별 결제 안내
+        if (isPaymentCompleted && paymentType === 'both') {
+          msg.innerHTML = '<span style="color:#0a7">👑 챌린지 생성자입니다. 아래에서 회차별 월회비를 결제하세요.</span>';
+          // 회차별 결제 섹션 표시
+          document.getElementById('roundPaymentPanel').style.display = 'block';
+        } else {
+          msg.innerHTML = '<span style="color:#888">👑 챌린지 생성자입니다. 관리 패널을 이용해 주세요.</span>';
+        }
+      }
     } else if (userParticipation) {
       const participationStatus = userParticipation.status;
       
@@ -505,15 +700,33 @@
         btnJoin.style.background = '#10b981';
         btnJoin.style.color = 'white';
         btnLeave.style.display = 'inline-block';
-        msg.innerHTML = '<span style="color:#0a7">✅ 챌린지에 참여 중입니다!</span>';
+        
+        // both 타입 챌린지 참여자에게 회차별 결제 섹션 표시
+        const paymentType = challenge.payment_type || 'free';
+        if (paymentType === 'both') {
+          msg.innerHTML = '<span style="color:#0a7">✅ 챌린지에 참여 중입니다! 아래에서 회차별 월회비를 결제하세요.</span>';
+          document.getElementById('roundPaymentPanel').style.display = 'block';
+          await updateRoundPayments(challenge);
+        } else {
+          msg.innerHTML = '<span style="color:#0a7">✅ 챌린지에 참여 중입니다!</span>';
+        }
       } else if (participationStatus === 'payment_pending') {
         btnJoin.disabled = false;
         btnJoin.textContent = '결제하기';
         btnJoin.style.background = '#f59e0b';
         btnJoin.style.color = 'white';
         btnLeave.style.display = 'inline-block';
-        const fee = challenge.payment_type === 'entry_fee' ? challenge.entry_fee : challenge.monthly_fee;
-        msg.innerHTML = `<span style="color:#f59e0b">💳 ${fee?.toLocaleString() || 0}원 결제를 완료해 주세요.</span>`;
+        let feeMessage = '';
+        const paymentType = challenge.payment_type || 'free';
+        if (paymentType === 'entry_fee') {
+          feeMessage = `${challenge.entry_fee?.toLocaleString() || 0}원 (입장비)`;
+        } else if (paymentType === 'monthly_fee') {
+          feeMessage = `${challenge.monthly_fee?.toLocaleString() || 0}원 (월회비)`;
+        } else if (paymentType === 'both') {
+          // both 타입에서는 현재 참가비만 결제하면 됨 (월회비는 회차별로 별도)
+          feeMessage = `${challenge.entry_fee?.toLocaleString() || 0}원 (참가비)`;
+        }
+        msg.innerHTML = `<span style="color:#f59e0b">💳 ${feeMessage} 결제를 완료해 주세요.</span>`;
       } else if (participationStatus === 'pending') {
         btnJoin.disabled = true;
         btnJoin.textContent = '승인 대기 중';
@@ -538,8 +751,17 @@
       if (paymentType === 'free') {
         msg.innerHTML = '<span style="color:#0a7">🎉 무료 챌린지입니다. 바로 참여하세요!</span>';
       } else {
-        const fee = paymentType === 'entry_fee' ? challenge.entry_fee : challenge.monthly_fee;
-        msg.innerHTML = `<span style="color:#0a7">💳 참여하기를 클릭하면 ${fee?.toLocaleString() || 0}원 결제 후 참여됩니다.</span>`;
+        let feeMessage = '';
+        if (paymentType === 'entry_fee') {
+          feeMessage = `${challenge.entry_fee?.toLocaleString() || 0}원 (입장비)`;
+        } else if (paymentType === 'monthly_fee') {
+          feeMessage = `${challenge.monthly_fee?.toLocaleString() || 0}원 (월회비)`;
+        } else if (paymentType === 'both') {
+          const entryFee = challenge.entry_fee?.toLocaleString() || 0;
+          feeMessage = `${entryFee}원 (참가비)`;
+        }
+        const extraMsg = paymentType === 'both' ? ' 월회비는 각 회차별로 별도 결제됩니다.' : '';
+        msg.innerHTML = `<span style="color:#0a7">💳 참여하기를 클릭하면 ${feeMessage} 결제 후 참여됩니다.${extraMsg}</span>`;
       }
     } else {
       btnJoin.disabled = true;
@@ -643,6 +865,37 @@
     ['draft', 'recruiting', 'active', 'completed', 'cancelled'].forEach(status => {
       const btn = document.getElementById(`btnSet${status.charAt(0).toUpperCase() + status.slice(1)}`);
       btn?.addEventListener('click', async () => {
+        
+        // 모집 시작 전 결제 상태 체크
+        if (status === 'recruiting') {
+          const currentUser = await getCurrentUser();
+          const isCreator = currentUser && S.challenge && currentUser.id === S.challenge.creator_id;
+          const paymentType = S.challenge.payment_type || 'free';
+          
+          // 생성자이고 유료 챌린지인 경우 결제 완료 확인
+          if (isCreator && paymentType !== 'free') {
+            // 결제 완료 여부 확인
+            const userParticipation = S.challenge.user_participation;
+            const isPaymentCompleted = userParticipation && userParticipation.status === 'active';
+            
+            if (!isPaymentCompleted) {
+              let feeMessage = '';
+              if (paymentType === 'entry_fee') {
+                feeMessage = `${S.challenge.entry_fee?.toLocaleString() || 0}원 (입장비)`;
+              } else if (paymentType === 'monthly_fee') {
+                feeMessage = `${S.challenge.monthly_fee?.toLocaleString() || 0}원 (월회비)`;
+              } else if (paymentType === 'both') {
+                const entryFee = S.challenge.entry_fee?.toLocaleString() || 0;
+                feeMessage = `${entryFee}원 (참가비)`;
+              } else {
+                feeMessage = '0원';
+              }
+              setAdminMsg(`⚠️ 모집을 시작하려면 먼저 ${feeMessage}를 결제해야 합니다. 위의 "결제하고 모집 시작" 버튼을 클릭해주세요.`, 'error');
+              return;
+            }
+          }
+        }
+        
         if (!confirm(`챌린지 상태를 '${getStatusText(status)}'로 변경하시겠습니까?`)) return;
         
         try {
@@ -1241,15 +1494,22 @@
       return;
     }
 
-    // 챌린지 상태 재확인
-    if (!S.challenge || S.challenge.status !== 'recruiting') {
-      setMsg('모집중인 챌린지만 참여할 수 있습니다', 'error');
-      return;
-    }
-
     // 생성자인지 확인
     const currentUser = await getCurrentUser();
-    if (currentUser && S.challenge && currentUser.id === S.challenge.creator_id) {
+    const isCreator = currentUser && S.challenge && currentUser.id === S.challenge.creator_id;
+    
+    // 챌린지 상태 재확인 (생성자는 draft에서도 결제 가능)
+    if (!S.challenge || (!isCreator && S.challenge.status !== 'recruiting') || (isCreator && !['draft', 'recruiting'].includes(S.challenge.status))) {
+      if (isCreator && S.challenge.status === 'draft') {
+        // 생성자의 draft 상태는 허용
+      } else {
+        setMsg('참여할 수 없는 챌린지 상태입니다', 'error');
+        return;
+      }
+    }
+
+    // 일반 사용자 중 생성자는 참여 불가 (단, 결제는 예외)
+    if (!isCreator && currentUser && S.challenge && currentUser.id === S.challenge.creator_id) {
       setMsg('챌린지 생성자는 참여할 수 없습니다', 'error');
       return;
     }
@@ -1257,9 +1517,15 @@
     try {
       // 최신 챌린지 상태 확인
       const latestChallenge = await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}`);
-      if (latestChallenge.status !== 'recruiting') {
+      
+      // 생성자는 draft/recruiting, 일반 사용자는 recruiting만 허용
+      const allowedStatuses = isCreator ? ['draft', 'recruiting'] : ['recruiting'];
+      if (!allowedStatuses.includes(latestChallenge.status)) {
         const statusText = getStatusText(latestChallenge.status);
-        setMsg(`현재 모집중이 아닌 챌린지입니다 (상태: ${statusText}). 페이지를 새로고침해주세요.`, 'error');
+        const msg = isCreator 
+          ? `생성자는 준비중/모집중 상태에서만 결제할 수 있습니다 (현재: ${statusText})`
+          : `현재 모집중이 아닌 챌린지입니다 (상태: ${statusText}). 페이지를 새로고침해주세요.`;
+        setMsg(msg, 'error');
         // 챌린지 데이터 업데이트
         S.challenge = latestChallenge;
         await updatePaymentButtonStatus(latestChallenge);
@@ -1326,17 +1592,22 @@
         });
         
       } else {
-        // 유료 챌린지: 참여 신청 후 결제 진행
-        setMsg('참여 신청 및 결제 준비 중...', 'info');
-        
-        await fetchJSON(`/api/v1/participations/join`, {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('access_token') || ''}`
-          },
-          body: JSON.stringify({ challenge_id: CHALLENGE_ID })
-        }).catch(()=>{}); // 이미 신청한 경우 무시
+        // 유료 챌린지: 생성자와 일반 사용자 구분 처리
+        if (isCreator) {
+          setMsg('생성자 결제 준비 중...', 'info');
+          // 생성자는 이미 참여되어 있으므로 참여 신청 생략
+        } else {
+          setMsg('참여 신청 및 결제 준비 중...', 'info');
+          // 일반 사용자는 참여 신청 먼저
+          await fetchJSON(`/api/v1/participations/join`, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('access_token') || ''}`
+            },
+            body: JSON.stringify({ challenge_id: CHALLENGE_ID })
+          }).catch(()=>{}); // 이미 신청한 경우 무시
+        }
 
         // 결제 준비
         const ready = await fetchJSON(`/api/v1/payments/ready`, { 

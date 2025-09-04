@@ -55,18 +55,34 @@ def get_round_counts(db: Session, challenge_ids: List[int]) -> Dict[int, int]:
 
 # --- 모델 -> 카드 변환 ---
 def _to_card(ch: Challenge, rounds_count: Optional[int] = None) -> ChallengeCard:
-    # ★ 모델 컬럼명이 프로젝트마다 달라 충돌 방지 (entry_fee/monthly_fee 지원)
+    # ★ 결제 방식에 따른 금액 표시 개선
+    entry_fee_val = getattr(ch, "entry_fee", 0) or 0
+    monthly_fee_val = getattr(ch, "monthly_fee", 0) or 0
+    payment_type = getattr(ch, "payment_type", "free")
+    
+    # 레거시 필드도 지원
     part_fee_val = (
         getattr(ch, "participation_fee", None)
-        or getattr(ch, "entry_fee", None)
+        or entry_fee_val
         or 0
     )
     fee_val = (
         getattr(ch, "fee", None)
-        or getattr(ch, "monthly_fee", None)
+        or monthly_fee_val
         or 0
     )
-    fee_type = "유료" if (fee_val > 0 or part_fee_val > 0) else "무료"
+    
+    # 결제 타입별 표시
+    if payment_type == "free":
+        fee_type = "무료"
+    elif payment_type == "entry_fee":
+        fee_type = f"입장비 {entry_fee_val:,}원"
+    elif payment_type == "monthly_fee":
+        fee_type = f"월회비 {monthly_fee_val:,}원"
+    elif payment_type == "both":
+        fee_type = f"입장비 {entry_fee_val:,}원 + 월회비 {monthly_fee_val:,}원"
+    else:
+        fee_type = "유료" if (fee_val > 0 or part_fee_val > 0) else "무료"
 
     # 총 회차: 명시된 total_rounds > 집계값
     total_rounds = (
@@ -96,26 +112,82 @@ def get_recommended_challenges(
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
-    """추천 챌린지 목록 반환"""
+    """태그 기반 추천 챌린지 목록 반환"""
     try:
-        challenges = db.query(Challenge).filter(
-            Challenge.is_deleted == False,
-            Challenge.status == ChallengeStatus.active
-        ).order_by(Challenge.created_at.desc()).limit(10).all()
+        from app.services.challenge_recommender import get_challenge_recommender
+        
+        recommender = get_challenge_recommender(db)
+        
+        if current_user:
+            # 로그인한 사용자: 태그 기반 추천
+            recommendations = recommender.get_tag_based_recommendations(current_user.id, limit=10)
+            notice = None
+            
+            # 관심 태그 확인
+            user_tags_count = db.query(UserTag).filter(UserTag.user_id == current_user.id).count()
+            if user_tags_count == 0:
+                notice = "💡 마이페이지에서 관심사를 설정하시면 더 정확한 추천을 받을 수 있어요!"
+            elif any(r.get('tag_match_count', 0) > 0 for r in recommendations):
+                notice = f"🎯 {current_user.username}님의 관심사에 맞는 챌린지를 추천했어요!"
+        else:
+            # 비로그인 사용자: 인기 챌린지
+            recommendations = recommender.get_trending_challenges(limit=10)
+            notice = "🔥 지금 인기있는 챌린지들이에요! 로그인하면 관심사 맞춤 추천을 받을 수 있어요."
+        
+        # 챌린지 카드 형태로 변환
+        challenges = []
+        for rec in recommendations:
+            challenge = rec['challenge']
+            
+            # 추천 이유 텍스트 생성
+            reasons = rec.get('reasons', [])
+            recommendation_text = ' • '.join(reasons) if reasons else ''
+            
+            challenges.append({
+                "id": challenge.id,
+                "title": challenge.title,
+                "description": challenge.description,
+                "created_at": challenge.created_at.isoformat() if challenge.created_at else None,
+                "current_participants": challenge.current_participants or 0,
+                "payment_type": getattr(challenge, 'payment_type', 'free'),
+                "entry_fee": getattr(challenge, 'entry_fee', 0),
+                "monthly_fee": getattr(challenge, 'monthly_fee', 0),
+                "recommendation_score": rec.get('similarity_score', 0),
+                "recommendation_reasons": recommendation_text,
+                "matched_tags": rec.get('matched_tags', [])
+            })
         
         return {
             "success": True,
-            "challenges": [
-                {
-                    "id": c.id,
-                    "title": c.title,
-                    "description": c.description,
-                    "created_at": c.created_at.isoformat() if c.created_at else None
-                } for c in challenges
-            ]
+            "challenges": challenges,
+            "notice": notice,
+            "user_has_tags": current_user and user_tags_count > 0 if current_user else False
         }
     except Exception as e:
-        return {"success": False, "challenges": [], "error": str(e)}
+        # 오류 시 기본 인기 챌린지 반환
+        try:
+            challenges = db.query(Challenge).filter(
+                Challenge.is_deleted == False,
+                Challenge.status.in_([ChallengeStatus.recruiting, ChallengeStatus.active])
+            ).order_by(Challenge.current_participants.desc()).limit(10).all()
+            
+            return {
+                "success": True,
+                "challenges": [
+                    {
+                        "id": c.id,
+                        "title": c.title,
+                        "description": c.description,
+                        "created_at": c.created_at.isoformat() if c.created_at else None,
+                        "current_participants": c.current_participants or 0,
+                        "recommendation_reasons": "인기 챌린지"
+                    } for c in challenges
+                ],
+                "notice": "⚠️ 추천 시스템에 일시적 문제가 있어 인기 챌린지를 보여드려요.",
+                "error": str(e)
+            }
+        except Exception:
+            return {"success": False, "challenges": [], "error": str(e)}
 
 @router.get("/following", summary="팔로잉 챌린지")  
 def get_following_challenges(
@@ -162,43 +234,50 @@ def get_home_sections(
     """
 
     # -----------------------------
-    # 1) 추천(선호태그 기반)
+    # 1) 태그 기반 추천 챌린지 (개선된 버전)
     # -----------------------------
-    recommended_rows: List[Challenge] = []
+    from app.services.challenge_recommender import get_challenge_recommender
+    
+    recommended_cards: List[ChallengeCard] = []
     recommended_notice: Optional[str] = None
-
-    if current_user:
-        # 먼저 "선호 태그가 존재하는지"는 간단 쿼리로 체크 (★ exists 오류 수정)
-        user_has_tags = (
-            db.query(UserTag.tag_id)
-              .filter(UserTag.user_id == current_user.id)
-              .first()
-            is not None
-        )
-
-        if user_has_tags:
-            # 태그 ID 서브쿼리 (IN 필터용)
-            user_tag_ids_subq = (
-                db.query(UserTag.tag_id)
-                .filter(UserTag.user_id == current_user.id)
-                .subquery()
-            )
-            recommended_rows = (
-                db.query(Challenge)
-                .join(ChallengeTag, ChallengeTag.challenge_id == Challenge.id)
-                .filter(ChallengeTag.tag_id.in_(user_tag_ids_subq))
-                .order_by(desc(Challenge.created_at))
-                .limit(6)
-                .all()
-            )
+    
+    try:
+        recommender = get_challenge_recommender(db)
+        
+        if current_user:
+            # 로그인한 사용자: 태그 기반 추천
+            recommendations = recommender.get_tag_based_recommendations(current_user.id, limit=6)
+            
+            # 관심 태그 확인
+            user_tags_count = db.query(UserTag).filter(UserTag.user_id == current_user.id).count()
+            if user_tags_count == 0:
+                recommended_notice = "💡 마이페이지에서 관심사를 설정하면 맞춤 추천을 받을 수 있어요!"
+            elif any(r.get('tag_match_count', 0) > 0 for r in recommendations):
+                recommended_notice = f"🎯 {current_user.username}님 관심사 맞춤 추천"
         else:
-            recommended_notice = "추천 기능을 위해 ‘선호 태그’를 등록해 주세요."
-    else:
-        recommended_notice = "추천 기능을 위해 ‘선호 태그’를 등록해 주세요."
-
-    rec_ids = [c.id for c in recommended_rows]
-    rec_counts = get_round_counts(db, rec_ids)
-    recommended_cards = [_to_card(c, rec_counts.get(c.id)) for c in recommended_rows]
+            # 비로그인 사용자: 인기 챌린지
+            recommendations = recommender.get_trending_challenges(limit=6)
+            recommended_notice = "🔥 인기 챌린지 (로그인 시 맞춤 추천)"
+        
+        # ChallengeCard로 변환
+        rec_challenges = [rec['challenge'] for rec in recommendations]
+        rec_ids = [c.id for c in rec_challenges]
+        rec_counts = get_round_counts(db, rec_ids)
+        recommended_cards = [_to_card(c, rec_counts.get(c.id)) for c in rec_challenges]
+        
+    except Exception as e:
+        # 오류 시 기본 최신 챌린지로 폴백
+        recommended_rows = (
+            db.query(Challenge)
+            .filter(Challenge.is_deleted == False, Challenge.status == ChallengeStatus.recruiting)
+            .order_by(desc(Challenge.created_at))
+            .limit(6)
+            .all()
+        )
+        rec_ids = [c.id for c in recommended_rows]
+        rec_counts = get_round_counts(db, rec_ids)
+        recommended_cards = [_to_card(c, rec_counts.get(c.id)) for c in recommended_rows]
+        recommended_notice = "⚠️ 추천 시스템 일시 오류"
 
     # -----------------------------
     # 2) 팔로우한 사람이 만든 챌린지 (최신순)

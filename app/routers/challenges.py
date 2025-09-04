@@ -629,7 +629,9 @@ async def create_challenge(
     elif new_challenge.payment_type == PaymentType.monthly_fee:
         payment_cycle = PaymentCycle.monthly
     elif new_challenge.payment_type == PaymentType.both:
-        payment_cycle = PaymentCycle.entry_fee  # 기본값
+        # both 타입은 입장비 + 월회비 둘 다 결제해야 함
+        # 생성자도 예외 없이 둘 다 결제 (일단 입장비부터)
+        payment_cycle = PaymentCycle.entry_fee
     
     # 생성자 참가 생성
     creator_participation = ParticipationManager.create_participation(

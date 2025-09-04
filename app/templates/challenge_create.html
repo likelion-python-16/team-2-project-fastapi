@@ -584,7 +584,17 @@ function repaintPriceHelp(){
   const fee  = Number(feeEl.value || '0');
   const part = Number(partEl.value || '0');
 
-  priceSummary.textContent = `회비: ${isNaN(fee)?'-':fee.toLocaleString()}원 / 참가비: ${isNaN(part)?'-':part.toLocaleString()}원`;
+  // 결제 타입 표시 로직 개선
+  let paymentTypeText = '무료';
+  if (fee > 0 && part <= 0) {
+    paymentTypeText = '유료 (일회성 참가비)';
+  } else if (fee <= 0 && part > 0) {
+    paymentTypeText = '유료 (회차별 참가비)';
+  } else if (fee > 0 && part > 0) {
+    paymentTypeText = '유료 (일회성 + 회차별)';
+  }
+
+  priceSummary.textContent = `${paymentTypeText} - 회비: ${isNaN(fee)?'-':fee.toLocaleString()}원 / 참가비: ${isNaN(part)?'-':part.toLocaleString()}원`;
   priceError.textContent = '';
   priceNotice.textContent = '';
 
@@ -670,6 +680,24 @@ async function createChallenge(){
   // 수집
   const mode = document.getElementById('mode').value;
   const { fee, participation_fee } = getPricesOrThrow();
+  
+  // 결제 타입 결정 로직
+  let payment_type, entry_fee = 0, monthly_fee = 0;
+  if (fee <= 0 && participation_fee <= 0) {
+    payment_type = "free";
+  } else if (fee > 0 && participation_fee <= 0) {
+    payment_type = "entry_fee";
+    entry_fee = fee;
+  } else if (fee <= 0 && participation_fee > 0) {
+    payment_type = "monthly_fee";
+    monthly_fee = participation_fee;
+  } else {
+    // 둘 다 설정된 경우
+    payment_type = "both";
+    entry_fee = fee;
+    monthly_fee = participation_fee;
+  }
+  
   const min_participants = minPeopleEl.value ? parseInt(minPeopleEl.value,10) : null;
   const max_participants = maxPeopleEl.value ? parseInt(maxPeopleEl.value,10) : null;
   const use_reward = document.getElementById('use_reward').checked;
@@ -692,7 +720,9 @@ async function createChallenge(){
     start_date: startEl.value,
     end_date: endEl2.value,
     total_rounds: total,
-    fee, participation_fee,
+    payment_type,
+    entry_fee,
+    monthly_fee,
     min_participants, max_participants,
     mode,
     same_place_for_all_rounds,
@@ -704,7 +734,7 @@ async function createChallenge(){
     default_longitude: def_lng ? Number(def_lng) : null,
     default_place_id: def_pid || null,
     use_reward,
-    reward: use_reward ? (reward || '') : null,
+    reward_description: use_reward ? (reward || '') : null,
     cover_image_url,
     tags: selectedCategories,
   };

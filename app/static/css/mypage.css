@@ -261,3 +261,54 @@
     .hero .meta .dot{width:4px; height:4px; border-radius:50%; background:#cbd5e1}
     .hero .intro{margin-top:6px; color:#334155; font-size:14px; text-align:center; overflow-wrap:anywhere}
     #my_intro{overflow-wrap:anywhere}
+
+
+    /* ===== 알림 스타일 ===== */
+    .notification-item {
+      display: flex;
+      align-items: center;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      position: relative;
+      transition: background-color 0.2s ease;
+    }
+
+    .notification-item:hover {
+      background-color: #f8fafc;
+    }
+
+    .notification-item.unread {
+      background-color: #f0f9ff;
+      border-left: 3px solid #3b82f6;
+    }
+
+    .notification-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .notification-message {
+      font-size: 14px;
+      color: #374151;
+      line-height: 1.4;
+    }
+
+    .notification-time {
+      font-size: 12px;
+      color: #9ca3af;
+    }
+
+    .notification-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: #3b82f6;
+      margin-left: 8px;
+      flex-shrink: 0;
+    }
+
+    .notification-item:last-child {
+      border-bottom: none;
+    }

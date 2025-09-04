@@ -233,19 +233,21 @@ def payments_ready(
             )
 
     # 결제 타입에 따른 금액/상품명
-    payment_type = challenge.payment_type.value if getattr(challenge, "payment_type", None) else "free"
-    if payment_type == "free":
+    from app.models.challenge import PaymentType
+    payment_type = challenge.payment_type
+    
+    if payment_type == PaymentType.free:
         raise HTTPException(status_code=400, detail="무료 챌린지입니다. 결제가 필요하지 않습니다.")
 
-    if payment_type == "entry_fee":
+    if payment_type == PaymentType.entry_fee:
         amount = int(challenge.entry_fee or 0)
         order_name = f"[입장비] {challenge.title}"
-    elif payment_type == "monthly_fee":
+    elif payment_type == PaymentType.monthly_fee:
         amount = int(challenge.monthly_fee or 0)
         order_name = f"[월회비] {challenge.title}"
     else:  # both 등
         amount = int(challenge.entry_fee or 0)
-        order_name = f"[입장비] {challenge.title}"
+        order_name = f"[참가비] {challenge.title}"
 
     if amount <= 0:
         raise HTTPException(status_code=400, detail="결제 금액이 0보다 커야 합니다.")
@@ -260,11 +262,18 @@ def payments_ready(
             participation_service.join_challenge(user, ParticipationCreate(challenge_id=challenge.id))
         else:
             # 생성자인 경우 기존 참여 확인
-            participation_service = get_participation_service(db)
-            existing_participation = participation_service._get_user_participation(challenge.id, user.id)
-            if not existing_participation:
-                logger.warning(f"생성자 참여 정보 없음: user_id={user.id}, challenge_id={challenge.id}")
-                raise HTTPException(status_code=400, detail="생성자 참여 정보를 찾을 수 없습니다.")
+            try:
+                from app.models.participation import Participation
+                existing_participation = db.query(Participation).filter(
+                    Participation.challenge_id == challenge.id,
+                    Participation.user_id == user.id
+                ).first()
+                if not existing_participation:
+                    logger.warning(f"생성자 참여 정보 없음: user_id={user.id}, challenge_id={challenge.id}")
+                    raise HTTPException(status_code=400, detail="생성자 참여 정보를 찾을 수 없습니다.")
+            except Exception as e:
+                logger.error(f"생성자 참여 확인 중 오류: {e}")
+                raise HTTPException(status_code=400, detail=f"생성자 참여 확인 중 오류가 발생했습니다: {str(e)}")
     except Exception as e:
         logger.error(f"참여 확인 중 오류: {e}")
         raise HTTPException(status_code=400, detail=f"참여 확인 중 오류가 발생했습니다: {str(e)}")
@@ -330,47 +339,108 @@ def payments_confirm(
     participation_service = get_participation_service(db)
     
     try:
+        logger.info(f"결제 승인 처리 시작: user_id={user.id}, challenge_id={challenge_id}, amount={amount}")
+        
         # 챌린지 조회
         challenge = db.query(Challenge).filter(Challenge.id == challenge_id).first()
         if not challenge:
+            logger.error(f"챌린지 조회 실패: challenge_id={challenge_id}")
             raise HTTPException(status_code=404, detail="챌린지를 찾을 수 없습니다")
         
+        logger.info(f"챌린지 조회 성공: {challenge.title}, status={challenge.status}")
+        
         # 참여 신청 또는 활성화 (FK 제약조건 때문에 먼저 처리)
-        existing_participation = participation_service._get_user_participation(challenge_id, user.id)
+        from app.models.participation import Participation, ParticipationStatus
+        existing_participation = db.query(Participation).filter(
+            Participation.challenge_id == challenge_id,
+            Participation.user_id == user.id
+        ).first()
+        
+        logger.info(f"기존 참여 조회: exists={existing_participation is not None}")
         
         if not existing_participation:
             # 참여 데이터가 없으면 새로 생성
+            logger.info("새 참여 생성 중...")
             from app.schemas.participation import ParticipationCreate
             participation_data = ParticipationCreate(challenge_id=challenge_id)
             participation_service.join_challenge(user, participation_data)
+            logger.info("새 참여 생성 완료")
         else:
-            # 기존 참여가 있으면 활성화
-            participation_service.complete_payment(user_id=user.id, challenge_id=challenge_id)
+            # 기존 참여가 있으면 활성화 (트랜잭션 충돌 방지를 위해 직접 처리)
+            logger.info(f"기존 참여 활성화 중... status={existing_participation.status}")
+            
+            if existing_participation.status == ParticipationStatus.active:
+                logger.info(f"이미 활성화된 참가: {user.id} for challenge {challenge_id}")
+            elif existing_participation.status in [ParticipationStatus.payment_pending, ParticipationStatus.pending]:
+                # 직접 활성화 처리 (commit은 나중에 한번에)
+                existing_participation.status = ParticipationStatus.active
+                existing_participation.activated_at = datetime.now(timezone.utc)
+                challenge.current_participants += 1
+                logger.info("기존 참여 활성화 완료")
+            else:
+                logger.warning(f"예상치 못한 참여 상태: {existing_participation.status}")
+                raise HTTPException(status_code=400, detail=f"결제 처리 가능한 상태가 아닙니다. 현재 상태: {existing_participation.status}")
         
         # Payment 레코드 생성 (참여 레코드가 존재한 후)
-        payment = payment_service.create_payment(
-            user=user,
-            challenge=challenge,
-            amount=amount,
-            transaction_type="entry_fee",  # PaymentTransactionType enum value
-            method="card",  # PaymentMethodType enum value
-            order_id=order_id,
-            order_name=f"{challenge.title} 참가비",
-            payment_key=payment_key
-        )
+        logger.info("Payment 레코드 생성 중...")
+        from app.models.payment import PaymentTransactionType, PaymentMethodType, Payment as PaymentModel
         
-        # 결제 승인으로 상태 변경
-        payment.status = PaymentStatus.completed
-        payment.approved_at = datetime.now(timezone.utc)
+        # 기존 Payment 레코드가 있는지 확인 (중복 생성 방지)
+        existing_payment = db.query(PaymentModel).filter(PaymentModel.order_id == order_id).first()
+        
+        if existing_payment:
+            logger.info(f"기존 Payment 레코드 발견: payment_id={existing_payment.id}, status={existing_payment.status}")
+            payment = existing_payment
+            # 이미 완료된 결제는 다시 처리하지 않음
+            if payment.status == PaymentStatus.completed:
+                logger.warning(f"이미 완료된 결제입니다: payment_id={payment.id}")
+            else:
+                # 결제 승인으로 상태 변경
+                payment.status = PaymentStatus.completed
+                payment.approved_at = datetime.now(timezone.utc)
+                payment.payment_key = payment_key  # payment_key 업데이트
+                logger.info(f"기존 Payment 상태 업데이트: payment_id={payment.id}")
+        else:
+            # 새로운 Payment 레코드 생성
+            payment = payment_service.create_payment(
+                user=user,
+                challenge=challenge,
+                amount=amount,
+                transaction_type=PaymentTransactionType.entry_fee,  # Enum 값으로 전달
+                method=PaymentMethodType.card,  # Enum 값으로 전달
+                order_id=order_id,
+                order_name=f"{challenge.title} 참가비",
+                payment_key=payment_key
+            )
+            logger.info(f"새 Payment 레코드 생성 완료: payment_id={payment.id}")
+            
+            # 결제 승인으로 상태 변경
+            payment.status = PaymentStatus.completed
+            payment.approved_at = datetime.now(timezone.utc)
+            logger.info("Payment 상태 업데이트 완료")
+        
+        # ✅ 참여자의 total_paid_amount 업데이트 (환불 계산을 위해 중요)
+        final_participation = db.query(Participation).filter(
+            Participation.challenge_id == challenge_id,
+            Participation.user_id == user.id
+        ).first()
+        
+        if final_participation:
+            final_participation.total_paid_amount += amount
+            logger.info(f"total_paid_amount 업데이트: {final_participation.total_paid_amount}원 (이번 결제: +{amount}원)")
         
         # ✅ 생성자가 결제를 완료한 경우 챌린지 상태를 recruiting으로 변경
-        if challenge.creator_id == user.id and challenge.status == 'draft':
-            from app.models.challenge import ChallengeStatus
+        from app.models.challenge import ChallengeStatus
+        if challenge.creator_id == user.id and challenge.status == ChallengeStatus.draft:
+            logger.info(f"생성자 결제 완료 - 챌린지 상태 변경: {challenge.id} draft -> recruiting")
             challenge.status = ChallengeStatus.recruiting
-            logger.info(f"챌린지 상태 변경: {challenge.id} -> recruiting (생성자 결제 완료)")
         
+        logger.info("DB commit 실행 중...")
         db.commit()
         logger.info(f"결제 승인 완료 - Payment ID: {payment.id}, Participation: {user.id}:{challenge_id}")
+        
+        # 커밋 후 참여 상태 재확인
+        logger.info(f"최종 참여 상태 확인: status={final_participation.status if final_participation else 'None'}, total_paid={final_participation.total_paid_amount if final_participation else 0}원")
         
     except Exception as ex:
         db.rollback()
@@ -396,3 +466,212 @@ def payment_success_page(request: Request):
 @router.get("/fail", response_class=HTMLResponse)
 def payment_fail_page(request: Request):
     return templates.TemplateResponse("payments_fail.html", {"request": request})
+
+
+# ---------------------------
+# 월회비 결제 API
+# ---------------------------
+@router.post("/monthly/ready")
+def monthly_payments_ready(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    월회비 결제 전 준비 API
+    payload: { challenge_id, round_id, amount }
+    """
+    challenge_id = payload.get("challenge_id")
+    round_id = payload.get("round_id")
+    amount = payload.get("amount")
+    
+    if not challenge_id or not round_id or not amount:
+        raise HTTPException(status_code=400, detail="challenge_id, round_id, amount가 모두 필요합니다.")
+    
+    try:
+        challenge_id = int(challenge_id)
+        round_id = int(round_id)
+        amount = int(amount)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="challenge_id, round_id, amount는 숫자여야 합니다.")
+
+    # 챌린지 조회
+    challenge = db.query(Challenge).filter(
+        Challenge.id == challenge_id,
+        Challenge.is_deleted == False
+    ).first()
+    if not challenge:
+        raise HTTPException(status_code=404, detail="챌린지를 찾을 수 없습니다.")
+
+    # 회차 정보 조회
+    from app.models.challenge_round import ChallengeRound
+    round_info = db.query(ChallengeRound).filter(
+        ChallengeRound.id == round_id,
+        ChallengeRound.challenge_id == challenge_id
+    ).first()
+    if not round_info:
+        raise HTTPException(status_code=404, detail="회차 정보를 찾을 수 없습니다.")
+
+    # 사용자 참여 확인
+    from app.models.participation import Participation, ParticipationStatus
+    participation = db.query(Participation).filter(
+        Participation.challenge_id == challenge_id,
+        Participation.user_id == user.id,
+        Participation.status == ParticipationStatus.active
+    ).first()
+    
+    if not participation:
+        raise HTTPException(status_code=403, detail="챌린지에 참여하지 않았거나 비활성 상태입니다.")
+
+    # orderId 생성
+    import uuid
+    order_id = f"MONTHLY-CH{challenge_id}-R{round_id}-U{user.id}-{uuid.uuid4().hex[:12]}"
+    order_name = f"[월회비] {challenge.title} - {round_info.round}회차"
+
+    return {
+        "orderId": order_id,
+        "amount": amount,
+        "orderName": order_name,
+        "customerName": user.username or user.name or "고객님",
+        "customerEmail": user.email,
+        "clientKey": getattr(settings, "toss_client_key", "test_ck_D5GePWvyJnrK0W0k6q8gLzN97Eoq"),
+    }
+
+
+@router.post("/monthly/confirm")
+def monthly_payments_confirm(
+    payload: dict,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    월회비 결제 승인 API
+    payload: { paymentKey, orderId, amount, challenge_id, round_id }
+    """
+    payment_key = payload.get("paymentKey")
+    order_id = payload.get("orderId")
+    amount = payload.get("amount")
+    challenge_id = payload.get("challenge_id")
+    round_id = payload.get("round_id")
+
+    if not payment_key or not order_id or amount is None or challenge_id is None or round_id is None:
+        raise HTTPException(status_code=400, detail="모든 결제 정보가 필요합니다.")
+
+    try:
+        amount = int(amount)
+        challenge_id = int(challenge_id)
+        round_id = int(round_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="숫자 형식이 올바르지 않습니다.")
+
+    # Toss 결제 승인
+    secret_key = getattr(settings, "toss_secret_key", "test_sk_zXLkKEypNArWmo50nX3lmeaxYG5R")
+    auth_header = _encode_basic(secret_key)
+    
+    try:
+        with httpx.Client(timeout=20.0) as client:
+            resp = client.post(
+                "https://api.tosspayments.com/v1/payments/confirm",
+                headers={"Authorization": auth_header, "Content-Type": "application/json"},
+                json={"paymentKey": payment_key, "orderId": order_id, "amount": amount},
+            )
+        resp.raise_for_status()
+        toss_result = resp.json()
+    except httpx.HTTPError as e:
+        detail = "Toss 월회비 승인 실패"
+        if getattr(e, "response", None):
+            try:
+                err_json = e.response.json()
+                detail = f"Toss 월회비 승인 실패: {err_json.get('message', str(e))}"
+            except Exception:
+                detail = f"Toss 월회비 승인 실패: {e.response.text}"
+        raise HTTPException(status_code=400, detail=detail)
+
+    # 월회비 결제 기록 생성
+    try:
+        logger.info(f"월회비 결제 기록 생성 시작: challenge_id={challenge_id}, round_id={round_id}, amount={amount}")
+        
+        challenge = db.query(Challenge).filter(Challenge.id == challenge_id).first()
+        if not challenge:
+            logger.error(f"챌린지 조회 실패: challenge_id={challenge_id}")
+            raise HTTPException(status_code=404, detail="챌린지를 찾을 수 없습니다")
+
+        payment_service = get_payment_service(db)
+        from app.models.payment import PaymentTransactionType, PaymentMethodType
+        
+        logger.info(f"Payment 서비스로 월회비 결제 기록 생성: transaction_type=monthly_fee")
+        
+        payment = payment_service.create_payment(
+            user=user,
+            challenge=challenge,
+            amount=amount,
+            transaction_type=PaymentTransactionType.monthly_fee,
+            method=PaymentMethodType.card,
+            order_id=order_id,
+            order_name=f"{challenge.title} - {round_id}회차 월회비",
+            payment_key=payment_key,
+            metadata_json=str(round_id)  # round_id를 metadata에 저장
+        )
+        
+        logger.info(f"Payment 레코드 생성 완료: payment_id={payment.id}, 상태 변경 중...")
+        
+        payment.status = PaymentStatus.completed
+        payment.approved_at = datetime.now(timezone.utc)
+        
+        # ✅ 참여자의 total_paid_amount 업데이트 (월회비도 포함)
+        from app.models.participation import Participation
+        participation = db.query(Participation).filter(
+            Participation.challenge_id == challenge_id,
+            Participation.user_id == user.id
+        ).first()
+        
+        if participation:
+            participation.total_paid_amount += amount
+            logger.info(f"월회비 total_paid_amount 업데이트: {participation.total_paid_amount}원 (이번 결제: +{amount}원)")
+        
+        logger.info("DB commit 실행...")
+        db.commit()
+        logger.info(f"월회비 결제 완료: payment_id={payment.id}, round_id={round_id}, transaction_type={payment.transaction_type}")
+        
+        return {
+            "success": True,
+            "message": "월회비 결제가 완료되었습니다.",
+            "toss_result": toss_result,
+            "challenge_id": challenge_id,
+            "round_id": round_id,
+        }
+        
+    except Exception as ex:
+        db.rollback()
+        logger.error(f"월회비 결제 처리 실패: {ex}")
+        raise HTTPException(status_code=500, detail=f"월회비 결제는 성공했으나 데이터 처리 중 오류 발생: {str(ex)}")
+
+
+@router.get("/monthly/{challenge_id}")
+def get_monthly_payments(
+    challenge_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """사용자의 월회비 결제 상태 조회"""
+    from app.models.payment import Payment, PaymentTransactionType
+    
+    payments = db.query(Payment).filter(
+        Payment.challenge_id == challenge_id,
+        Payment.user_id == current_user.id,
+        Payment.transaction_type == PaymentTransactionType.monthly_fee,
+        Payment.status == PaymentStatus.completed
+    ).all()
+    
+    result = [
+        {
+            "round_id": int(payment.metadata_json) if payment.metadata_json and payment.metadata_json.isdigit() else None,
+            "status": payment.status.value if hasattr(payment.status, 'value') else str(payment.status),
+            "paid_at": payment.approved_at,
+            "amount": payment.amount,
+            "order_id": payment.order_id
+        }
+        for payment in payments
+    ]
+    logger.info(f"월회비 결제 상태 반환: challenge_id={challenge_id}, user_id={current_user.id}, result={result}")
+    return result

@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime, timezone
 from sqlalchemy import (
-    Column, Integer, String, Text, Boolean, DateTime,
+    Column, Integer, String, Text, Boolean, DateTime, JSON,
     ForeignKey, Index, Enum as SAEnum
 )
 from sqlalchemy.orm import relationship
@@ -17,6 +17,12 @@ class NotificationEvent(str, enum.Enum):
     point_awarded = "point_awarded"
     notice_posted = "notice_posted"
     join_completed = "join_completed"
+    # 결제 알림용 추가
+    payment_reminder = "payment_reminder"
+    participation_removed = "participation_removed"
+
+# NotificationType 별칭 생성 (하위 호환성)
+NotificationType = NotificationEvent
 
 class Notification(Base, TimestampMixin):
     __tablename__ = "notifications"
@@ -25,10 +31,9 @@ class Notification(Base, TimestampMixin):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     title = Column(String(100), nullable=False)
     content = Column(Text, nullable=True)
-    target_type = Column(String(30), nullable=True)
-    target_id = Column(Integer, nullable=True)
     is_read = Column(Boolean, default=False, nullable=False)
     event_type = Column(SAEnum(NotificationEvent, name="notification_event_enum"), nullable=True)
+    type = Column(SAEnum(NotificationEvent, name="notification_type_enum"), nullable=True)  # type 필드도 지원
     
     # TimestampMixin이 created_at, updated_at을 제공하므로 중복 제거
     
@@ -38,8 +43,6 @@ class Notification(Base, TimestampMixin):
     __table_args__ = (
         Index("ix_notification_user", "user_id"),
         Index("ix_notification_is_read", "is_read"),
-        Index("ix_notification_event", "event_type"),
         Index("ix_notification_created", "created_at"),
         Index("ix_notification_user_read", "user_id", "is_read"),  # 복합 인덱스 추가
-        Index("ix_notification_target", "target_type", "target_id"),  # 타겟 조회용
     )

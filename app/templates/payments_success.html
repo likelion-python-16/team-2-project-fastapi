@@ -14,6 +14,8 @@
   const orderId = sp.get('orderId');
   const amount = Number(sp.get('amount') || 0);
   const challengeId = Number(sp.get('challenge_id') || sessionStorage.getItem('pay_challenge_id') || 0);
+  const roundId = sp.get('round_id'); // 월회비 결제에서 사용
+  const paymentType = sp.get('type'); // 'monthly' or undefined
   const isPopup = sp.get('popup') === 'true';
 
   const statusDiv = document.getElementById('status');
@@ -32,28 +34,42 @@
   try {
     statusDiv.textContent = '결제 승인 처리 중...';
     
-    const res = await fetch('/api/v1/payments/confirm', {
+    // 월회비 결제인 경우 다른 API 호출
+    const apiUrl = paymentType === 'monthly' ? '/api/v1/payments/monthly/confirm' : '/api/v1/payments/confirm';
+    const requestBody = paymentType === 'monthly' 
+      ? { paymentKey, orderId, amount, challenge_id: challengeId, round_id: roundId }
+      : { paymentKey, orderId, amount, challenge_id: challengeId };
+    
+    console.log('결제 승인 API 호출:', apiUrl, requestBody);
+    
+    const res = await fetch(apiUrl, {
       method: 'POST',
       credentials: 'include',
       headers: { 
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${localStorage.getItem('access_token') || ''}`
       },
-      body: JSON.stringify({ paymentKey, orderId, amount, challenge_id: challengeId })
+      body: JSON.stringify(requestBody)
     });
     
-    if (!res.ok) throw new Error(await res.text());
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error('결제 승인 API 오류:', errorText);
+      throw new Error(`결제 승인 실패 (${res.status}): ${errorText}`);
+    }
     
-    statusDiv.textContent = '결제가 완료되었습니다! 🎉';
+    statusDiv.textContent = paymentType === 'monthly' ? '월회비 결제가 완료되었습니다! 🎉' : '결제가 완료되었습니다! 🎉';
     
     if (isPopup && window.opener) {
       // 팝업에서 부모창으로 결제 성공 메시지 전달
       window.opener.postMessage({ 
         type: 'PAYMENT_SUCCESS',
+        payment_type: paymentType, // 'monthly' or undefined
         paymentKey, 
         orderId, 
         amount, 
-        challengeId 
+        challengeId,
+        roundId
       }, '*');
       
       setTimeout(() => window.close(), 1500);
@@ -65,18 +81,26 @@
     }
     
   } catch (e) {
-    statusDiv.textContent = '결제 승인 처리 실패: ' + e.message;
+    console.error('결제 승인 처리 오류:', e);
+    statusDiv.textContent = '결제는 성공했으나 서버 처리 중 오류가 발생했습니다. 잠시 후 다시 확인해주세요.';
     
+    // 결제는 성공했으므로 성공으로 처리 (토스에서는 이미 결제가 완료됨)
     if (isPopup && window.opener) {
       window.opener.postMessage({ 
-        type: 'PAYMENT_FAIL', 
-        error: e.message 
+        type: 'PAYMENT_SUCCESS',
+        payment_type: paymentType, // 'monthly' or undefined
+        paymentKey, 
+        orderId, 
+        amount, 
+        challengeId,
+        roundId,
+        serverError: true  // 서버 오류 플래그
       }, '*');
-      setTimeout(() => window.close(), 2000);
+      setTimeout(() => window.close(), 3000);
     } else {
       setTimeout(() => {
-        location.replace(challengeId ? `/pages/challenges/${challengeId}` : '/home');
-      }, 2000);
+        location.replace(challengeId ? `/pages/challenges/${challengeId}?payment=success` : '/home');
+      }, 3000);
     }
   }
 })();

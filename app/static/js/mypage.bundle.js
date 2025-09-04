@@ -79,6 +79,14 @@
       if(!r.ok) throw new Error(await safeErr(r));
       return await r.json();
     }
+    async function jpost(path, body){
+      const h={"Content-Type":"application/json"};
+      const t=token(); if(t) h["Authorization"]="Bearer "+t;
+      const r=await fetch(API+path,{method:"POST", headers:h, body:JSON.stringify(body), credentials:"include"});
+      if(r.status===401){ if(GUEST) return null; location.href="/login"; return null; }
+      if(!r.ok) throw new Error(await safeErr(r));
+      return await r.json();
+    }
     async function uploadFile(file){
       const t=token(); const fm=new FormData(); fm.append("file", file);
       const r = await fetch("/api/v1/files/profile-image", {method:"POST", headers: t?{"Authorization":"Bearer "+t}:{}, body: fm, credentials:"include"});
@@ -658,4 +666,6 @@
       // init scroll reveals after content is in DOM
       initReveal();
     }
+
+
     init();

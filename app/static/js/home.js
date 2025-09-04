@@ -550,10 +550,22 @@ function renderCard(ch) {
   const userParticipation = ch.user_participation;
 
   const paymentBadge = (() => {
+    // 백엔드에서 준비된 fee_type 사용 (더 정확한 포맷팅)
+    if (ch.fee_type) {
+      const isFreeBadge = ch.fee_type === '무료';
+      return `<span class="badge ${isFreeBadge ? 'free' : 'paid'}">${ch.fee_type}</span>`;
+    }
+    
+    // 백엔드 fee_type이 없을 때 폴백 로직
     if (paymentType === 'free') return `<span class="badge free">무료</span>`;
     if (paymentType === 'entry_fee') return `<span class="badge paid">입장비 ${Number(entryFee).toLocaleString()}원</span>`;
     if (paymentType === 'monthly_fee') return `<span class="badge paid">월 ${Number(monthlyFee).toLocaleString()}원</span>`;
-    if (paymentType === 'both') return `<span class="badge paid">입장비+월회비</span>`;
+    if (paymentType === 'both') {
+      const entryText = entryFee > 0 ? `입장비 ${Number(entryFee).toLocaleString()}원` : '';
+      const monthlyText = monthlyFee > 0 ? `월 ${Number(monthlyFee).toLocaleString()}원` : '';
+      const combined = [entryText, monthlyText].filter(t => t).join(' + ');
+      return `<span class="badge paid">${combined || '입장비+월회비'}</span>`;
+    }
     return '';
   })();
 

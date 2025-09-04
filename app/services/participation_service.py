@@ -181,6 +181,13 @@ class ParticipationService:
             # 결제 완료 후 활성화
             participation.activate_participation()
             challenge = self._get_challenge_by_id(challenge_id)
+            
+            # 월회비인 경우만 다음 결제일 설정 (both 타입은 제외 - 회차별 수동 결제)
+            if participation.payment_cycle == PaymentCycle.monthly:
+                from app.services.payment_reminder_service import get_payment_reminder_service
+                reminder_service = get_payment_reminder_service(self.db)
+                reminder_service.set_next_payment_date(participation, challenge)
+            
             self._increment_challenge_participants(challenge)
             
             self.db.commit()
@@ -232,9 +239,8 @@ class ParticipationService:
         if refund_amount > 0:  # 양수 금액만 실제 환불 처리
             self._process_refund(participation, refund_amount, reason or "사용자 탈퇴")
         elif refund_amount == 0:
-            # 0원 환불은 기록만 남기기 (constraint 우회를 위해 1원으로 저장 후 메모에 실제 금액 표시)
-            logger.info(f"0원 환불 기록 남기기")
-            self._process_zero_refund(participation, reason or "사용자 탈퇴")
+            # 0원 환불은 기록 없이 로그만 남기기
+            logger.info(f"0원 환불 - 환불 기록 생성 생략: user_id={user.id}, challenge_id={challenge_id}")
         else:
             logger.warning(f"음수 환불 금액: {refund_amount}원 - 환불 처리 건너뛰기")
         
@@ -655,18 +661,29 @@ class ParticipationService:
 
     def _calculate_refund_amount(self, challenge: Challenge, participation: Participation) -> int:
         """환불 금액 계산"""
+        logger.info(f"환불 금액 계산 시작: user_id={participation.user_id}, challenge_id={participation.challenge_id}")
+        logger.info(f"  - 총 결제 금액: {participation.total_paid_amount}원")
+        logger.info(f"  - 챌린지 상태: {challenge.status}")
+        logger.info(f"  - 진행률: {participation.progress_rate}%")
+        
         # participation.total_paid_amount 사용
         if participation.total_paid_amount <= 0:
+            logger.info(f"  - 결과: 결제 금액 없음 -> 0원 환불")
             return 0
         
         # 챌린지 상태에 따른 환불 정책
         if challenge.status == ChallengeStatus.recruiting:
-            return participation.total_paid_amount  # 전액 환불
+            refund_amount = participation.total_paid_amount
+            logger.info(f"  - 결과: 모집중 -> 전액 환불 {refund_amount}원")
+            return refund_amount  # 전액 환불
         elif challenge.status == ChallengeStatus.active:
             # 진행률에 따른 부분 환불
             unused_rate = (100.0 - participation.progress_rate) / 100.0
-            return int(participation.total_paid_amount * unused_rate * 0.8)  # 80% 환불
+            refund_amount = int(participation.total_paid_amount * unused_rate * 0.8)  # 80% 환불
+            logger.info(f"  - 진행중: 미사용률 {unused_rate:.2f} * 80% -> {refund_amount}원 환불")
+            return refund_amount
         else:
+            logger.info(f"  - 결과: 완료/취소 상태 -> 0원 환불")
             return 0  # 완료된 챌린지는 환불 없음
 
     def _process_refund(self, participation: Participation, refund_amount: int, reason: str):

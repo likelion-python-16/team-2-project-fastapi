@@ -32,7 +32,7 @@ from .routers import (
     users_mypage, users_mypage_chat, users_mypage_more
 )
 from .routers import auth_social
-from .routers import round_pictures, participations, payments
+from .routers import round_pictures, participations, payments, payment_reminders
 from app.routers.challengecreating import router as challengecreating_router
 from app.routers.challengedetail import router as challengedetail_router
 from app.routers.place_picker import router as place_picker_router
@@ -257,6 +257,7 @@ app.include_router(users.router, prefix="/api/v1")
 app.include_router(challenges.router, prefix="/api/v1")
 app.include_router(participations.router, prefix="/api/v1")
 app.include_router(payments.router, prefix="/api/v1")
+app.include_router(payment_reminders.router, prefix="/api/v1")
 
 app.include_router(places.router)
 app.include_router(round_pictures.router)

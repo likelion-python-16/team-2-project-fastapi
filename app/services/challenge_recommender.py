@@ -7,6 +7,7 @@ from app.nlp.model_loader import embed_texts
 from app.models.challenge import Challenge
 from app.models.participation import Participation
 from app.models.user import User
+from app.models.tag import UserTag, ChallengeTag, Tag
 
 class ChallengeRecommender:
     """챌린지 기반 추천 시스템"""
@@ -149,6 +150,113 @@ class ChallengeRecommender:
                 'matched_text': ch.title,
                 'reasons': ['인기 챌린지', f'{participant_count}명 참여']
             })
+        
+        return results
+    
+    def get_tag_based_recommendations(self, user_id: int, limit: int = 10) -> List[Dict]:
+        """
+        사용자의 관심 태그를 기반으로 한 챌린지 추천
+        사용자가 선택한 태그와 일치하는 챌린지들을 우선 추천
+        """
+        if not user_id:
+            return []
+        
+        # 사용자가 이미 참여한 챌린지 ID 가져오기
+        participated_challenges = set(
+            ch_id for (ch_id,) in self.db.query(Participation.challenge_id)
+            .filter(Participation.user_id == user_id)
+            .all()
+        )
+        
+        # 사용자의 관심 태그 가져오기
+        user_tags = self.db.query(UserTag).filter(
+            UserTag.user_id == user_id
+        ).all()
+        
+        if not user_tags:
+            # 관심 태그가 없으면 인기 챌린지 반환
+            return self.get_trending_challenges(limit)
+        
+        user_tag_ids = [ut.tag_id for ut in user_tags]
+        user_tag_names = [ut.tag.tag for ut in user_tags]
+        
+        # 사용자 관심 태그와 일치하는 챌린지들 찾기 (DB 호환성 개선)
+        from sqlalchemy import func, desc
+        
+        # 1단계: 매칭되는 챌린지와 태그 개수만 먼저 조회
+        challenge_matches = self.db.query(
+            Challenge,
+            func.count(ChallengeTag.id).label('tag_match_count')
+        ).join(
+            ChallengeTag, Challenge.id == ChallengeTag.challenge_id
+        ).filter(
+            Challenge.is_deleted == False,
+            Challenge.status.in_(['recruiting', 'active']),
+            ChallengeTag.tag_id.in_(user_tag_ids),
+            ~Challenge.id.in_(participated_challenges) if participated_challenges else True
+        ).group_by(
+            Challenge.id
+        ).order_by(
+            desc('tag_match_count'),  # 매칭된 태그 개수로 정렬
+            desc(Challenge.current_participants)  # 참가자 수로 2차 정렬
+        ).limit(limit).all()
+        
+        results = []
+        for challenge, tag_count in challenge_matches:
+            # 2단계: 각 챌린지별로 매칭된 태그들 개별 조회
+            matched_tags = self.db.query(Tag.tag).join(
+                ChallengeTag, Tag.id == ChallengeTag.tag_id
+            ).filter(
+                ChallengeTag.challenge_id == challenge.id,
+                ChallengeTag.tag_id.in_(user_tag_ids)
+            ).all()
+            
+            matched_tag_names = [tag[0] for tag in matched_tags]
+            participant_count = challenge.current_participants or 0
+            
+            # 매칭 점수 계산 (0.5 ~ 1.0)
+            max_possible_matches = min(len(user_tag_names), 5)  # 최대 5개 태그까지만 고려
+            similarity_score = 0.5 + (0.5 * tag_count / max_possible_matches)
+            
+            # 추천 이유 생성
+            reasons = []
+            if tag_count >= 3:
+                reasons.append(f'관심사 {tag_count}개 일치')
+            elif tag_count >= 2:
+                reasons.append(f'관심사 {tag_count}개 일치')
+            else:
+                reasons.append('관심사 일치')
+            
+            # 매칭된 태그들 표시 (최대 3개)
+            shown_tags = matched_tag_names[:3]
+            if shown_tags:
+                reasons.append(f'태그: {", ".join(shown_tags)}')
+            
+            results.append({
+                'challenge': challenge,
+                'similarity_score': similarity_score,
+                'participant_count': participant_count,
+                'matched_text': f"관심사 매칭: {', '.join(shown_tags)}",
+                'reasons': reasons,
+                'tag_match_count': tag_count,
+                'matched_tags': matched_tag_names
+            })
+        
+        # 추천이 부족하면 인기 챌린지로 보완
+        if len(results) < limit:
+            trending = self.get_trending_challenges(limit - len(results))
+            # 중복 제거하면서 추가
+            existing_ids = {r['challenge'].id for r in results}
+            for trending_item in trending:
+                if (trending_item['challenge'].id not in existing_ids and 
+                    trending_item['challenge'].id not in participated_challenges):
+                    # 태그 매칭이 아닌 것으로 표시
+                    trending_item['reasons'] = ['인기 챌린지'] + trending_item['reasons'][1:]
+                    trending_item['tag_match_count'] = 0
+                    trending_item['matched_tags'] = []
+                    results.append(trending_item)
+                    if len(results) >= limit:
+                        break
         
         return results
 

@@ -3,11 +3,11 @@ from pydantic import EmailStr
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional
-from datetime import datetime
 
-from app.security import normalize_phone, id_fingerprint
+from app.security import normalize_phone, id_fingerprint, get_current_user
 from ..core.database import get_db
 from ..models.user import User
+from ..models.notification import Notification
 from ..schemas.auth import UserOut
 from ..utils.logging import logger
 
@@ -218,3 +218,144 @@ def check_duplicates(
         },
         "message": "제공한 값만 검사합니다. phone은 fingerprint 기준으로 우선 검사하며, 레거시 phone(숫자열)도 보조로 확인합니다.",
     }
+
+# -------------------------------
+# 알림 관련 API
+# -------------------------------
+
+@router.get("/me/notifications")
+async def get_my_notifications(
+    limit: int = Query(20, le=50),
+    offset: int = Query(0, ge=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """현재 사용자의 알림 목록 조회"""
+    try:
+        # 실제 알림 조회 (최신순)
+        notifications = db.query(Notification).filter(
+            Notification.user_id == current_user.id
+        ).order_by(
+            Notification.created_at.desc()
+        ).offset(offset).limit(limit).all()
+        
+        # 전체 개수
+        total = db.query(Notification).filter(
+            Notification.user_id == current_user.id
+        ).count()
+        
+        # 읽지 않은 개수  
+        unread_count = db.query(Notification).filter(
+            Notification.user_id == current_user.id,
+            Notification.is_read == False
+        ).count()
+        
+        return {
+            "notifications": [
+                {
+                    "id": notif.id,
+                    "message": notif.message,
+                    "is_read": notif.is_read,
+                    "created_at": notif.created_at.isoformat() if notif.created_at else None,
+                    "type": notif.type.value if hasattr(notif.type, 'value') else str(notif.type)
+                } for notif in notifications
+            ],
+            "total": total,
+            "unread_count": unread_count,
+            "has_next": offset + limit < total
+        }
+        
+    except Exception as e:
+        logger.error(f"알림 조회 오류: {str(e)}")
+        raise HTTPException(status_code=500, detail="알림을 가져오는데 실패했습니다")
+
+@router.post("/me/notifications/mark-all-read")
+async def mark_all_notifications_read(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """현재 사용자의 모든 알림을 읽음 처리"""
+    try:
+        # 읽지 않은 알림들을 모두 읽음 처리
+        updated_count = db.query(Notification).filter(
+            Notification.user_id == current_user.id,
+            Notification.is_read == False
+        ).update({"is_read": True})
+        
+        db.commit()
+        
+        return {
+            "message": f"{updated_count}개의 알림이 읽음 처리되었습니다.",
+            "updated_count": updated_count
+        }
+        
+    except Exception as e:
+        logger.error(f"알림 읽음 처리 오류: {str(e)}")
+        raise HTTPException(status_code=500, detail="알림 읽음 처리에 실패했습니다")
+
+@router.post("/me/notifications/create-test")
+async def create_test_notification(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """테스트용 월회비 알림 생성"""
+    try:
+        from ..models.notification import Notification, NotificationEvent
+        from datetime import datetime
+        
+        # 테스트 알림 생성
+        test_notification = Notification(
+            user_id=current_user.id,
+            type=NotificationEvent.payment_reminder,
+            message="📅 내일 월회비 결제 예정입니다. (챌린지: 1000)",
+            extra_data={"challenge_id": 8, "amount": 1000, "test": True},
+            is_read=False,
+            created_at=datetime.now()
+        )
+        
+        db.add(test_notification)
+        db.commit()
+        
+        return {
+            "message": "테스트 알림이 생성되었습니다!",
+            "notification_id": test_notification.id
+        }
+        
+    except Exception as e:
+        logger.error(f"테스트 알림 생성 오류: {str(e)}")
+        db.rollback()
+        return {
+            "message": f"테스트 알림 생성 실패: {str(e)}",
+            "success": False
+        }
+
+@router.patch("/me/notifications/{notification_id}/read")
+async def mark_notification_read(
+    notification_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """특정 알림을 읽음 처리"""
+    try:
+        notification = db.query(Notification).filter(
+            Notification.id == notification_id,
+            Notification.user_id == current_user.id
+        ).first()
+        
+        if not notification:
+            raise HTTPException(status_code=404, detail="알림을 찾을 수 없습니다")
+            
+        notification.is_read = True
+        db.commit()
+        
+        return {"message": "알림이 읽음 처리되었습니다"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"알림 읽음 처리 오류: {str(e)}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="알림 읽음 처리에 실패했습니다")
+
+
+
