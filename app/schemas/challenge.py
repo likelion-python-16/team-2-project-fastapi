@@ -60,6 +60,7 @@ class ChallengeCreate(BaseModel):
     # ✅ 리워드 (reward → reward_description)
     use_reward: Optional[bool] = False
     reward_description: Optional[str] = None
+    reward: Optional[str] = None  # 호환성
 
     # 모드/기본 링크
     mode: ChallengeMode = ChallengeMode.online  # 기본값 online으로 변경
@@ -69,8 +70,14 @@ class ChallengeCreate(BaseModel):
     same_place_for_all_rounds: Optional[bool] = False
     default_place_name: Optional[str] = None
     default_address: Optional[str] = None  # road_address 통합
+    default_road_address: Optional[str] = None  # 호환성
+    default_map_url: Optional[str] = None  # 호환성
+    default_place_id: Optional[str] = None  # 호환성
     default_latitude: Optional[float] = None
     default_longitude: Optional[float] = None
+    
+    # 커버 이미지
+    cover_image_url: Optional[str] = None
 
     # 기본 설정
     require_approval: Optional[bool] = False
@@ -171,9 +178,18 @@ class ChallengeCreate(BaseModel):
             and self.max_participants < self.min_participants):
             raise ValueError("max_participants must be ≥ min_participants")
 
-        # 리워드 검증
-        if self.use_reward and not (self.reward_description and self.reward_description.strip()):
-            raise ValueError("Reward description is required when use_reward is True")
+        # 리워드 검증 - reward 호환성 처리
+        if self.use_reward:
+            reward_text = self.reward_description or self.reward
+            if not (reward_text and reward_text.strip()):
+                raise ValueError("Reward description is required when use_reward is True")
+            # reward_description가 없고 reward만 있으면 복사
+            if not self.reward_description and self.reward:
+                self.reward_description = self.reward
+
+        # 주소 호환성 처리
+        if not self.default_address and self.default_road_address:
+            self.default_address = self.default_road_address
 
         # ✅ 결제 타입별 검증
         if self.payment_type == PaymentType.entry_fee:
@@ -216,6 +232,7 @@ class ChallengeUpdate(BaseModel):
     # ✅ 리워드 (reward → reward_description)
     use_reward: Optional[bool] = None
     reward_description: Optional[str] = None
+    reward: Optional[str] = None  # 호환성
 
     # 모드/기본 링크
     mode: Optional[ChallengeMode] = None
@@ -225,8 +242,14 @@ class ChallengeUpdate(BaseModel):
     same_place_for_all_rounds: Optional[bool] = None
     default_place_name: Optional[str] = None
     default_address: Optional[str] = None  # road_address 통합
+    default_road_address: Optional[str] = None  # 호환성
+    default_map_url: Optional[str] = None  # 호환성
+    default_place_id: Optional[str] = None  # 호환성
     default_latitude: Optional[float] = None
     default_longitude: Optional[float] = None
+    
+    # 커버 이미지
+    cover_image_url: Optional[str] = None
 
     # 기본 설정
     require_approval: Optional[bool] = None
@@ -286,11 +309,18 @@ class ChallengeUpdate(BaseModel):
             and self.max_participants < self.min_participants):
             raise ValueError("max_participants must be ≥ min_participants")
 
-        # 리워드 검증
-        if self.use_reward is True and (
-            self.reward_description is None or self.reward_description.strip() == ""
-        ):
-            raise ValueError("Reward description is required when use_reward is True")
+        # 리워드 검증 - reward 호환성 처리
+        if self.use_reward is True:
+            reward_text = self.reward_description or self.reward
+            if not reward_text or reward_text.strip() == "":
+                raise ValueError("Reward description is required when use_reward is True")
+            # reward_description가 없고 reward만 있으면 복사
+            if not self.reward_description and self.reward:
+                self.reward_description = self.reward
+
+        # 주소 호환성 처리
+        if not self.default_address and self.default_road_address:
+            self.default_address = self.default_road_address
 
         return self
 
@@ -333,6 +363,9 @@ class ChallengeResponse(BaseModel):
     # ✅ 리워드 시스템 (reward → reward_description)
     use_reward: bool
     reward_description: Optional[str] = None
+
+    # 커버 이미지
+    cover_image_url: Optional[str] = None
 
     # ✅ 완료 & 정산 (is_closed → is_settlement_completed)
     completed_at: Optional[datetime] = None

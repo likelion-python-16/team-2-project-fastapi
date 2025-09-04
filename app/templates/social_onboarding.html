@@ -1,0 +1,66 @@
+{% extends "final.html" %}
+{% block title %}소셜 가입 안내{% endblock %}
+{% block content %}
+<style> body { flex-direction: column; } </style>
+<div class="flex items-center justify-center grow">
+  <!-- Width aligned with login.html (420px) -->
+  <div class="kt-card max-w-[420px] w-full">
+    <div class="kt-card-content flex flex-col gap-5 p-10">
+      <div class="text-center">
+        <h3 class="text-lg font-medium text-mono mb-2.5">소셜 가입 안내</h3>
+        <!-- Compact identity: avatar + name/email two lines -->
+        <div id="miniIdentity" class="flex items-center justify-center gap-3 mb-2.5 hidden">
+          <img id="miniAvatar" alt="avatar" class="w-9 h-9 rounded-full border border-border object-cover"/>
+          <div class="text-left text-sm">
+            <div id="miniName" class="text-foreground"></div>
+            <div id="miniEmail" class="text-muted-foreground"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rounded-lg p-4 border border-amber-200 bg-amber-50">
+        <div class="font-medium mb-2">기존 고객님이 아니시네요.</div>
+        <div class="text-sm text-muted-foreground">로그인을 위해서는 <b>추가 필수 정보</b>를 입력해야 서비스 이용이 가능합니다.</div>
+        <div class="text-sm text-muted-foreground mt-2">수집된 정보는 개인정보 보호 방침에 따라 안전하게 관리되며, <b>서비스를 100% 활용</b>하기 위한 용도로만 사용됩니다.</div>
+      </div>
+
+      <div class="flex flex-col gap-3">
+        <button id="btnGoSignup" class="kt-btn kt-btn-primary">예, 회원가입 진행</button>
+        <button id="btnHome" class="kt-btn">아니오, 홈으로</button>
+      </div>
+
+      <div class="rounded-lg p-3 border border-muted bg-muted/20 text-xs text-muted-foreground">
+        가입이 완료되면 <b>이메일 인증 없이 바로 사용</b> 가능하며, 다음부터는 소셜 로그인 시 이 계정으로 자동 연동됩니다.
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', async function(){
+  // 최근 소셜 식별 정보를 세션에서 받아 정확한 이메일을 출력
+  try{
+    const r = await fetch('/api/v1/auth/identity/last', { credentials: 'include' });
+    if (r.ok){
+      const j = await r.json();
+      const wrap = document.getElementById('miniIdentity');
+      if (j){
+        document.getElementById('miniName').textContent = '이름: ' + (j.name || '-');
+        document.getElementById('miniEmail').textContent = '이메일: ' + (j.email || '-');
+        const pic = j.picture || '';
+        if (pic){ const img=document.getElementById('miniAvatar'); img.src = pic; img.onerror=()=>{img.style.display='none'}; }
+        wrap.classList.remove('hidden');
+      }
+    }
+  }catch(_){ }
+
+  document.getElementById('btnGoSignup').addEventListener('click', function(){
+    // Use dedicated social signup flow
+    window.location.href = '/signup/social/step1';
+  });
+  document.getElementById('btnHome').addEventListener('click', function(){
+    window.location.href = '/home';
+  });
+});
+</script>
+{% endblock %}

@@ -3,7 +3,7 @@ from typing import Optional
 from pathlib import Path
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from jinja2 import TemplateNotFound
@@ -57,6 +57,8 @@ def _user_payload(me: User) -> dict:
         "manner_score": int(getattr(me, "manner_score", 0) or 0),
         "total_points": int(getattr(me, "total_points", 0) or 0),
         "is_active": bool(getattr(me, "is_active", True)),
+        "is_admin": bool(getattr(me, "is_admin", False)),
+        "is_superadmin": bool(getattr(me, "is_superadmin", False)),
     }
 
 
@@ -518,3 +520,153 @@ def get_user_reviews(
         "skip": skip,
         "limit": limit
     }
+
+
+# ========================
+# 회원정보 수정 관련 API들  
+# ========================
+
+@router.get("/me/phone-masked")
+def get_phone_masked(
+    me: User = Depends(get_current_user)
+):
+    """마스킹된 전화번호 조회"""
+    if not me.phone:
+        return {"phone_masked": None}
+    
+    # 전화번호 마스킹: 010-1234-5678 -> 010-***4-5678
+    phone = me.phone
+    if len(phone) >= 7:
+        masked = phone[:3] + "-***" + phone[-4:]
+    else:
+        masked = "***-****-****" 
+    
+    return {"phone_masked": masked}
+
+
+@router.post("/me/verify-password")
+def verify_current_password(
+    payload: dict,
+    me: User = Depends(get_current_user)
+):
+    """현재 비밀번호 검증"""
+    from passlib.context import CryptContext
+    
+    password = payload.get("password", "")
+    if not password:
+        raise HTTPException(400, "비밀번호를 입력해주세요")
+    
+    # 비밀번호 검증
+    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    if not pwd_context.verify(password, me.password_hash):
+        raise HTTPException(400, "비밀번호가 올바르지 않습니다")
+    
+    return {"message": "비밀번호 검증 성공"}
+
+
+@router.patch("/me/username")
+def update_username(
+    payload: dict,
+    me: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """사용자명 변경"""
+    from app.security import create_access_token, create_refresh_token
+    
+    new_username = payload.get("username", "").strip().lower()
+    if not new_username:
+        raise HTTPException(400, "사용자명을 입력해주세요")
+    
+    # 중복 체크
+    existing = db.query(User).filter(User.username == new_username, User.id != me.id).first()
+    if existing:
+        raise HTTPException(409, "이미 사용 중인 사용자명입니다")
+    
+    # 업데이트
+    me.username = new_username
+    db.commit()
+    
+    # 새 토큰 생성 (사용자명이 토큰에 포함되므로)
+    access_token = create_access_token(data={"sub": me.username, "user_id": me.id})
+    refresh_token = create_refresh_token(data={"sub": me.username, "user_id": me.id})
+    
+    return {
+        "message": "사용자명이 변경되었습니다",
+        "access_token": access_token,
+        "refresh_token": refresh_token
+    }
+
+
+@router.patch("/me/phone")  
+def update_phone(
+    payload: dict,
+    me: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """전화번호 변경 (모든 소셜 연동 계정도 가능)"""
+    from app.security import normalize_phone, id_fingerprint
+    
+    new_phone = payload.get("phone", "").strip()
+    if not new_phone:
+        raise HTTPException(400, "전화번호를 입력해주세요")
+    
+    # 전화번호 정규화
+    try:
+        normalized_phone = normalize_phone(new_phone)
+        phone_fp = id_fingerprint(normalized_phone)
+    except Exception:
+        raise HTTPException(400, "올바르지 않은 전화번호 형식입니다")
+    
+    # 강화된 중복 체크 (fingerprint, 평문, encrypted 모두 체크)
+    existing_queries = [
+        db.query(User).filter(User.phone_fingerprint == phone_fp, User.id != me.id),
+        db.query(User).filter(User.phone == normalized_phone, User.id != me.id)
+    ]
+    
+    for query in existing_queries:
+        existing = query.first()
+        if existing:
+            raise HTTPException(409, "이미 등록된 전화번호입니다")
+    
+    # 업데이트
+    me.phone = normalized_phone
+    me.phone_fingerprint = phone_fp
+    db.commit()
+    
+    return {"message": "전화번호가 변경되었습니다"}
+
+
+@router.post("/me/change-password")
+def change_password(
+    payload: dict,
+    me: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """비밀번호 변경"""
+    from passlib.context import CryptContext
+    from app.security import validate_password_strength, get_password_requirements
+    
+    new_password = payload.get("new_password", "")
+    if not new_password:
+        raise HTTPException(400, "새 비밀번호를 입력해주세요")
+    
+    # 비밀번호 강도 검증
+    if not validate_password_strength(new_password):
+        requirements = get_password_requirements()
+        raise HTTPException(400, {"message": "비밀번호가 요구사항을 충족하지 않습니다", "requirements": requirements})
+    
+    # 기존 비밀번호와 동일한지 체크
+    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    if pwd_context.verify(new_password, me.password_hash):
+        raise HTTPException(400, "새 비밀번호는 현재 비밀번호와 다르게 설정해주세요")
+    
+    # 새 비밀번호 해시 생성
+    new_password_hash = pwd_context.hash(new_password)
+    
+    # 업데이트
+    me.password_hash = new_password_hash
+    db.commit()
+    
+    return {"message": "비밀번호가 변경되었습니다"}
+
+

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>소셜 로그인 처리</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>body{font-family:system-ui,apple-system,Segoe UI,Roboto,Arial; margin:20px}</style>
+</head>
+<body>
+  <h3>로그인 처리 중...</h3>
+  <script>
+  (async function(){
+    try{
+      const p = new URLSearchParams(location.search);
+      const access = p.get('access');
+      const refresh = p.get('refresh');
+      if(access){ try{ localStorage.setItem('access_token', access); }catch(_){}
+                   try{ sessionStorage.setItem('access_token', access); }catch(_){} }
+      if(refresh){ try{ localStorage.setItem('refresh_token', refresh); }catch(_){}
+                    try{ sessionStorage.setItem('refresh_token', refresh); }catch(_){} }
+
+      // 온보딩 필요 여부 확인
+      let needs = null;
+      try{
+        const r = await fetch('/api/v1/users/me/needs-onboarding', { headers: { Authorization: 'Bearer ' + (localStorage.getItem('access_token') || sessionStorage.getItem('access_token') || '') }});
+        if (r.ok) needs = await r.json();
+      }catch(_){}
+
+      if (needs && (needs.phone_missing || needs.ident_missing)){
+        // 프리필 저장 후 소셜 온보딩 안내 페이지로 이동
+        const p = new URLSearchParams(location.search);
+        const provider = p.get('provider') || '';
+        const prefill = { username: needs.username, name: needs.name, email: needs.email, provider };
+        try{ localStorage.setItem('social_prefill', JSON.stringify(prefill)); }catch(_){}
+        location.replace('/social/onboarding' + (provider? ('?provider='+encodeURIComponent(provider)) : ''));
+        return;
+      }
+
+      location.replace('/home');
+    }catch(e){
+      document.body.insertAdjacentHTML('beforeend', '<p style=\"color:#b91c1c\">로그인 처리 중 오류가 발생했습니다.</p>');
+    }
+  })();
+  </script>
+</body>
+</html>

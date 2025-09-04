@@ -1,0 +1,17 @@
+{% extends "final.html" %}
+{% block title %}관리자 승인 대기 - Team Project{% endblock %}
+{% block content %}
+<style> body { flex-direction: column; } </style>
+<div class="flex items-center justify-center grow">
+  <div class="kt-card max-w-[520px] w-full mt-12">
+    <div class="kt-card-content p-8 text-center">
+      <h2 class="text-xl font-semibold mb-2">관리자 승인 대기</h2>
+      <p class="text-muted-foreground">관리자 권한 요청이 접수되었습니다. 마스터 관리자의 승인이 완료되면 접속이 가능합니다.</p>
+      <div class="mt-6">
+        <a class="kt-btn kt-btn-primary" href="/home">홈으로</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+

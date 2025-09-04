@@ -1,0 +1,71 @@
+{% extends "final.html" %}
+{% block title %}소셜 회원가입 2단계 - Team Project{% endblock %}
+{% block content %}
+<div class="flex items-start justify-center grow py-8">
+  <div class="kt-card max-w-[420px] w-full">
+    <form class="kt-card-content flex flex-col gap-5 p-10" id="socialStep2" method="post">
+      <div class="text-center mb-2.5">
+        <h3 class="text-lg font-medium text-mono mb-2.5">소셜 회원가입 · 2단계</h3>
+        <div class="text-sm text-muted-foreground">개인 정보를 선택 입력하세요</div>
+      </div>
+
+      <div id="alertContainer" class="hidden"></div>
+
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label">성별</label>
+        <select class="kt-input" id="gender" name="gender">
+          <option value="">선택하지 않음</option>
+          <option value="male">남성</option>
+          <option value="female">여성</option>
+          <option value="other">기타</option>
+        </select>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label">거주 지역</label>
+        <input class="kt-input" id="region_living" name="region_living" placeholder="예: 경기도 성남시" type="text"/>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label">주요 활동 지역</label>
+        <input class="kt-input" id="region_active" name="region_active" placeholder="예: 서울시 강남구" type="text"/>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button type="button" class="kt-btn kt-btn-outline flex-1" id="btnBack">이전</button>
+        <button type="submit" class="kt-btn kt-btn-primary flex-1" id="btnNext">다음 단계</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+// 1단계 데이터 확인
+const step1Data = JSON.parse(sessionStorage.getItem('socialStep1Data') || '{}');
+if (!step1Data.name) {
+  alert('1단계 데이터가 없습니다');
+  window.location.href = '/social/step1';
+}
+
+// 폼 제출
+document.getElementById('socialStep2').addEventListener('submit', function(e) {
+  e.preventDefault();
+  
+  const formData = {
+    gender: document.getElementById('gender').value,
+    region_living: document.getElementById('region_living').value.trim(),
+    region_active: document.getElementById('region_active').value.trim()
+  };
+  
+  // 세션 스토리지에 저장
+  sessionStorage.setItem('socialStep2Data', JSON.stringify(formData));
+  
+  // 3단계로 이동
+  window.location.href = '/social/step3';
+});
+
+document.getElementById('btnBack').addEventListener('click', () => {
+  window.location.href = '/social/step1';
+});
+</script>
+{% endblock %}

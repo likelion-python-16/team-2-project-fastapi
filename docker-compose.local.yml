@@ -29,6 +29,23 @@ services:
       # 보안 관련 (.env에서 가져오기)
       - JWT_SECRET=${JWT_SECRET:-default-dev-secret-change-in-production}
       - FERNET_KEY=${FERNET_KEY:-}
+      - SESSION_SECRET=${SESSION_SECRET:-dev-session-secret}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-dev-refresh-secret}
+      
+      # 소셜 로그인 설정
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_REDIRECT_PATH=${GOOGLE_REDIRECT_PATH:-/api/v1/auth/callback/google}
+      - NAVER_CLIENT_ID=${NAVER_CLIENT_ID}
+      - NAVER_CLIENT_SECRET=${NAVER_CLIENT_SECRET}
+      - NAVER_REDIRECT_PATH=${NAVER_REDIRECT_PATH:-/api/v1/auth/callback/naver}
+      
+      # URL 설정
+      - FRONT_BASE_URL=${FRONT_BASE_URL:-http://localhost:8001}
+      - API_BASE_URL=${API_BASE_URL:-http://localhost:8001/api/v1}
+      - VERIFICATION_LINK_BASE=${VERIFICATION_LINK_BASE:-http://localhost:8001/api/v1}
+      - VERIFY_SUCCESS_URL=${VERIFY_SUCCESS_URL:-http://localhost:8001/verify/success}
+      - VERIFY_FAIL_URL=${VERIFY_FAIL_URL:-http://localhost:8001/verify/fail}
       
       # AWS 설정 (.env에서 가져오기)
       - AWS_REGION=${AWS_REGION:-}
@@ -38,6 +55,13 @@ services:
       #toss 설정
       - TOSS_SECRET_KEY=${TOSS_SECRET_KEY}
       - TOSS_CLIENT_KEY=${TOSS_CLIENT_KEY}
+      
+      # 초기 관리자 설정
+      - INITIAL_ADMIN_USERNAME=${INITIAL_ADMIN_USERNAME:-admin}
+      - INITIAL_ADMIN_EMAIL=${INITIAL_ADMIN_EMAIL:-admin@fastteam.com}
+      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-admin123!@#}
+      - INITIAL_ADMIN_NAME=${INITIAL_ADMIN_NAME:-FastTeam Admin}
+      
       # 기타 설정
       - DEBUG=True
     volumes:

@@ -41,6 +41,30 @@ async function fetchJSON(url, opts = {}) {
   return isJSON ? body : body;
 }
 
+/* ---- Admin 모드 전환 ---- */
+async function enterAdminMode() {
+  try {
+    const response = await fetch('/admin/mode/enable', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${getAccessToken()}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (response.ok) {
+      // 관리자 모드 활성화 성공 - 페이지 이동
+      window.location.href = '/admin';
+    } else {
+      const errorData = await response.json();
+      alert(errorData.detail || '관리자 모드 전환에 실패했습니다.');
+    }
+  } catch (error) {
+    console.error('Admin mode error:', error);
+    alert('관리자 모드 전환 중 오류가 발생했습니다.');
+  }
+}
+
 /* ---- 전역 상태 ---- */
 const S = {
   me: null,
@@ -228,6 +252,8 @@ function wireProfileDropdown() {
     }
 
     const isLogin = !!token && !!parseJwt(token);
+    const isAdmin = S.me?.is_admin || S.me?.is_superadmin || false;
+    
     menu.innerHTML = `
       <div class="dropdown-item"><strong>${S.me?.username || 'Guest'}</strong></div>
       <div class="divider"></div>
@@ -236,6 +262,8 @@ function wireProfileDropdown() {
           ? `
             <a class="dropdown-item" href="/mypage">마이페이지</a>
             <a class="dropdown-item" href="/pages/challenges/new">챌린지 생성</a>
+            <a class="dropdown-item" href="/account/edit">회원정보 수정</a>
+            ${isAdmin ? '<div class="divider"></div><button class="dropdown-item" onclick="enterAdminMode()" style="color: #dc2626; font-weight: 600; border: none; background: none; width: 100%; text-align: left; cursor: pointer;">🛡️ 관리자 모드</button>' : ''}
             <div class="divider"></div>
             <button class="dropdown-item" id="logout-btn">로그아웃</button>
           `
@@ -509,7 +537,7 @@ function renderCard(ch) {
   const status = (ch.status || 'recruiting').toLowerCase();
   const start = ch.start_date || ch.starts_at || '';
   const end   = ch.end_date || ch.ends_at || '';
-  const cover = ch.cover_image || ch.thumbnail || '';
+  const cover = ch.cover_image_url || ch.cover_image || ch.thumbnail || '';
   const paymentType = (ch.payment_type || 'free').toLowerCase();
   const entryFee = ch.entry_fee || 0;
   const monthlyFee = ch.monthly_fee || 0;

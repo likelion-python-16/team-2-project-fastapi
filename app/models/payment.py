@@ -129,7 +129,7 @@ class PaymentMethod(Base, TimestampMixin):
     is_default = Column(Boolean, default=False, nullable=False)
 
     # 관계: User <-> PaymentMethod (User 모델의 payment_methods 와 짝)
-    user = relationship("User", back_populates="payment_methods")
+    user = relationship("User")
 
 # ===== Refund =====
 class Refund(Base, TimestampMixin):

@@ -1,0 +1,93 @@
+{% extends "final.html" %}
+{% block title %}새 관리자 생성 - Team Project{% endblock %}
+{% block content %}
+<style> body { flex-direction: column; } .hint{font-size:12px;color:#6b7280} </style>
+<main class="max-w-[560px] mx-auto p-6 w-full">
+  <h1 class="text-xl font-semibold mb-4">새 관리자 생성</h1>
+  <div class="kt-card">
+    <form id="adminCreateForm" class="kt-card-content flex flex-col gap-4 p-6" action="/admin/admins/new" method="post">
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label font-normal">이름 *</label>
+        <input class="kt-input" name="name" placeholder="예: 김철수" required />
+      </div>
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label font-normal">사용자명 *</label>
+        <input class="kt-input" name="username" placeholder="영문/숫자, 3~50자" minlength="3" maxlength="50" required />
+      </div>
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label font-normal">이메일 *</label>
+        <div class="flex gap-2">
+          <input class="kt-input flex-1" id="email_id" placeholder="아이디" required />
+          <span class="self-center">@</span>
+          <select class="kt-input w-44" id="email_domain_sel">
+            <option value="gmail.com">gmail.com</option>
+            <option value="naver.com">naver.com</option>
+            <option value="kakao.com">kakao.com</option>
+            <option value="custom">직접 입력</option>
+          </select>
+        </div>
+        <input class="kt-input mt-2 hidden" id="email_domain_custom" placeholder="도메인 직접 입력" />
+        <input type="hidden" name="email" id="email_full" />
+        <div class="hint">아이디와 도메인을 선택(또는 직접 입력)하세요.</div>
+      </div>
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label font-normal">전화번호 *</label>
+        <input class="kt-input" name="phone" id="phone" placeholder="010-1234-5678" required />
+      </div>
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label font-normal">주민등록번호 *</label>
+        <input class="kt-input" name="ident" id="ident" placeholder="YYMMDD-XXXXXXX" required />
+        <div class="hint" id="ident_hint">입력 시 암호화되어 안전하게 저장됩니다.</div>
+      </div>
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label font-normal">비밀번호 *</label>
+        <input class="kt-input" type="password" name="password" id="pw" placeholder="비밀번호" required />
+        <ul class="text-xs mt-1" id="pw_rules">
+          <li data-k="len">✗ 8자 이상</li>
+          <li data-k="upper">✗ 대문자 포함</li>
+          <li data-k="lower">✗ 소문자 포함</li>
+          <li data-k="digit">✗ 숫자 포함</li>
+          <li data-k="special">✗ 특수문자 포함</li>
+        </ul>
+      </div>
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label font-normal">비밀번호 확인 *</label>
+        <input class="kt-input" type="password" name="password_confirm" id="pw2" placeholder="비밀번호 확인" required />
+        <div class="hint" id="pw_match_hint">8자 이상 · 대/소문자 · 숫자 · 특수문자 포함 권장</div>
+      </div>
+
+      <div class="flex justify-end">
+        <button class="kt-btn kt-btn-primary" type="submit">생성</button>
+      </div>
+    </form>
+  </div>
+</main>
+
+<script>
+function formatIdentification(v){ let n=String(v||'').replace(/\D/g,'').slice(0,13); if(n.length<=6) return n; return n.replace(/(\d{6})(\d{1,7})/,'$1-$2'); }
+function isValidRRN13(n13){ if(!/^\d{13}$/.test(n13)) return false; const m=parseInt(n13.slice(2,4),10), d=parseInt(n13.slice(4,6),10); if(!(m>=1&&m<=12)) return false; if(!(d>=1&&d<=31)) return false; if(!/[1-8]/.test(n13[6])) return false; return true; }
+function formatPhoneOnInput010(v){ const d=String(v||'').replace(/\D/g,'').slice(0,11); if(d.length<=3) return d; if(d.length<=7) return d.slice(0,3)+'-'+d.slice(3); return d.slice(0,3)+'-'+d.slice(3,7)+'-'+d.slice(7); }
+(function init(){
+  const domainSel = document.getElementById('email_domain_sel');
+  const domainCustom = document.getElementById('email_domain_custom');
+  const emailId = document.getElementById('email_id');
+  const emailFull = document.getElementById('email_full');
+  const phone = document.getElementById('phone');
+  const ident = document.getElementById('ident');
+  const identHint = document.getElementById('ident_hint');
+  const pw = document.getElementById('pw');
+  const pw2 = document.getElementById('pw2');
+  const pwRules = document.getElementById('pw_rules');
+  function updateDomainInput(){ const v=domainSel.value; domainCustom.classList.toggle('hidden', v!=='custom'); }
+  domainSel.addEventListener('change', updateDomainInput); updateDomainInput();
+  phone.addEventListener('input', ()=>{ phone.value = formatPhoneOnInput010(phone.value); });
+  ident.addEventListener('input', ()=>{ ident.value = formatIdentification(ident.value); const d13=ident.value.replace(/\D/g,''); const ok=d13.length===13 && isValidRRN13(d13); if(identHint){ identHint.textContent= ok? '형식이 올바릅니다.' : '주민번호 형식이 올바르지 않습니다.'; identHint.style.color= ok? '#059669' : '#dc2626'; } ident.setCustomValidity(ok? '' : 'invalid'); });
+  function mark(rule, ok){ const el=pwRules.querySelector('[data-k="'+rule+'"]'); if(!el) return; el.textContent=(ok?'✓':'✗')+' '+el.textContent.replace(/^.?\s/,''); el.style.color= ok? '#059669' : '#dc2626'; }
+  function checkPw(){ const v=pw.value||''; const r={len:v.length>=8, upper:/[A-Z]/.test(v), lower:/[a-z]/.test(v), digit:/\d/.test(v), special:/[!@#$%^&*()_+\-=[\]{}|;:',.<>/?]/.test(v)}; Object.entries(r).forEach(([k,ok])=>mark(k,ok)); const allOk=r.len&&r.upper&&r.lower&&r.digit&&r.special; pw.setCustomValidity(allOk?'':'weak'); const m=pw2.value||''; const match=v&&m&&v===m; const mh=document.getElementById('pw_match_hint'); if(mh){ mh.textContent=match?'비밀번호가 일치합니다.':'비밀번호가 일치하지 않습니다.'; mh.style.color=match?'#059669':'#dc2626'; } pw2.setCustomValidity(match?'':'mismatch'); }
+  pw.addEventListener('input', checkPw); pw2.addEventListener('input', checkPw);
+  document.getElementById('adminCreateForm').addEventListener('submit',(e)=>{
+    const local=(emailId.value||'').trim(); let domain=domainSel.value; if(domain==='custom') domain=(domainCustom.value||'').trim(); emailFull.value= local&&domain? (local+'@'+domain):''; if(pw.checkValidity()===false || pw2.checkValidity()===false || ident.checkValidity()===false){ e.preventDefault(); }
+  });
+})();
+</script>
+{% endblock %}

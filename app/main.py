@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -12,9 +13,10 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app.core.database import SessionLocal
-from app.models import Tag
-from app.services.store import store
+# Moved to lifespan.py:
+# from app.core.database import SessionLocal
+# from app.models import Tag
+# from app.services.store import store
 
 # 설정 및 라이프사이클
 from .core.config import settings
@@ -29,10 +31,15 @@ from .routers import (
     naver_maps, map, files, tags_categories, places, naver_local, pages, tags,
     users_mypage, users_mypage_chat, users_mypage_more
 )
+from .routers import auth_social
 from .routers import round_pictures, participations, payments
 from app.routers.challengecreating import router as challengecreating_router
 from app.routers.challengedetail import router as challengedetail_router
 from app.routers.place_picker import router as place_picker_router
+
+# Admin routers
+from app.routers import admin_auth
+from app.routers import admin_pages
 
 # FastAPI 앱 생성
 app = FastAPI(
@@ -44,6 +51,9 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+# 세션 미들웨어 (소셜 로그인용)
+app.add_middleware(SessionMiddleware, secret_key=settings.session_secret)
 
 # CORS
 app.add_middleware(
@@ -71,6 +81,39 @@ async def home_page(request: Request):
 async def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
 
+@app.get("/signup", response_class=HTMLResponse, tags=["Pages"])
+async def signup_page():
+    """기본 회원가입 페이지 - 1단계로 리다이렉트"""
+    return RedirectResponse(url="/signup/step1", status_code=303)
+
+@app.get("/signup-social", response_class=HTMLResponse, tags=["Pages"])
+async def signup_social_page():
+    with open("app/templates/signup_social.html", "r", encoding="utf-8") as f:
+        content = f.read()
+    return HTMLResponse(content=content)
+
+@app.get("/social/step1", response_class=HTMLResponse, tags=["Pages"])
+async def social_signup_step1(request: Request):
+    return templates.TemplateResponse("signup1forsocial.html", {"request": request})
+
+@app.get("/social/step2", response_class=HTMLResponse, tags=["Pages"])
+async def social_signup_step2(request: Request):
+    return templates.TemplateResponse("signup2forsocial.html", {"request": request})
+
+@app.get("/social/step3", response_class=HTMLResponse, tags=["Pages"])
+async def social_signup_step3(request: Request):
+    return templates.TemplateResponse("signup3forsocial.html", {"request": request})
+
+@app.get("/social/onboarding", response_class=HTMLResponse, tags=["Pages"])
+async def social_onboarding():
+    """소셜 로그인 후 신규 사용자 온보딩"""
+    return RedirectResponse(url="/social/step1", status_code=303)
+
+@app.get("/social/merge", response_class=HTMLResponse, tags=["Pages"])
+async def social_merge_page(request: Request):
+    """계정 연동 확인 페이지"""
+    return templates.TemplateResponse("social_merge.html", {"request": request})
+
 @app.get("/dashboard", response_class=HTMLResponse, tags=["Pages"])
 async def dashboard_page(request: Request):
     return templates.TemplateResponse("dashboard.html", {"request": request})
@@ -82,6 +125,14 @@ async def users_list_page(request: Request):
 @app.get("/mypage", response_class=HTMLResponse, tags=["Pages"])
 async def mypage_page(request: Request):
     return templates.TemplateResponse("mypage.html", {"request": request})
+
+@app.get("/account/edit", response_class=HTMLResponse, tags=["Pages"])
+async def account_edit_page(request: Request):
+    return templates.TemplateResponse("account_edit.html", {"request": request})
+
+@app.get("/account/email", response_class=HTMLResponse, tags=["Pages"])
+async def account_email_page(request: Request):
+    return templates.TemplateResponse("account_email.html", {"request": request})
 
 @app.get("/demo", response_class=HTMLResponse, tags=["Pages"])
 def get_demo(request: Request):
@@ -107,8 +158,21 @@ def payment_success_page(request: Request):
 def payment_fail_page(request: Request):
     return templates.TemplateResponse("payments_fail.html", {"request": request})
 
+# 이메일 인증 성공/실패 페이지
+@app.get("/verify/success", response_class=HTMLResponse, tags=["Email Verification"])
+def verify_success_page():
+    with open("app/templates/verify_success.html", "r", encoding="utf-8") as f:
+        content = f.read()
+    return HTMLResponse(content=content)
+
+@app.get("/verify/fail", response_class=HTMLResponse, tags=["Email Verification"])
+def verify_fail_page():
+    with open("app/templates/verify_fail.html", "r", encoding="utf-8") as f:
+        content = f.read()  
+    return HTMLResponse(content=content)
+
 @app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request, exc: RequestValidationError):
+async def validation_exception_handler(_: Request, exc: RequestValidationError):
     def scrub(e: dict[str, Any]) -> dict[str, Any]:
         ctx = e.get("ctx")
         if isinstance(ctx, dict):
@@ -188,6 +252,7 @@ app.include_router(health.router)
 app.include_router(system.router)
 
 app.include_router(auth.router, prefix="/api/v1")
+app.include_router(auth_social.router, prefix="/api/v1")
 app.include_router(users.router, prefix="/api/v1")
 app.include_router(challenges.router, prefix="/api/v1")
 app.include_router(participations.router, prefix="/api/v1")
@@ -212,23 +277,13 @@ app.include_router(users_mypage_chat.router)
 app.include_router(users_mypage_more.router)
 app.include_router(users_mypage.page_router)
 
+# Admin routes
+app.include_router(admin_auth.router)
+app.include_router(admin_pages.router)
+
 # ---------------------------
-# Seed default tags on startup
+# Seed default tags moved to lifespan.py
 # ---------------------------
-@app.on_event("startup")
-def seed_tags_if_empty():
-    db = SessionLocal()
-    try:
-        for name in store.centroid_labels:
-            name = (name or "").strip()
-            if not name:
-                continue
-            exists = db.query(Tag).filter(Tag.tag == name).first()
-            if not exists:
-                db.add(Tag(tag=name, is_active=True))
-        db.commit()
-    finally:
-        db.close()
 
 # ---------------------------
 # Dev server entry (optional)

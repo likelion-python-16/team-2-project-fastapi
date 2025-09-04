@@ -1,0 +1,329 @@
+{% extends "final.html" %}
+{% block title %}관리자 대시보드 - Team Project{% endblock %}
+{% block content %}
+<style>
+  body { flex-direction: column; }
+  .stat-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+  @media (max-width: 1024px){ .stat-grid{grid-template-columns:repeat(2,1fr);} }
+  @media (max-width: 640px){ .stat-grid{grid-template-columns:1fr;} }
+  .stat-card { border:1px solid var(--input,#e5e7eb); border-radius:14px; background:#fff; }
+  .stat-body { padding:16px; display:flex; flex-direction:column; gap:6px; }
+  .stat-label { font-size:12px; color:#6b7280; font-weight:600; letter-spacing:.2px }
+  .stat-value { font-size:22px; font-weight:700; color:#111827 }
+  .muted { color:#6b7280 }
+  table.kt { width:100%; border-collapse:collapse }
+  table.kt th, table.kt td { border-bottom:1px solid #eee; padding:10px 8px; text-align:left; font-size:14px }
+  table.kt th { color:#6b7280; font-weight:600 }
+  .section { margin-top:18px }
+  .section h2 { font-size:16px; margin:0 0 10px; font-weight:700 }
+  .link { color:#4338CA; text-decoration:none }
+  
+  /* Switch Toggle Styles (from challenge_detail.html) */
+  .switch{position:relative;display:inline-block;width:38px;height:20px}
+  .switch input{display:none}
+  .switch .slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#e5e7eb;border-radius:999px;transition:.2s}
+  .switch .slider:before{content:"";position:absolute;height:16px;width:16px;left:2px;top:2px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+  .switch input:checked + .slider{background:#2563eb}
+  .switch input:checked + .slider:before{transform:translateX(18px)}
+  
+  /* 프로필 드롭다운 스타일 */
+  .profile-dropdown{position:relative}
+  .profile-avatar{width:36px; height:36px; border-radius:50%; overflow:hidden; border:1px solid #e5e7eb; cursor:pointer; display:flex; align-items:center; justify-content:center; background:#f8fafc; font-size:12px; color:#475569}
+  .profile-dropdown-menu{position:absolute; right:0; top:44px; width:200px; background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:8px; box-shadow:0 10px 30px rgba(0,0,0,.08); display:none; z-index:20}
+  .profile-dropdown.open .profile-dropdown-menu{display:block}
+  .profile-dropdown-item{display:flex; align-items:center; gap:8px; padding:10px 10px; border-radius:10px; color:#1f2937; text-decoration:none}
+  .profile-dropdown-item:hover{background:#F9FAFB}
+  .profile-divider{height:1px; background:#e5e7eb; margin:6px 0}
+</style>
+
+<main class="max-w-[1120px] mx-auto p-6 w-full">
+  <div class="flex items-center justify-between mb-4">
+    <div class="flex items-center gap-3">
+      <h1 class="text-xl font-semibold">관리자 대시보드</h1>
+      <a href="/home" class="text-sm text-blue-600 hover:text-blue-800">← 홈으로 돌아가기</a>
+    </div>
+    <div class="flex items-center gap-3">
+      <!-- 관리자 모드 토글 -->
+      <div class="flex items-center gap-2">
+        <span class="text-sm font-medium">관리자 모드:</span>
+        <label class="switch">
+          <input type="checkbox" 
+                 id="adminModeToggle"
+                 {% if request.state.admin_mode %}checked{% endif %}
+                 onchange="toggleAdminMode()">
+          <span class="slider"></span>
+        </label>
+        <span class="text-sm {{ 'text-blue-600 font-semibold' if request.state.admin_mode else 'text-gray-500' }}">
+          {{ 'ON' if request.state.admin_mode else 'OFF' }}
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 세개의 박스: 회원/챌린지/수입 -->
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="stat-body">
+        <div class="stat-label">회원 수</div>
+        <div class="stat-value">{{ user_count or 0 }}</div>
+        <div class="muted text-xs">전체 가입자 수</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-body">
+        <div class="stat-label">챌린지 수</div>
+        <div class="stat-value">{{ challenge_count or 0 }}</div>
+        <div class="muted text-xs">등록된 챌린지</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-body">
+        <div class="stat-label">전체 수입</div>
+        <div class="stat-value">{{ '{:,.0f}'.format(total_revenue|float) if total_revenue is not none else '0' }} 원</div>
+        <div class="muted text-xs">결제 완료 금액 합계</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 조회 섹션: 회원 / 챌린지 -->
+  <div class="section">
+    <h2>회원들 조회</h2>
+    <div class="kt-card">
+      <div class="kt-card-content p-4">
+        {% if latest_users and latest_users|length > 0 %}
+        <table class="kt">
+          <thead><tr><th>ID</th><th>아이디</th><th>이름</th><th>이메일</th><th>권한</th></tr></thead>
+          <tbody>
+            {% for u in latest_users %}
+            <tr>
+              <td>#{{ u.id }}</td>
+              <td>{{ u.username }}</td>
+              <td>{{ u.name }}</td>
+              <td>{{ u.email }}</td>
+              <td>
+                {% if u.is_superadmin %}
+                  책임관리자
+                {% elif u.is_admin %}
+                  일반 관리자
+                {% else %}
+                  User
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+          <div class="muted">표시할 회원이 없습니다.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>첼린지들 조회</h2>
+    <div class="kt-card">
+      <div class="kt-card-content p-4">
+        {% if latest_challenges and latest_challenges|length > 0 %}
+        <table class="kt">
+          <thead><tr><th>ID</th><th>제목</th><th>상태</th><th>생성자</th></tr></thead>
+          <tbody>
+            {% for c in latest_challenges %}
+            <tr>
+              <td>#{{ c.id }}</td>
+              <td>{{ c.title or c.name or '(제목 없음)' }}</td>
+              <td>{{ c.status }}</td>
+              <td>{{ c.creator_id }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+          <div class="muted">표시할 챌린지가 없습니다.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- 관리자 신청 관리 섹션 -->
+  <div class="section">
+    <h2>관리자 권한 신청 관리</h2>
+    <div class="kt-card">
+      <div class="kt-card-content p-4">
+        {% if admin_requests and admin_requests|length > 0 %}
+        <table class="kt">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>신청자</th>
+              <th>이메일</th>
+              <th>상태</th>
+              <th>신청일</th>
+              {% if admin.is_superadmin %}
+              <th>작업</th>
+              {% endif %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for req in admin_requests %}
+            <tr>
+              <td>#{{ req.id }}</td>
+              <td>
+                <a class="kt-link" href="/admin/user-history?user_id={{ req.user.id }}">
+                  {{ req.user.name }} ({{ req.user.username }})
+                </a>
+              </td>
+              <td>{{ req.user.email }}</td>
+              <td>
+                {% if req.status == 'pending' %}
+                  <span class="kt-badge kt-badge-secondary bg-gray-200 text-gray-700">대기중</span>
+                {% elif req.status == 'approved' %}
+                  {% if not req.user.is_admin %}
+                    <span class="kt-badge kt-badge-warning bg-amber-100 text-amber-700">권한 해제</span>
+                  {% else %}
+                    <span class="kt-badge kt-badge-success bg-green-100 text-green-700">승인됨</span>
+                  {% endif %}
+                {% elif req.status == 'rejected' %}
+                  <span class="kt-badge kt-badge-danger bg-red-100 text-red-700">거절됨</span>
+                {% endif %}
+              </td>
+              <td>{{ req.created_at.strftime('%Y-%m-%d %H:%M') if req.created_at else '-' }}</td>
+              {% if admin.is_superadmin %}
+              <td>
+                {% if req.status == 'pending' %}
+                  <div class="flex items-center gap-2">
+                    <form action="/admin/approve-request" method="post">
+                      <input type="hidden" name="request_id" value="{{ req.id }}"/>
+                      <button type="submit" class="kt-btn kt-btn-sm kt-btn-success text-xs">승인</button>
+                    </form>
+                    <a class="kt-btn kt-btn-sm kt-btn-danger text-xs" href="/admin/reject-request?request_id={{ req.id }}">거절</a>
+                    <a class="kt-link text-xs" href="/admin/user-history?user_id={{ req.user.id }}">히스토리</a>
+                  </div>
+                {% elif req.status == 'approved' and req.user.is_admin %}
+                  <div class="flex items-center gap-2">
+                    {% if req.user.is_superadmin %}
+                      <span class="kt-badge kt-badge-primary text-xs">책임관리자</span>
+                    {% else %}
+                      <form action="/admin/promote-superadmin" method="post" style="display: inline;">
+                        <input type="hidden" name="user_id" value="{{ req.user.id }}" />
+                        <button type="submit" class="kt-btn kt-btn-sm kt-btn-primary text-xs">책임관리자 임명</button>
+                      </form>
+                    {% endif %}
+                    <a href="/admin/demote-admin?user_id={{ req.user.id }}" class="kt-btn kt-btn-sm kt-btn-secondary text-xs">권한 해제</a>
+                    <a class="kt-link text-xs" href="/admin/user-history?user_id={{ req.user.id }}">히스토리</a>
+                  </div>
+                {% elif req.status == 'rejected' %}
+                  <div class="flex items-center gap-3">
+                    <span class="kt-badge kt-badge-danger text-xs">거절됨</span>
+                    <div class="flex items-center gap-2">
+                      <span class="text-sm text-gray-600">재승인:</span>
+                      <label class="switch">
+                        <input type="checkbox" 
+                               onchange="toggleApproval({{ req.id }}, this.checked)"
+                               data-request-id="{{ req.id }}">
+                        <span class="slider"></span>
+                      </label>
+                      <a class="kt-link text-xs" href="/admin/user-history?user_id={{ req.user.id }}">히스토리</a>
+                    </div>
+                  </div>
+                {% endif %}
+              </td>
+              {% endif %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+          <div class="muted">관리자 권한 신청이 없습니다.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+</main>
+
+{% set modal_back_href = '/admin' %}
+{% include "includes/welcome_modal_partial.html" %}
+{% set modal_back_href = none %}
+
+<script>
+// 승인 토글 함수
+async function toggleApproval(requestId, isApproved) {
+  try {
+    const action = isApproved ? 'approve' : 'reject';
+    const endpoint = `/admin/requests/${requestId}/${action}`;
+    
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    const result = await response.json();
+    
+    if (result.ok) {
+      // 성공시 페이지 새로고침
+      location.reload();
+    } else {
+      alert('작업 중 오류가 발생했습니다: ' + (result.detail || '알 수 없는 오류'));
+      // 실패시 토글을 원래 상태로 되돌리기
+      const toggle = document.querySelector(`input[data-request-id="${requestId}"]`);
+      if (toggle) {
+        toggle.checked = !isApproved;
+      }
+    }
+  } catch (error) {
+    console.error('Error:', error);
+    alert('네트워크 오류가 발생했습니다.');
+    // 오류시 토글을 원래 상태로 되돌리기
+    const toggle = document.querySelector(`input[data-request-id="${requestId}"]`);
+    if (toggle) {
+      toggle.checked = !isApproved;
+    }
+  }
+}
+
+// 관리자 모드 토글 함수 추가
+async function toggleAdminMode() {
+  const isAdminMode = {{ 'true' if request.state.admin_mode else 'false' }};
+  
+  if (isAdminMode) {
+    // 관리자 모드 끄기
+    if (confirm('관리자 모드를 끄시겠습니까?')) {
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = '/admin/mode/off';
+      document.body.appendChild(form);
+      form.submit();
+    } else {
+      // 토글을 원래 상태로 되돌리기
+      const toggle = document.getElementById('adminModeToggle');
+      if (toggle) toggle.checked = true;
+    }
+  } else {
+    // 관리자 모드 켜기 - 비밀번호 요구
+    const password = prompt('관리자 모드를 켜려면 비밀번호를 입력하세요:');
+    if (password) {
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = '/admin/mode/on';
+      
+      const passwordInput = document.createElement('input');
+      passwordInput.type = 'hidden';
+      passwordInput.name = 'password';
+      passwordInput.value = password;
+      
+      form.appendChild(passwordInput);
+      document.body.appendChild(form);
+      form.submit();
+    } else {
+      // 토글을 원래 상태로 되돌리기
+      const toggle = document.getElementById('adminModeToggle');
+      if (toggle) toggle.checked = false;
+    }
+  }
+}
+</script>
+
+{% endblock %}

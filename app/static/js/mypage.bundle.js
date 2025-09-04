@@ -253,25 +253,7 @@
           if(res) items = res.items || res || [];
         }
 
-        // ▼ 더미 20개 채우기 (표시용). 실제 서버 데이터가 20개 미만이면 나머지는 샘플로 보충
-        const WANT = 20;
-        if ((items?.length || 0) < WANT) {
-          const need = WANT - (items?.length || 0);
-          const now = Date.now();
-          const day = 24*60*60*1000;
-          const dummies = Array.from({length: need}).map((_, i) => {
-            const idx = (items?.length || 0) + i + 1;
-            const start = new Date(now - (idx*2)*day);
-            const end = new Date(start.getTime() + 14*day);
-            const iso = d => d.toISOString().slice(0,10);
-            return {
-              title: `샘플 챌린지 #${String(idx).padStart(2,'0')}`,
-              start_date: iso(start),
-              end_date: iso(end),
-            };
-          });
-          items = [...(items||[]), ...dummies];
-        }
+        // 실제 데이터만 표시 (더미 데이터 제거됨)
 
         const tbody2 = qs("tbl_challenges_my").querySelector("tbody");
         tbody2.innerHTML = "";
@@ -425,13 +407,10 @@
           }).join('');
           return;
         }
-      }catch(_){/* ignore and fallback */}
-      // fallback dummy
-      const dummy = Array.from({length:6}).map((_,i)=>{
-        const stars='★'.repeat((i%5)+1);
-        return `<tr><td>${stars}</td><td>프론트 전용 더미 리뷰입니다.</td></tr>`;
-      }).join('');
-      tbody.innerHTML = dummy;
+      }catch(_){
+        // 데이터 로딩 실패시 빈 상태 표시
+        tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;color:#999;">리뷰 데이터가 없습니다.</td></tr>';
+      }
     }
 
     /* ===== 팔로워/팔로잉 카운트 ===== */
@@ -662,7 +641,7 @@
     async function init(){
       if(!token() && !GUEST){ location.href="/login"; return; }
 
-      const me = await loadProfile();
+      await loadProfile();
       await loadVisibility();
 
       await Promise.allSettled([

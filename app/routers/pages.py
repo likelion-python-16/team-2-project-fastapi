@@ -14,7 +14,7 @@ try:
 except Exception:
     INTERESTS = {}
 
-@router.get("/signup", response_class=HTMLResponse)
+@router.get("/signup/step1", response_class=HTMLResponse)
 def signup_step1(request: Request):
     return templates.TemplateResponse("signup_step1.html", {"request": request})
 
@@ -32,3 +32,7 @@ def signup_step3(request: Request):
 @router.get("/signup/complete", response_class=HTMLResponse)
 def signup_complete(request: Request):
     return templates.TemplateResponse("signup_complete.html", {"request": request})
+
+@router.get("/reset-password", response_class=HTMLResponse)
+def reset_password_page(request: Request):
+    return templates.TemplateResponse("reset_password.html", {"request": request})

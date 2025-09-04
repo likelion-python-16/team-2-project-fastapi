@@ -1,0 +1,52 @@
+<!-- templates/admin_base.html - Admin 전용 베이스 템플릿 -->
+<!DOCTYPE html>
+<html class="h-full" data-kt-theme="true" data-kt-theme-mode="light" dir="ltr" lang="ko">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>{% block title %}Team Project{% endblock %}</title>
+  <!-- 파비콘 링크 제거: 기본 브라우저 아이콘 사용 -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"/>
+  <link rel="stylesheet" href="{{ url_for('static', path='assets/final/vendors/apexcharts/apexcharts.css') }}"/>
+  <link rel="stylesheet" href="{{ url_for('static', path='assets/final/vendors/keenicons/styles.bundle.css') }}"/>
+  <link rel="stylesheet" href="{{ url_for('static', path='assets/final/css/styles.css') }}"/>
+</head>
+<body class="antialiased flex h-full text-base text-foreground bg-background">
+  <header class="w-full border-b border-input bg-white">
+    <nav class="max-w-[1120px] mx-auto flex items-center gap-4 py-3 px-4 text-sm">
+      <a href="/home" class="kt-link font-semibold text-xl md:text-2xl">Challengers</a>
+      <div class="grow"></div>
+      {% set cu = request.state.user if request and request.state and request.state.user is defined else None %}
+      {% set cam = request.state.admin_mode if request and request.state and request.state.admin_mode is defined else False %}
+      {% set path = request.url.path if request and request.url else '' %}
+      {% set on_admin = path.startswith('/admin') %}
+      {% set on_login = path == '/admin/login' %}
+      {% set on_signup = path.startswith('/admin/signup') %}
+      {% if cu %}
+        <a href="/profile" class="kt-link">{{ cu.username }}</a>
+        {% if cam %}
+          <a href="/admin" class="kt-link font-medium">관리자 페이지</a>
+          <form method="post" action="/admin/mode/off" class="inline"><button class="kt-link" type="submit">관리자 모드 끄기</button></form>
+        {% elif cu.is_admin and not on_login and not on_signup %}
+          <a href="/admin/login" class="kt-link text-sm text-muted-foreground">관리자 로그인</a>
+        {% endif %}
+        <form method="post" action="/api/v1/auth/logout" class="inline">
+          <button class="kt-link" type="submit">로그아웃</button>
+        </form>
+      {% else %}
+        {% if not on_login and not on_signup %}
+          <a href="/login" class="kt-link">로그인</a>
+          <a href="/signup" class="kt-link">회원가입</a>
+        {% endif %}
+      {% endif %}
+    </nav>
+  </header>
+
+  {% block content %}{% endblock %}
+
+  <script src="{{ url_for('static', path='assets/final/js/core.bundle.js') }}"></script>
+  <script src="{{ url_for('static', path='assets/final/vendors/ktui/ktui.min.js') }}"></script>
+  <script src="{{ url_for('static', path='assets/final/vendors/apexcharts/apexcharts.min.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

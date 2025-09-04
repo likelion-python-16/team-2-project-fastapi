@@ -23,8 +23,11 @@ export async function api(path, { method = "GET", body, auth = true } = {}) {
   try { data = await res.json(); } catch (_) { data = null; }
 
   if (!res.ok) {
-    const msg = data?.detail ? (typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail)) : res.statusText;
-    throw new Error(msg || "Request failed");
+    const msg = data?.detail ? (typeof data.detail === "string" ? data.detail : data.detail.message || JSON.stringify(data.detail)) : res.statusText;
+    const error = new Error(msg || "Request failed");
+    error.status = res.status;
+    error.response = data?.detail;
+    throw error;
   }
   return data;
 }

@@ -1,8 +1,7 @@
 import enum
 from datetime import date, datetime, timezone
-from typing import Optional, List
 from sqlalchemy import (
-    Column, Integer, String, Text, Date, Boolean, ForeignKey, DateTime, func, 
+    Column, Integer, String, Text, Date, Boolean, ForeignKey, DateTime, 
     Enum as SAEnum, Float, CheckConstraint, Index
 )
 from sqlalchemy.orm import relationship, validates
@@ -94,6 +93,9 @@ class Challenge(Base, TimestampMixin):
     use_reward = Column(Boolean, default=False, nullable=False)
     reward_description = Column(Text, nullable=True)
     
+    # ============= 커버 이미지 =============
+    cover_image_url = Column(Text, nullable=True)
+    
     # ============= 기본 설정 =============
     require_approval = Column(Boolean, default=False, comment="참가 승인 필요")
     is_public = Column(Boolean, default=True, nullable=False)
@@ -153,13 +155,13 @@ class Challenge(Base, TimestampMixin):
     
     # ============= 검증 메서드 =============
     @validates('min_participation_rate')
-    def validate_participation_rate(self, key, value):
+    def validate_participation_rate(self, _, value):
         if value is not None:
             return max(0, min(100, int(value)))
         return value
     
     @validates('title')
-    def validate_title(self, key, value):
+    def validate_title(self, _, value):
         if value:
             return value.strip()[:200]
         return value

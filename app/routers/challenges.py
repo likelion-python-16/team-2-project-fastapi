@@ -1,6 +1,6 @@
 # app/routers/challenges.py
 from __future__ import annotations
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_, desc, asc
 from typing import List, Optional, Literal
@@ -220,7 +220,6 @@ def _with_tags_and_participation(db: Session, ch: Challenge, user_id: Optional[i
     # 사용자 참여 상태 추가
     resp["user_participation"] = None
     if user_id:
-        from app.models.participation import ParticipationStatus
         participation = db.query(Participation).filter(
             Participation.challenge_id == ch.id,
             Participation.user_id == user_id
@@ -495,7 +494,6 @@ async def create_challenge(
     challenge_data: ChallengeCreate,
     db: Session = Depends(get_db),
     me: int = Depends(get_current_user_id),
-    tags: Optional[List[str]] = Body(None, embed=True),  # ["운동/스포츠", ...]
 ):
     logger.info(f"Creating challenge for user_id: {me}")
     
@@ -550,6 +548,9 @@ async def create_challenge(
         use_reward=getattr(challenge_data, 'use_reward', False),
         reward_description=getattr(challenge_data, 'reward_description', None),
         
+        # 커버 이미지
+        cover_image_url=getattr(challenge_data, 'cover_image_url', None),
+        
         # 기본 설정
         require_approval=getattr(challenge_data, 'require_approval', False),
         is_public=getattr(challenge_data, 'is_public', True),
@@ -565,8 +566,8 @@ async def create_challenge(
     connected_tags = set()
     
     # 1. 수동으로 지정된 태그들 연결
-    if tags:
-        for tag_text in tags:
+    if challenge_data.tags:
+        for tag_text in challenge_data.tags:
             t = db.query(Tag).filter(Tag.tag == tag_text).first()
             if not t:
                 t = Tag(tag=tag_text, is_active=True)
@@ -1307,7 +1308,7 @@ def attend_round(challenge_id: int, round_id: int, db: Session = Depends(get_db)
     return {"message": "RSVP set to attending (pending)."}
 
 @router.delete("/{challenge_id}/rounds/{round_id}/attend")
-def unattend_round(challenge_id: int, round_id: int, db: Session = Depends(get_db), me: int = Depends(get_current_user_id)):
+def unattend_round(_: int, round_id: int, db: Session = Depends(get_db), me: int = Depends(get_current_user_id)):
     att = db.query(RoundAttendance).filter(RoundAttendance.round_id == round_id, RoundAttendance.user_id == me).first()
     if not att:
         return {"message": "Already not attending."}
@@ -1476,7 +1477,7 @@ def start_challenge_manually(
                 raise HTTPException(400, "Failed to start challenge")
         else:
             raise HTTPException(400, "Challenge cannot be started. Check minimum participants and start date.")
-    except Exception as e:
+    except Exception:
         # fallback
         if ch.status != ChallengeStatus.recruiting:
             raise HTTPException(400, "Only recruiting challenges can be started")
@@ -1511,7 +1512,7 @@ def complete_challenge_manually(
             return {"message": "Challenge completed successfully", "status": ch.status}
         else:
             raise HTTPException(400, "Only active challenges can be completed")
-    except Exception as e:
+    except Exception:
         # fallback
         if ch.status != ChallengeStatus.active:
             raise HTTPException(400, "Only active challenges can be completed")
@@ -1586,7 +1587,7 @@ def add_tag_to_challenge(
     challenge_id: int,
     tag_name: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    _: User = Depends(get_current_user)
 ):
     """챌린지에 태그 추가"""
     # 챌린지 존재 확인
@@ -1622,7 +1623,7 @@ def add_tag_to_challenge(
 def auto_tag_challenge(
     challenge_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    _: User = Depends(get_current_user)
 ):
     """챌린지에 AI 기반 자동 태그 매칭"""
     from app.services.predictor import predict_category

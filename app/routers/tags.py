@@ -10,20 +10,84 @@ router = APIRouter(prefix="/tags", tags=["Tags"])
 @router.get("/", response_model=list)
 def get_all_tags(
     active_only: bool = Query(True, description="활성 태그만 조회"),
-    limit: int = Query(50, ge=1, le=200, description="조회할 태그 수"), 
+    categories_only: bool = Query(True, description="카테고리 태그만 조회"),
+    limit: int = Query(500, ge=1, le=1000, description="조회할 태그 수"), 
     db: Session = Depends(get_db)
 ):
     """태그 목록 조회 (루트 엔드포인트)"""
     from app.models import Tag
+    from app.services.store import store
     
     query = db.query(Tag)
     if active_only:
         query = query.filter(Tag.is_active == True)
     
+    # 카테고리 태그만 조회하는 경우
+    if categories_only:
+        category_names = store.centroid_labels  # 12개 카테고리 이름
+        query = query.filter(Tag.tag.in_(category_names))
+    
     tags = query.limit(limit).all()
     
     # JavaScript에서 배열을 직접 기대하므로 태그 배열만 반환
     return [{"id": tag.id, "tag": tag.tag, "is_active": tag.is_active} for tag in tags]
+
+
+@router.post("/seed")
+def seed_tags_manual(db: Session = Depends(get_db)):
+    """수동으로 태그 시드 실행"""
+    from app.services.store import store
+    from app.models import Tag
+    
+    added_count = 0
+    error_count = 0
+    
+    try:
+        # 카테고리 이름들 추가
+        for name in store.centroid_labels:
+            name = (name or "").strip()
+            if not name:
+                continue
+            exists = db.query(Tag).filter(Tag.tag == name).first()
+            if not exists:
+                try:
+                    db.add(Tag(tag=name, is_active=True))
+                    db.flush()  # 즉시 반영하여 중복 체크
+                    added_count += 1
+                except Exception:
+                    db.rollback()
+                    error_count += 1
+                    continue
+        
+        # 개별 키워드들도 추가 (각 카테고리별로 상위 10개만)
+        for category, keywords in store.categories.items():
+            for keyword in keywords[:10]:  # 카테고리별로 상위 10개만
+                keyword = (keyword or "").strip()
+                if not keyword:
+                    continue
+                exists = db.query(Tag).filter(Tag.tag == keyword).first()
+                if not exists:
+                    try:
+                        db.add(Tag(tag=keyword, is_active=True))
+                        db.flush()  # 즉시 반영하여 중복 체크
+                        added_count += 1
+                    except Exception:
+                        db.rollback()
+                        error_count += 1
+                        continue
+        
+        db.commit()
+        total_count = db.query(Tag).count()
+        
+        return {
+            "message": f"태그 시드 완료. {added_count}개 추가, {error_count}개 오류", 
+            "added": added_count,
+            "errors": error_count,
+            "total": total_count
+        }
+    except Exception as e:
+        db.rollback()
+        return {"error": f"태그 시드 실패: {str(e)}"}
 
 @router.post("/search", response_model=TagAIResponse)
 def search_tags(req: TagAIRequest):

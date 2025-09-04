@@ -1,0 +1,35 @@
+{% extends "final.html" %}
+{% block title %}관리자 신청 (기존 계정) - Team Project{% endblock %}
+{% block content %}
+<style> body { flex-direction: column; } </style>
+<div class="flex items-center justify-center grow">
+  <div class="kt-card max-w-[420px] w-full mt-10">
+    <form class="kt-card-content flex flex-col gap-5 p-10" action="/admin/signup-request1" method="post">
+      <div class="text-center mb-2.5">
+        <h3 class="text-lg font-medium leading-none mb-2.5">관리자 신청</h3>
+        <div class="text-sm text-muted-foreground">기존 계정으로 본인 확인 후 관리자 권한을 신청합니다.</div>
+      </div>
+
+      {% if error %}
+      <div class="text-center">
+        <div class="text-red-600 text-sm font-medium">{{ error }}</div>
+      </div>
+      {% endif %}
+
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label font-normal">아이디 또는 이메일</label>
+        <input class="kt-input" name="login" placeholder="아이디 또는 이메일" required />
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label font-normal">비밀번호</label>
+        <input class="kt-input" name="password" type="password" placeholder="비밀번호" required />
+      </div>
+
+      <button class="kt-btn kt-btn-primary flex justify-center" type="submit">신청하기</button>
+
+      <div class="text-xs text-muted-foreground text-center">신청 후 승인까지 시간이 걸릴 수 있습니다.</div>
+    </form>
+  </div>
+</div>
+{% endblock %}

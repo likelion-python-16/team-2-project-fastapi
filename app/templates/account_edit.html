@@ -1,0 +1,353 @@
+{% extends "final.html" %}
+{% block title %}회원 정보 수정 - Team Project{% endblock %}
+{% block content %}
+<style> body { flex-direction: column; } </style>
+<div class="flex items-start justify-center grow py-8">
+  <div class="kt-card max-w-[500px] w-full">
+    <div class="kt-card-content p-8">
+      <h3 class="text-lg font-medium text-mono mb-2.5">회원 정보 수정</h3>
+      <div id="gateNote" class="text-sm text-muted-foreground mb-4">보안을 위해 먼저 비밀번호를 확인합니다.</div>
+
+      <div id="alertContainer" class="hidden"></div>
+
+      <!-- 1) 비밀번호 확인 단계 -->
+      <div id="gateWrap" class="flex gap-2 items-end mb-6">
+        <div class="flex-1">
+          <label class="kt-form-label">현재 비밀번호</label>
+          <div class="kt-input">
+            <input id="gatePassword" type="password" placeholder="현재 비밀번호"/>
+            <button class="kt-btn kt-btn-sm kt-btn-ghost kt-btn-icon bg-transparent! -me-1.5" type="button" id="btnTogglePw">
+              <i class="ki-filled ki-eye" id="eye1"></i>
+              <i class="ki-filled ki-eye-slash hidden" id="eye2"></i>
+            </button>
+          </div>
+        </div>
+        <button id="btnGate" class="kt-btn kt-btn-primary">확인</button>
+      </div>
+
+      <!-- 2) 편집 폼 -->
+      <form id="editForm" class="flex flex-col gap-5 hidden">
+        <!-- 아이디(사용자명) -->
+        <div class="flex flex-col gap-1">
+          <div class="flex items-center justify-between">
+            <label class="kt-form-label">아이디(사용자명)</label>
+            <button type="button" class="kt-btn kt-btn-sm" data-edit="username">수정</button>
+          </div>
+          <input class="kt-input" id="username" disabled/>
+          <div id="usernameMsg" class="text-xs text-muted-foreground"></div>
+        </div>
+
+        <!-- 이메일: 별도 변경 프로세스 (인증 필요) → account_email 링크 -->
+        <div class="flex flex-col gap-1">
+          <div class="flex items-center justify-between">
+            <label class="kt-form-label">이메일</label>
+            <a class="kt-btn kt-btn-sm" href="/account/email" id="emailChangeBtn">이메일 변경</a>
+          </div>
+          <input class="kt-input" id="email" disabled/>
+          <div class="text-[11px] text-muted-foreground" id="emailNote">이메일 변경 시 인증이 필요합니다.</div>
+        </div>
+
+        <!-- 이름: 수정 불가 -->
+        <div class="flex flex-col gap-1">
+          <label class="kt-form-label">이름 (수정 불가)</label>
+          <input class="kt-input" id="name" disabled/>
+        </div>
+
+        <!-- 주민등록번호: 수정 불가 -->
+        <div class="flex flex-col gap-1">
+          <label class="kt-form-label">주민등록번호 (수정 불가)</label>
+          <input class="kt-input" id="identification" disabled value="*************"/>
+        </div>
+
+        <!-- 전화번호 -->
+        <div class="flex flex-col gap-1">
+          <div class="flex items-center justify-between">
+            <label class="kt-form-label">전화번호</label>
+            <button type="button" class="kt-btn kt-btn-sm" data-edit="phone">수정</button>
+          </div>
+          <input class="kt-input" id="phone" disabled placeholder="010-1234-5678"/>
+          <div id="phoneMsg" class="text-xs text-muted-foreground"></div>
+        </div>
+
+        <!-- 비밀번호 변경 -->
+        <div class="flex flex-col gap-1">
+          <div class="flex items-center justify-between">
+            <label class="kt-form-label">비밀번호 변경</label>
+            <button type="button" class="kt-btn kt-btn-sm" data-edit="password">수정</button>
+          </div>
+          <div id="pwFields" class="grid grid-cols-1 gap-2" hidden>
+            <input class="kt-input" id="newPassword" type="password" placeholder="새 비밀번호"/>
+            <input class="kt-input" id="newPassword2" type="password" placeholder="새 비밀번호 확인"/>
+            <div class="text-[11px] text-muted-foreground">영문 대/소문자, 숫자, 특수문자 포함 8자 이상 권장</div>
+          </div>
+          <div id="pwMsg" class="text-xs text-muted-foreground"></div>
+        </div>
+
+        <div class="flex justify-end gap-2">
+          <a class="kt-btn" href="/home">취소</a>
+          <button id="btnSave" class="kt-btn kt-btn-primary" type="submit">저장</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+function showAlert(message, type){
+  const el = document.getElementById('alertContainer');
+  const css = type === 'error' ? 'kt-alert-danger' : 'kt-alert-success';
+  el.innerHTML = `<div class="kt-alert ${css} p-3 rounded-lg">${message}</div>`;
+  el.classList.remove('hidden');
+}
+
+function showFieldError(fieldId, message) {
+  const msgEl = document.getElementById(fieldId + 'Msg');
+  if (msgEl) {
+    msgEl.textContent = message;
+    msgEl.className = 'text-xs text-red-600'; // 빨간색으로 변경
+  }
+}
+
+function clearFieldError(fieldId) {
+  const msgEl = document.getElementById(fieldId + 'Msg');
+  if (msgEl) {
+    msgEl.textContent = '';
+    msgEl.className = 'text-xs text-muted-foreground'; // 기본 색상으로 복구
+  }
+}
+
+function formatPhone(v){ const d=String(v||'').replace(/\D/g,'').slice(0,11); if(d.length<=3) return d; if(d.length<=7) return d.slice(0,3)+'-'+d.slice(3); return d.slice(0,3)+'-'+d.slice(3,7)+'-'+d.slice(7); }
+function normalizePhone(v){ return String(v||'').replace(/\D/g,''); }
+
+async function refreshToken() {
+  const refreshToken = localStorage.getItem('refresh_token') || sessionStorage.getItem('refresh_token');
+  if (!refreshToken) return false;
+  
+  try {
+    const response = await fetch('/api/v1/auth/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken })
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      localStorage.setItem('access_token', data.access_token);
+      sessionStorage.setItem('access_token', data.access_token);
+      if (data.refresh_token) {
+        localStorage.setItem('refresh_token', data.refresh_token);
+        sessionStorage.setItem('refresh_token', data.refresh_token);
+      }
+      return true;
+    }
+  } catch (error) {
+    console.error('토큰 새로고침 실패:', error);
+  }
+  return false;
+}
+
+async function api(path, options){
+  let token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token') || '';
+  
+  const headers = Object.assign({ 'Content-Type':'application/json' }, (options && options.headers) || {});
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  
+  let res = await fetch(path, Object.assign({ headers, credentials: 'same-origin' }, options||{}));
+  
+  // 401 에러 시 토큰 새로고침 시도
+  if (res.status === 401 && token) {
+    const refreshed = await refreshToken();
+    if (refreshed) {
+      // 새 토큰으로 다시 시도
+      token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+      headers['Authorization'] = 'Bearer ' + token;
+      res = await fetch(path, Object.assign({ headers, credentials: 'same-origin' }, options||{}));
+    } else {
+      // 토큰 새로고침 실패 시 로그인 페이지로 리다이렉트
+      alert('세션이 만료되었습니다. 다시 로그인해주세요.');
+      window.location.href = '/login';
+      return { ok: false, status: 401, json: { detail: '세션 만료' } };
+    }
+  }
+  
+  let json = null; 
+  try{ json = await res.json(); } catch(_){}
+  return { ok: res.ok, status: res.status, json };
+}
+
+/* duplicate api() removed: keep cookie-fallback version above */
+
+document.addEventListener('DOMContentLoaded', async ()=>{
+  // 토글
+  document.getElementById('btnTogglePw').addEventListener('click', ()=>{
+    const ipt=document.getElementById('gatePassword'); const e1=document.getElementById('eye1'); const e2=document.getElementById('eye2');
+    const isPwd=ipt.type==='password'; ipt.type=isPwd?'text':'password'; e1.classList.toggle('hidden',!isPwd); e2.classList.toggle('hidden',isPwd);
+  });
+
+  // 내 정보 로드
+  const me = await api('/api/v1/users/me');
+  if(me.ok){
+    document.getElementById('username').value = me.json.username || '';
+    document.getElementById('email').value = me.json.email || '';
+    document.getElementById('name').value = me.json.name || '';
+    if (me.json.provider_linked || me.json.provider){
+      // 이메일 변경 버튼 완전 숨김 (모든 소셜 연동)
+      const emailBtn = document.getElementById('emailChangeBtn');
+      if (emailBtn) {
+        emailBtn.style.display = 'none';
+      }
+      
+      // 이메일 변경 불가 안내
+      const emailNote = document.getElementById('emailNote');
+      if (emailNote) {
+        emailNote.textContent = '소셜 연동 계정은 이메일 변경이 불가능합니다.';
+        emailNote.className = 'text-[11px] text-red-600';
+      }
+      
+      // 전화번호는 모든 소셜 연동 계정에서 수정 가능 (제한 제거)
+    }
+  }
+  // 마스킹된 전화번호 표시
+  try{
+    const pm = await api('/api/v1/users/me/phone-masked');
+    if(pm.ok && pm.json && pm.json.phone_masked){
+      const el = document.getElementById('phone');
+      el.value = pm.json.phone_masked;
+    }
+  }catch(_){ }
+
+  // 비밀번호 확인
+  document.getElementById('btnGate').addEventListener('click', async ()=>{
+    const pw = document.getElementById('gatePassword').value||'';
+    if(!pw){ showAlert('비밀번호를 입력해 주세요.','error'); return; }
+    const r = await api('/api/v1/users/me/verify-password', { method:'POST', body: JSON.stringify({ password: pw }) });
+    if(!r.ok){ showAlert(r.json.detail||'비밀번호가 올바르지 않습니다.','error'); return; }
+    document.getElementById('gateWrap').classList.add('hidden');
+    const note = document.getElementById('gateNote'); if (note) note.classList.add('hidden');
+    document.getElementById('editForm').classList.remove('hidden');
+    // 전화번호 불러오기(복호화 필요할 수 있으므로 별도 API 없이 수동 입력 유도)
+  });
+
+  // 각 필드 수정 버튼 토글
+  document.querySelectorAll('[data-edit]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const key = btn.getAttribute('data-edit');
+      if(key==='username'){ const el=document.getElementById('username'); el.disabled = !el.disabled; el.focus(); }
+      if(key==='phone'){
+        const el=document.getElementById('phone');
+        el.disabled = !el.disabled;
+        if(!el.disabled){ el.value = ''; el.placeholder = '010-1234-5678'; }
+        el.focus();
+      }
+      if(key==='password'){ const f=document.getElementById('pwFields'); f.hidden = !f.hidden; document.getElementById('newPassword').focus(); }
+    });
+  });
+
+  document.getElementById('phone').addEventListener('input', function(){ this.value = formatPhone(this.value); });
+
+  // 저장
+  document.getElementById('editForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    
+    // 기존 에러 메시지 초기화
+    clearFieldError('username');
+    clearFieldError('phone');
+    clearFieldError('pw');
+    
+    const updates=[];
+    let hasValidationError = false;
+
+    // username
+    if(!document.getElementById('username').disabled){
+      const v=(document.getElementById('username').value||'').trim().toLowerCase();
+      if(!v){ 
+        showFieldError('username', '아이디를 입력해 주세요.'); 
+        hasValidationError = true;
+      } else {
+        updates.push({
+          type: 'username',
+          promise: api('/api/v1/users/me/username', { method:'PATCH', body: JSON.stringify({ username: v }) })
+        });
+      }
+    }
+
+    // phone
+    if(!document.getElementById('phone').disabled){
+      const raw = normalizePhone(document.getElementById('phone').value);
+      if(!(raw && raw.length===11 && raw.startsWith('010'))){ 
+        showFieldError('phone', '전화번호 형식을 확인해 주세요.'); 
+        hasValidationError = true;
+      } else {
+        updates.push({
+          type: 'phone',
+          promise: api('/api/v1/users/me/phone', { method:'PATCH', body: JSON.stringify({ phone: raw }) })
+        });
+      }
+    }
+
+    // password
+    if(!document.getElementById('pwFields').hidden){
+      const p1=document.getElementById('newPassword').value||''; 
+      const p2=document.getElementById('newPassword2').value||'';
+      if(p1.length<8){ 
+        showFieldError('pw', '비밀번호는 8자 이상이어야 합니다.'); 
+        hasValidationError = true;
+      } else if(p1!==p2){ 
+        showFieldError('pw', '비밀번호가 일치하지 않습니다.'); 
+        hasValidationError = true;
+      } else {
+        updates.push({
+          type: 'password',
+          promise: api('/api/v1/users/me/change-password', { method:'POST', body: JSON.stringify({ new_password: p1 }) })
+        });
+      }
+    }
+
+    if(hasValidationError) return;
+    if(updates.length===0){ showAlert('변경된 내용이 없습니다.','error'); return; }
+
+    try{
+      const results = await Promise.all(updates.map(u => u.promise));
+      
+      // 개별 에러 처리
+      let hasError = false;
+      for(let i = 0; i < results.length; i++) {
+        const result = results[i];
+        const updateType = updates[i].type;
+        
+        if(!result.ok) {
+          hasError = true;
+          const errorMsg = result.json?.detail || '저장 실패';
+          
+          if(updateType === 'username') {
+            showFieldError('username', errorMsg);
+          } else if(updateType === 'phone') {
+            showFieldError('phone', errorMsg);
+          } else if(updateType === 'password') {
+            showFieldError('pw', errorMsg);
+          }
+        }
+      }
+      
+      if(hasError) return;
+      
+      // 토큰 갱신(사용자명 변경 시 반환됨)
+      results.forEach(r=>{
+        if(r.json?.access_token){ localStorage.setItem('access_token', r.json.access_token); sessionStorage.setItem('access_token', r.json.access_token); }
+        if(r.json?.refresh_token){ localStorage.setItem('refresh_token', r.json.refresh_token); sessionStorage.setItem('refresh_token', r.json.refresh_token); }
+      });
+      
+      showAlert('변경사항이 저장되었습니다.','success');
+      
+      // 2초 후 홈으로 리다이렉트
+      setTimeout(() => {
+        window.location.href = '/home';
+      }, 2000);
+      
+    }catch(e){ 
+      showAlert('저장 중 오류가 발생했습니다.','error'); 
+    }
+  });
+});
+</script>
+{% endblock %}
