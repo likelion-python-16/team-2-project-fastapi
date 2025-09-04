@@ -7,7 +7,8 @@ from datetime import datetime
 import json
 
 # ✅ 기존 임포트에 get_current_user 추가
-from app.security import normalize_phone, id_fingerprint, get_current_user
+from app.security import normalize_phone, id_fingerprint
+from app.core.deps import get_current_user_dual as get_current_user
 from ..core.database import get_db
 from ..models.user import User
 from ..models.tag import Tag, UserTag

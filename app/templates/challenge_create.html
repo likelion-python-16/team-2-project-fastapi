@@ -218,6 +218,47 @@
 
 <!-- 인증 -->
 <script>
+// 쿠키 전송을 항상 허용 (듀얼 인증 폴백용) + 전역 오염 방지용 인스턴스
+const api = axios.create({
+  baseURL: '/',
+  withCredentials: true
+});
+
+// 방어: 혹시 기본값에 남아있을 수 있는 Authorization 제거
+delete api.defaults.headers.common?.Authorization;
+delete axios.defaults.headers.common?.Authorization;
+
+api.interceptors.request.use(cfg => {
+  // ✅ 쿠키만 쓰기 플래그면 절대 Authorization 붙이지 않기
+  if (cfg.headers?.['X-Skip-Auth'] === '1') {
+    delete cfg.headers['X-Skip-Auth'];
+    if ('Authorization' in (cfg.headers || {})) delete cfg.headers.Authorization;
+    return cfg; // 여기서 바로 반환
+  }
+
+  // ✅ 호출 측이 Authorization을 명시(심지어 undefined로)했다면 건들지 않기
+  if (cfg.headers && ('Authorization' in cfg.headers)) {
+    return cfg;
+  }
+
+  // 그 외에만 저장 토큰을 부착
+  const t = (localStorage.getItem('access_token') || sessionStorage.getItem('access_token') || '').trim();
+  if (t && t !== 'undefined' && t !== 'null') {
+    try {
+      const { exp } = parseJwt(t);
+      if (Date.now() <= exp * 1000) {
+        cfg.headers.Authorization = `Bearer ${t}`;
+      }
+    } catch (_) {
+      // 파싱 실패 시 토큰 무시
+    }
+  } else if (cfg.headers && 'Authorization' in cfg.headers) {
+    delete cfg.headers.Authorization;
+  }
+
+  return cfg;
+});
+
 function parseJwt(token) {
   const base64Url = token.split('.')[1];
   const base64 = base64Url.replace(/-/g,'+').replace(/_/g,'/');
@@ -228,23 +269,32 @@ function parseJwt(token) {
 }
 
 (function ensureAuth(){
-  const t = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
-  const goLogin = () => { alert('로그인이 필요합니다 🙏'); location.href='/login'; };
+  const tRaw = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+  const t = (tRaw || '').trim();
 
-  if (!t) return goLogin();
+  // 토큰 정합성만 빠르게 확인하고, 설정은 인터셉터에 맡김
   try {
-    const { exp } = parseJwt(t);
-    if (Date.now() > exp * 1000) return goLogin();
-    axios.defaults.headers.common['Authorization'] = `Bearer ${t}`;
-  } catch(e) {
-    return goLogin();
-  }
+    if (t && t !== 'undefined' && t !== 'null'){
+      const { exp } = parseJwt(t);
+      if (Date.now() <= exp * 1000){
+        return;
+      }
+    }
+  } catch(_) { /* ignore */ }
+
+  // 잘못된 토큰 정리 – 인터셉터가 Authorization 빼도록 유도
+  try {
+    localStorage.removeItem('access_token');
+    sessionStorage.removeItem('access_token');
+  } catch(_) {}
 })();
 
-async function apiGet(url, params = {}) {
+async function apiGet(url, params = {}, cookieOnly = false) {
   try {
-    const res = await axios.get(url, { params });
-    return res.data;
+    const cfg = { params };
+    if (cookieOnly) cfg.headers = { 'X-Skip-Auth': '1' };
+    const { data } = await api.get(url, cfg);
+    return data;
   } catch (err) {
     if (err.response && err.response.status === 401) {
       alert('로그인이 필요합니다 🙏');
@@ -255,8 +305,26 @@ async function apiGet(url, params = {}) {
 }
 
 function authHeader(){
-  const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  const raw = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+  const token = (raw || '').trim();
+  if (token && token !== 'undefined' && token !== 'null'){
+    // 추가 토큰 유효성 검증
+    try {
+      const { exp } = parseJwt(token);
+      if (Date.now() <= exp * 1000) {
+        return { Authorization: `Bearer ${token}` };
+      } else {
+        // 만료된 토큰 정리
+        localStorage.removeItem('access_token');
+        sessionStorage.removeItem('access_token');
+      }
+    } catch(_) {
+      // 잘못된 토큰 정리
+      localStorage.removeItem('access_token');
+      sessionStorage.removeItem('access_token');
+    }
+  }
+  return {}; // 빈 헤더 → 듀얼이 쿠키로 인증
 }
 </script>
 
@@ -291,7 +359,7 @@ function removeCategory(name){
 }
 async function loadCategories(){
   try{
-    const data = await apiGet('/api/v1/tags/categories');
+    const data = await apiGet('/api/v1/tags/categories', {}, true);
     categories = Array.isArray(data) ? data : [];
     renderCategories();
   }catch(e){ console.error(e); }
@@ -341,7 +409,7 @@ if (pvImg) { pvImg.onerror = () => { pvImg.removeAttribute('src'); }; }
 let __pv_blob_url = null;
 async function loadStaticMap(lat, lng, w=360, h=220, scale=2, level=16){
   try{
-    const resp = await axios.get('/places/staticmap', { params: { lat, lng, w, h, scale, level }, responseType: 'blob' });
+    const resp = await api.get('/places/staticmap', { params: { lat, lng, w, h, scale, level }, responseType: 'blob' });
     if (__pv_blob_url) URL.revokeObjectURL(__pv_blob_url);
     __pv_blob_url = URL.createObjectURL(resp.data);
     pvImg.src = __pv_blob_url;
@@ -714,13 +782,59 @@ async function createChallenge(){
   try{
     if (createBtn) createBtn.disabled = true;
     if (statusEl) statusEl.textContent = '생성 중...';
-    const res = await axios.post('/api/v1/challenges', payload, { headers: { ...authHeader() } });
+
+    // 강제로 쿠키만 사용하여 테스트 (디버깅용)
+    const headers = authHeader();
+    console.log('[DEBUG] authHeader():', headers);
+
+    const res = await api.post('/api/v1/challenges', payload, {
+      headers: { 'X-Skip-Auth': '1' }
+    });
+
     const ch = res.data || {};
     const id = ch.id;
     if (!id) throw new Error('생성 결과에 id가 없습니다.');
     if (statusEl) statusEl.textContent = '완료';
     location.href = `/pages/challenges/${id}`;
   }catch(e){
+    console.error('[DEBUG] createChallenge error:', {
+      status: e?.response?.status,
+      statusText: e?.response?.statusText,
+      data: e?.response?.data,
+      url: e?.config?.url,
+      headers: e?.config?.headers
+    });
+
+    // 401 에러이고 토큰이 있다면 토큰 문제일 수 있음
+    if (e?.response?.status === 401) {
+      console.log('[DEBUG] 401 error - clearing tokens and retrying with cookie only');
+      try {
+        localStorage.removeItem('access_token');
+        sessionStorage.removeItem('access_token');
+      } catch(_) {}
+
+      try {
+        delete api.defaults.headers.common?.Authorization;
+      } catch(_) {}
+
+      try {
+        // 1회 재시도: 쿠키만으로 듀얼 인증 폴백
+        const res2 = await api.post('/api/v1/challenges', payload, {
+          headers: { 'X-Skip-Auth': '1' }
+        });
+
+        const ch2 = res2.data || {};
+        const id2 = ch2.id;
+        if (id2) {
+          if (statusEl) statusEl.textContent = '완료';
+          location.href = `/pages/challenges/${id2}`;
+          return;
+        }
+      } catch(retryErr){
+        console.warn('[DEBUG] retry failed', retryErr?.response?.status, retryErr?.response?.data);
+      }
+    }
+
     const d = e?.response?.data;
     const raw = (d && (d.detail || d.message)) || e?.message || e;
     const msg = (typeof raw === 'string') ? raw : (function(){ try{ return JSON.stringify(raw); }catch(_){ return String(raw); }})();
@@ -814,8 +928,8 @@ confirmBtn?.addEventListener('click', async () => {
     if (__coverSelection.type === 'file' && __coverSelection.file) {
       const form = new FormData();
       form.append('file', __coverSelection.file);
-      const { data } = await axios.post('/api/v1/files/challenge-cover', form, {
-        headers: { ...authHeader() }
+      const { data } = await api.post('/api/v1/files/challenge-cover', form, {
+        headers: { 'X-Skip-Auth': '1' }
       });
       if (!data?.url) throw new Error('업로드 결과에 url이 없습니다.');
       coverUrlEl.value = normalizeCoverUrl(data.url);

@@ -19,6 +19,15 @@ function getToken(){
 let token = getToken();
 let isLoggedIn = !!token;
 
+// 쿠키 세션 확인 (토큰 없어도 로그인 상태일 수 있음)
+async function ensureSessionFlag() {
+  if (isLoggedIn) return; // 토큰 로그인 이미 OK
+  try {
+    const r = await fetch('/api/v1/users/me', { credentials: 'include' });
+    if (r.ok) isLoggedIn = true; // 쿠키 로그인도 인정
+  } catch(_) {}
+}
+
 // ===== Utils =====
 function el(id){ return document.getElementById(id); }
 function fmtDate(d){
@@ -72,10 +81,11 @@ function renderEmpty(containerId, text){
 const DEFAULT_AVATAR = "/static/pictures/defaultprofile.jpeg";
 
 async function fetchMe(tokenStr) {
+  const init = tokenStr
+    ? { headers: { Authorization: "Bearer " + tokenStr } }
+    : { credentials: "include" }; // 쿠키 세션 확인
   try {
-    const res = await fetch("/api/v1/users/me", {
-      headers: tokenStr ? { Authorization: "Bearer "+tokenStr } : {},
-    });
+    const res = await fetch("/api/v1/users/me", init);
     if (!res.ok) throw new Error("unauthorized");
     return await res.json();
   } catch {
@@ -297,12 +307,19 @@ async function loadHomeSections(){
   if (rlr) rlr.style.display = isLoggedIn ? "none" : "block";
   if (flr) flr.style.display = isLoggedIn ? "none" : "block";
 
-  const url = new URL(API_HOME, window.location.origin);
-  url.searchParams.set("latest_page", String(latestPage));
-  url.searchParams.set("latest_page_size", String(PAGE_SIZE_LATEST));
-  // refresh in case storage changed
-  token = getToken(); isLoggedIn = !!token;
-  const res = await fetch(url.toString(), {headers: token? {Authorization:"Bearer "+token} : {}});
+  // 최신/추천(홈 섹션)도 로그인 시 토큰 또는 쿠키로 호출
+  token = getToken(); 
+  isLoggedIn = !!token || isLoggedIn;
+
+  const homeUrl = new URL(API_HOME, window.location.origin);
+  homeUrl.searchParams.set("latest_page", String(latestPage));
+  homeUrl.searchParams.set("latest_page_size", String(PAGE_SIZE_LATEST));
+
+  const homeInit = token
+    ? { headers: { Authorization: "Bearer " + token } }
+    : { credentials: "include" };
+
+  const res = await fetch(homeUrl.toString(), homeInit);
   if(!res.ok){
     el("rec-list").innerHTML = "";
     el("latest-list").innerHTML = "";
@@ -322,17 +339,21 @@ async function loadHomeSections(){
     if (n) n.style.display = "none";
   }
 
+  // 팔로우 API도 토큰 or 쿠키
   if(isLoggedIn){
     try{
-      const fr = await fetch(API_FOLLOWED, {headers:{Authorization:"Bearer "+token}});
+      const followedInit = token
+        ? { headers: { Authorization: "Bearer " + token } }
+        : { credentials: "include" };
+      const fr = await fetch(API_FOLLOWED, followedInit);
       if(fr.ok){
         const fl = await fr.json();
-        renderGrid("follow-list", (fl||[]).slice(0,6)); // 6개(3x2)
+        renderGrid("follow-list", (fl||[]).slice(0,6));
       }else{
         el("follow-list").innerHTML = "";
       }
     }catch{ el("follow-list").innerHTML = ""; }
-  }else{
+  } else {
     el("follow-list").innerHTML = "";
   }
 
@@ -451,21 +472,26 @@ function setupSearchForm(){
   }
 }
 
-document.addEventListener("DOMContentLoaded", function(){
-  // 비로그인 시 생성 버튼 → 로그인 유도
+document.addEventListener("DOMContentLoaded", async function(){
+  // 생성 버튼: 서버로 로그인 실 확인
   const btn = document.getElementById("create-challenge-btn");
   if (btn) {
-    btn.addEventListener("click", function(e){
-      const t = localStorage.getItem("access_token");
-      if (!t) {
-        e.preventDefault();
-        alert("로그인이 필요합니다 🙏");
-        location.href = "/login";
-      }
+    btn.addEventListener("click", async function(e){
+      e.preventDefault();
+      try {
+        const r = await fetch('/api/v1/users/me', {
+          credentials: 'include',
+          cache: 'no-store'
+        });
+        if (r.ok) { location.href = '/pages/challenges/create'; return; }
+      } catch(_) {}
+      alert("로그인이 필요합니다 🙏");
+      location.href = "/login";
     });
   }
 
-  initProfileUI();      // ✅ 프로필 UI 초기화(클릭+호버)
+  await ensureSessionFlag();   // 쿠키 로그인도 인정
+  await initProfileUI();       // fetchMe가 쿠키도 보므로 정상
   setupFilters();
   setupSearchForm();
   loadHomeSections();

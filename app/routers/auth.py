@@ -307,7 +307,7 @@ def verify_email_redirect(token: str, db: Session = Depends(get_db)):
 # ------------------------
 # 로그인
 # ------------------------
-@router.post("/login", response_model=TokenOut)
+@router.post("/login")
 def login(payload: LoginIn, db: Session = Depends(get_db)):
     user = db.query(User).filter(
         or_(User.username == payload.login, User.email == payload.login)
@@ -347,7 +347,25 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
         access_token = create_access_token(data=claims)
         refresh_token = create_refresh_token(data=claims)
         logger.info(f"로그인 성공: user_id={user.id}, username={user.username}, tv={user.token_version}")
-        return TokenOut(access_token=access_token, refresh_token=refresh_token, token_type="bearer")
+        
+        # JSON 응답에 쿠키도 설정 (듀얼 인증 지원)
+        response_data = {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
+        response = JSONResponse(content=response_data)
+        
+        # HttpOnly 쿠키 설정으로 세션 유지
+        # 운영(HTTPS)에서는 Secure 쿠키, 로컬 개발에서는 비보안 쿠키
+        from app.core.config import settings as _settings
+        secure_flag = not _settings.debug
+        response.set_cookie(
+            key="access_token",
+            value=access_token,
+            httponly=True,
+            secure=secure_flag,
+            samesite="lax",
+            max_age=settings.jwt_access_token_expire_minutes * 60,
+            path="/",
+        )
+        return response
     except Exception as e:
         db.rollback()
         logger.error(f"로그인 처리/토큰 생성 오류: {str(e)}")

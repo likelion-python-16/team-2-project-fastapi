@@ -7,7 +7,7 @@ from typing import List, Optional, Literal
 from datetime import date, time
 
 from app.core.database import get_db
-from app.security import get_current_user
+from app.core.deps import get_current_user_dual as get_current_user
 
 # Models
 from app.models.user import User

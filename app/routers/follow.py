@@ -25,9 +25,21 @@ def get_current_user_required(
     if not token:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
     payload = verify_token(token)
-    if not payload or "sub" not in payload:
+    if not payload:
         raise HTTPException(status_code=401, detail="유효하지 않은 토큰입니다.")
-    user = db.query(User).filter(User.id == int(payload["sub"])).first()
+    user = None
+    try:
+        if "user_id" in payload:
+            user = db.query(User).filter(User.id == int(payload["user_id"])) .first()
+        elif "sub" in payload:
+            # sub이 username일 수도 있어 호환 처리
+            # 우선 int 변환 시도 (id 저장된 토큰), 실패하면 username 매칭
+            try:
+                user = db.query(User).filter(User.id == int(payload["sub"])) .first()
+            except Exception:
+                user = db.query(User).filter(User.username == str(payload["sub"]).lower()).first()
+    except Exception:
+        user = None
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="비활성 사용자거나 존재하지 않습니다.")
     return user
@@ -78,13 +90,13 @@ def follow_user(
     exists = db.query(Following).filter(
         and_(
             Following.follower_id == me.id,
-            Following.followee_id == target_user_id
+            Following.following_id == target_user_id
         )
     ).first()
     if exists:
         return {"message": "이미 팔로우 중입니다."}
 
-    new_follow = Following(follower_id=me.id, followee_id=target_user_id)
+    new_follow = Following(follower_id=me.id, following_id=target_user_id)
     db.add(new_follow)
     db.commit()
     return {"message": "팔로우했습니다."}
@@ -98,7 +110,7 @@ def unfollow_user(
     rel = db.query(Following).filter(
         and_(
             Following.follower_id == me.id,
-            Following.followee_id == target_user_id
+            Following.following_id == target_user_id
         )
     ).first()
     if not rel:
@@ -113,7 +125,7 @@ def following_challenges(
     db: Session = Depends(get_db),
     me: User = Depends(get_current_user_required),
 ):
-    subq = db.query(Following.followee_id).filter(Following.follower_id == me.id).subquery()
+    subq = db.query(Following.following_id).filter(Following.follower_id == me.id).subquery()
 
     rows = (
         db.query(Challenge)
@@ -123,3 +135,12 @@ def following_challenges(
         .all()
     )
     return [_to_card(c) for c in rows]
+
+# Backward-compatible alias (some frontends call this path)
+@router.get("/follow/followed-challenges", response_model=List[ChallengeCard])
+def followed_challenges_alias(
+    limit: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+    me: User = Depends(get_current_user_required),
+):
+    return following_challenges(limit=limit, db=db, me=me)

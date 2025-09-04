@@ -165,6 +165,11 @@ def get_demo(request: Request):
 def page_challenge_create(request: Request):
     return templates.TemplateResponse("challenge_create.html", {"request": request})
 
+@app.get("/pages/challenges/create", name="page_challenge_create_alt",
+         response_class=HTMLResponse, tags=["Pages"])
+def page_challenge_create_alt(request: Request):
+    return templates.TemplateResponse("challenge_create.html", {"request": request})
+
 @app.get("/pages/challenges/{challenge_id}", name="page_challenge_detail",
          response_class=HTMLResponse, tags=["Pages"])
 def page_challenge_detail(request: Request, challenge_id: int):

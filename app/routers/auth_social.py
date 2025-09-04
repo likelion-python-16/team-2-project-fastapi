@@ -269,9 +269,25 @@ def _issue_tokens_and_redirect(request: Request, db: Session, provider: str, pro
         claims = {"sub": user.username, "user_id": user.id, "tv": (user.token_version or 0)}
         access = create_access_token(data=claims)
         refresh = create_refresh_token(data=claims)
+        
+        # 쿠키 설정 (듀얼 인증 지원)
         front = _front_base(request)
         url = f"{front}/auth/callback?access={access}&refresh={refresh}&provider={provider}"
-        return RedirectResponse(url, status_code=303)
+        response = RedirectResponse(url, status_code=303)
+        
+        # HttpOnly 쿠키 설정으로 세션 유지
+        from app.core.config import settings
+        secure_flag = not settings.debug  # prod: True, dev: False
+        response.set_cookie(
+            key="access_token",
+            value=access,
+            httponly=True,
+            secure=secure_flag,
+            samesite="lax",
+            max_age=settings.jwt_access_token_expire_minutes * 60,
+            path="/",
+        )
+        return response
     else:
         # 신규 사용자는 생성 지연: 세션에 보관하고 온보딩으로 이동
         try:

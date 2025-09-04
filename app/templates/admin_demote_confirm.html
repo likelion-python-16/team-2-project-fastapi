@@ -81,13 +81,21 @@
         </div>
       </div>
 
-      <!-- 확인 버튼들 -->
-      <div class="flex gap-3">
-        <a href="/admin" class="kt-btn kt-btn-light flex justify-center grow">아니요, 취소합니다</a>
-        <form id="demoteForm" action="/admin/demote-admin" method="post" class="flex-1 flex flex-col gap-3">
+      <!-- 버튼들: 세로 배치 -->
+      <div class="flex flex-col gap-3">
+        <!-- 취소 버튼 -->
+        <a href="/admin" class="kt-btn kt-btn-light w-full text-center">
+          아니요, 취소합니다
+        </a>
+
+        <!-- 권한 해제 폼 -->
+        <form id="demoteForm"
+              action="/admin/demote-admin"
+              method="post"
+              class="w-full flex flex-col gap-3">
           <input type="hidden" name="user_id" value="{{ target_user.id }}" />
           {% if target_user.is_superadmin %}
-          <div class="rounded-lg p-3 border border-input bg-muted/20">
+          <div class="w-full rounded-lg p-3 border border-input bg-muted/20">
             <div class="text-sm font-medium mb-2">해제 범위를 선택하세요</div>
             <label class="kt-label m-0 flex items-center gap-2">
               <input class="kt-radio" type="radio" name="demote_scope" value="super_only" checked>
@@ -101,7 +109,13 @@
           {% else %}
             <input type="hidden" name="demote_scope" value="all" />
           {% endif %}
-          <button type="submit" class="kt-btn kt-btn-danger flex justify-center w-full">예, 권한을 해제합니다</button>
+          <div class="flex flex-col gap-2">
+            <label class="kt-form-label">사유 (선택)</label>
+            <textarea name="note" class="kt-input w-full" rows="3" placeholder="권한 해제 사유를 입력하세요..."></textarea>
+          </div>
+          <button type="submit" class="kt-btn kt-btn-danger w-full">
+            예, 권한을 해제합니다
+          </button>
         </form>
       </div>
 

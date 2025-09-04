@@ -1,17 +1,61 @@
 {% extends "final.html" %}
-{% block title %}관리자 승인 대기 - Team Project{% endblock %}
+{% block title %}관리자 신청 진행상황 - Team Project{% endblock %}
 {% block content %}
-<style> body { flex-direction: column; } </style>
+<style>
+  body { flex-direction: column; }
+  .hl{font-weight:700}
+  .hl-pending{color:#2563eb}
+  .hl-approved{color:#16a34a}
+  .hl-rejected{color:#f59e0b}
+</style>
+
 <div class="flex items-center justify-center grow">
-  <div class="kt-card max-w-[520px] w-full mt-12">
+  <div class="kt-card max-w-[560px] w-full mt-12">
     <div class="kt-card-content p-8 text-center">
-      <h2 class="text-xl font-semibold mb-2">관리자 승인 대기</h2>
-      <p class="text-muted-foreground">관리자 권한 요청이 접수되었습니다. 마스터 관리자의 승인이 완료되면 접속이 가능합니다.</p>
-      <div class="mt-6">
-        <a class="kt-btn kt-btn-primary" href="/home">홈으로</a>
-      </div>
+      <h2 class="text-xl font-semibold mb-3">관리자 신청 진행 상황</h2>
+
+      {% if (not me) or (not last_req) %}
+        <div class="text-sm text-muted-foreground">
+          신청이 완료되었습니다. 현재 <span class="hl hl-pending">승인 대기</span> 상태입니다.
+          검토에는 시간이 조금 걸릴 수 있어요. 승인 전까지는 관리자 페이지 로그인이 제한됩니다.
+        </div>
+        <div class="mt-6 flex gap-2 justify-center">
+          <a class="kt-btn" href="/home">홈으로</a>
+        </div>
+      {% else %}
+        {% if last_req.status == 'pending' %}
+          <div class="text-sm text-muted-foreground">
+            신청이 완료되었습니다. 현재 <span class="hl hl-pending">승인 대기</span> 상태입니다.
+            검토에는 시간이 조금 걸릴 수 있어요. 승인 전까지는 관리자 페이지 로그인이 제한됩니다.
+            <div class="mt-2">신청일: {{ last_req.created_at.strftime('%Y-%m-%d %H:%M') if last_req.created_at else '-' }}</div>
+          </div>
+          <div class="mt-6 flex gap-2 justify-center">
+            <a class="kt-btn" href="/home">홈으로</a>
+          </div>
+        {% elif last_req.status == 'approved' %}
+          <div class="mt-4 text-sm text-muted-foreground">
+            관리자 권한이 <span class="hl hl-approved">승인됨</span> 상태입니다. 이제 관리자 페이지로 이동할 수 있어요.
+            <div class="mt-2">처리일: {{ last_req.reviewed_at.strftime('%Y-%m-%d %H:%M') if last_req.reviewed_at else '-' }}</div>
+          </div>
+          <div class="mt-6 flex gap-2 justify-center">
+            <a class="kt-btn kt-btn-primary" href="/admin">관리자 페이지로</a>
+            <a class="kt-btn" href="/home">홈으로</a>
+          </div>
+        {% elif last_req.status == 'rejected' %}
+          <div class="mt-4 text-sm text-muted-foreground">
+            아쉽게도 <span class="hl hl-rejected">거절됨</span>으로 처리되었습니다.
+            {% if last_req.note %}사유: {{ last_req.note }}. {% endif %}
+            자세한 내용이나 이의가 있으시면 책임관리자에게 문의해 주세요.
+            <div class="mt-2">처리일: {{ last_req.reviewed_at.strftime('%Y-%m-%d %H:%M') if last_req.reviewed_at else '-' }}</div>
+          </div>
+          <div class="mt-6 flex gap-2 justify-center">
+            <a class="kt-btn kt-btn-primary" href="/admin/signup-request1">다시 신청하기</a>
+            <a class="kt-btn" href="/home">홈으로</a>
+          </div>
+        {% endif %}
+      {% endif %}
     </div>
   </div>
+  
 </div>
 {% endblock %}
-

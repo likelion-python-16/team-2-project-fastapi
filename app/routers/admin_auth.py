@@ -28,8 +28,58 @@ def _issue_cookie_token(user: User, admin_mode: bool, minutes: int | None = None
 
 
 @router.get("/choice", response_class=HTMLResponse)
-def admin_login_choice_page(request: Request):
-    return templates.TemplateResponse("admin_login_choice.html", {"request": request})
+def admin_login_choice_page(request: Request, status: str = None, user_id: int = None, db: Session = Depends(get_db)):
+    context = {"request": request}
+    
+    # status=check이고 user_id가 있으면 관리자 신청 상태 확인
+    if status == "check" and user_id:
+        from app.models.admin_request import AdminRequest
+        from app.models.user import User
+        
+        try:
+            # 사용자 정보 확인
+            user = db.query(User).filter(User.id == user_id).first()
+            if user:
+                # 관리자 신청 상태 확인 (최신 신청 기준)
+                admin_request = db.query(AdminRequest).filter(
+                    AdminRequest.user_id == user_id
+                ).order_by(AdminRequest.created_at.desc()).first()
+                
+                if admin_request:
+                    if admin_request.status == "pending":
+                        context.update({
+                            "status_message": "관리자 신청이 검토 중입니다",
+                            "status_type": "pending",
+                            "message_detail": "신청해주신 관리자 권한이 현재 검토 중입니다. 승인까지 조금만 기다려 주세요."
+                        })
+                    elif admin_request.status == "rejected":
+                        context.update({
+                            "status_message": "관리자 신청이 거절되었습니다",
+                            "status_type": "rejected", 
+                            "message_detail": "신청하신 관리자 권한이 거절되었습니다. 자세한 사항은 관리자에게 문의해주세요."
+                        })
+                    elif admin_request.status == "approved":
+                        context.update({
+                            "status_message": "관리자 권한이 승인되었습니다",
+                            "status_type": "approved",
+                            "message_detail": "관리자 권한이 승인되었습니다. 다시 로그인해주세요."
+                        })
+                else:
+                    # 신청 내역이 없는 경우
+                    context.update({
+                        "status_message": "관리자가 아니신가요?",
+                        "status_type": "no_request",
+                        "message_detail": "관리자 권한 신청을 통해 관리자로 등록하실 수 있습니다."
+                    })
+        except Exception as e:
+            # 오류 발생 시 기본 메시지
+            context.update({
+                "status_message": "관리자가 아니신가요?",
+                "status_type": "error",
+                "message_detail": "관리자 권한 확인 중 오류가 발생했습니다."
+            })
+    
+    return templates.TemplateResponse("admin_login_choice.html", context)
 
 
 @router.get("/login", response_class=HTMLResponse)
@@ -120,12 +170,8 @@ def admin_login(
             status_code=200,
         )
     if not user.is_admin:
-        # 관리자가 아닌 계정은 페이지에서 안내
-        return templates.TemplateResponse(
-            "admin_login.html",
-            {"request": request, "error": "관리자 계정이 아닙니다. 일반 로그인 또는 권한 신청을 이용해 주세요.", "admin_signup_enabled": admin_signup_enabled},
-            status_code=200,
-        )
+        # 관리자가 아닌 계정은 /admin/choice로 리다이렉트하여 상태별 안내
+        return RedirectResponse(url=f"/admin/choice?status=check&user_id={user.id}", status_code=303)
 
     # 관리자 로그인은 아이디/비밀번호만으로 가능하도록 변경
     # 추가 정보 검증은 생략
@@ -474,8 +520,10 @@ def admin_signup_request1_submit(
             {"request": request, "error": "이미 관리자 계정입니다"},
             status_code=200,
         )
+    # 현재 pending 상태인 요청이 있는지 확인
     pend = db.query(AdminRequest).filter(AdminRequest.user_id == user.id, AdminRequest.status == "pending").first()
     if not pend:
+        # pending이 없으면 새로운 요청 생성 (거절된 경우 재신청 가능)
         pend = AdminRequest(user_id=user.id, status="pending")
         db.add(pend)
         db.commit()

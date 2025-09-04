@@ -11,7 +11,7 @@ class AdminRequest(Base):
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    status = Column(Enum("pending", "approved", "rejected", name="admin_request_status"), nullable=False, server_default="pending")
+    status = Column(Enum("pending", "approved", "rejected", "revoked", name="admin_request_status"), nullable=False, server_default="pending")
     note = Column(String(255), nullable=True)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     reviewed_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
