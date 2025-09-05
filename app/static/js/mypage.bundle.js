@@ -82,7 +82,7 @@
     async function jpost(path, body){
       const h={"Content-Type":"application/json"};
       const t=token(); if(t) h["Authorization"]="Bearer "+t;
-      const r=await fetch(API+path,{method:"POST", headers:h, body:JSON.stringify(body), credentials:"include"});
+      const r=await fetch(API+path,{method:"POST", headers:h, body: body? JSON.stringify(body): undefined, credentials:"include"});
       if(r.status===401){ if(GUEST) return null; location.href="/login"; return null; }
       if(!r.ok) throw new Error(await safeErr(r));
       return await r.json();
@@ -158,6 +158,68 @@
         if(target){ it.style.display = (target.style.display === 'none') ? 'none' : ''; }
       });
     }
+
+    // ===== 채팅 & 팔로우 (상대 프로필일 때만 표시) =====
+    (function(){
+      if(!isOtherView) return;
+      const bar = document.getElementById('chat_action_bar');
+      const btn = document.getElementById('btn_chat_with_user');
+      const btnFollow = document.getElementById('btn_follow_user');
+      const btnUnfollow = document.getElementById('btn_unfollow_user');
+      if(!bar || !btn) return;
+      const t = token();
+      if(!t){ bar.style.display='none'; return; }
+      bar.style.display='flex';
+      btn.addEventListener('click', async ()=>{
+        try{
+          const res = await jpost(`/api/v1/chat/rooms/with/${VIEW_USER_ID}`);
+          const rid = res?.room_id;
+          if(rid){ window.location.href = `/chat/rooms/${rid}`; }
+          else { throw new Error('방을 생성할 수 없습니다'); }
+        }catch(e){ alert(e?.message||e||'채팅 시작에 실패했습니다'); }
+      });
+
+      // 팔로우 상태 확인 및 토글 바인딩
+      async function refreshFollowState(){
+        try{
+          const r = await jget('/api/v1/following/users');
+          const ids = (r?.following_user_ids || []).map(n=>Number(n));
+          const isFollowing = ids.includes(Number(VIEW_USER_ID));
+          if(btnFollow) btnFollow.style.display = isFollowing ? 'none' : '';
+          if(btnUnfollow) btnUnfollow.style.display = isFollowing ? '' : 'none';
+        }catch(_){
+          if(btnFollow) btnFollow.style.display = '';
+          if(btnUnfollow) btnUnfollow.style.display = 'none';
+        }
+      }
+      refreshFollowState();
+
+      btnFollow?.addEventListener('click', async ()=>{
+        try{
+          await jpost(`/api/v1/follow/${VIEW_USER_ID}`);
+          // 팔로워 수 +1 (낙관적)
+          const el = document.getElementById('hero_followers');
+          if(el){ const n = Number(el.textContent.replace(/[^0-9]/g,''))||0; el.textContent = (n+1).toString(); }
+          // 즉시 토글
+          if(btnFollow) btnFollow.style.display = 'none';
+          if(btnUnfollow) btnUnfollow.style.display = '';
+          refreshFollowState();
+        }catch(e){ alert(e?.message||'팔로우 실패'); }
+      });
+      btnUnfollow?.addEventListener('click', async ()=>{
+        try{
+          const tkn = token();
+          await fetch(`/api/v1/follow/${VIEW_USER_ID}`, {method:'DELETE', headers: tkn? {'Authorization': 'Bearer '+tkn} : {}, credentials:'include'});
+          // 팔로워 수 -1 (낙관적)
+          const el = document.getElementById('hero_followers');
+          if(el){ const n = Number(el.textContent.replace(/[^0-9]/g,''))||0; el.textContent = Math.max(0,n-1).toString(); }
+          // 즉시 토글
+          if(btnFollow) btnFollow.style.display = '';
+          if(btnUnfollow) btnUnfollow.style.display = 'none';
+          refreshFollowState();
+        }catch(e){ alert(e?.message||'언팔로우 실패'); }
+      });
+    })();
 
     async function loadVisibility(){
       try{

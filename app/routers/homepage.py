@@ -210,9 +210,20 @@ def get_following_challenges(
             "challenges": [
                 {
                     "id": c.id,
-                    "title": c.title, 
+                    "title": c.title,
                     "description": c.description,
-                    "created_at": c.created_at.isoformat() if c.created_at else None
+                    "created_at": c.created_at.isoformat() if c.created_at else None,
+                    "creator_id": c.creator_id,
+                    "start_date": c.start_date.isoformat() if c.start_date else None,
+                    "end_date": c.end_date.isoformat() if c.end_date else None,
+                    "status": c.status.value if hasattr(c.status, 'value') else c.status,
+                    "mode": c.mode.value if hasattr(c.mode, 'value') else c.mode,
+                    "payment_type": c.payment_type.value if hasattr(c.payment_type, 'value') else c.payment_type,
+                    "entry_fee": getattr(c, 'entry_fee', 0) or 0,
+                    "monthly_fee": getattr(c, 'monthly_fee', 0) or 0,
+                    "current_participants": getattr(c, 'current_participants', 0) or 0,
+                    "max_participants": getattr(c, 'max_participants', None),
+                    "cover_image_url": getattr(c, 'cover_image_url', None),
                 } for c in challenges
             ]
         }

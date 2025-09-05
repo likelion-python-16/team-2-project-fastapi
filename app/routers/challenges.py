@@ -39,13 +39,27 @@ router = APIRouter(prefix="/challenges", tags=["challenges"])
 
 # Quick endpoints for frontend compatibility
 @router.get("/recommended")
-def get_recommended_challenges_simple(db: Session = Depends(get_db)):
+def get_recommended_challenges_simple(
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     """추천 챌린지 목록 (간단 버전)"""
     try:
-        challenges = db.query(Challenge).filter(
-            Challenge.is_deleted == False,
-            Challenge.status == ChallengeStatus.active
-        ).order_by(Challenge.created_at.desc()).limit(10).all()
+        q = (
+            db.query(Challenge)
+            .filter(
+                Challenge.is_deleted == False,
+                getattr(Challenge, 'is_public', True) == True,
+                Challenge.status.in_([ChallengeStatus.recruiting, ChallengeStatus.active])
+            )
+        )
+        if current_user:
+            q = q.filter(Challenge.creator_id != current_user.id)
+        challenges = (
+            q.order_by(desc(getattr(Challenge, 'created_at', Challenge.id)))
+             .limit(10)
+             .all()
+        )
         
         return {
             "success": True,
@@ -54,6 +68,18 @@ def get_recommended_challenges_simple(db: Session = Depends(get_db)):
                     "id": c.id,
                     "title": c.title,
                     "description": c.description,
+                    "created_at": c.created_at.isoformat() if getattr(c, 'created_at', None) else None,
+                    "creator_id": c.creator_id,
+                    "mode": c.mode.value if hasattr(c.mode, 'value') else c.mode,
+                    "status": c.status.value if hasattr(c.status, 'value') else c.status,
+                    "start_date": c.start_date.isoformat() if c.start_date else None,
+                    "end_date": c.end_date.isoformat() if c.end_date else None,
+                    "payment_type": c.payment_type.value if hasattr(c.payment_type, 'value') else c.payment_type,
+                    "entry_fee": getattr(c, 'entry_fee', 0) or 0,
+                    "monthly_fee": getattr(c, 'monthly_fee', 0) or 0,
+                    "current_participants": getattr(c, 'current_participants', 0) or 0,
+                    "max_participants": getattr(c, 'max_participants', None),
+                    "cover_image_url": getattr(c, 'cover_image_url', None),
                 } for c in challenges
             ]
         }

@@ -36,6 +36,7 @@ from .routers import round_pictures, participations, payments, payment_reminders
 from app.routers.challengecreating import router as challengecreating_router
 from app.routers.challengedetail import router as challengedetail_router
 from app.routers.place_picker import router as place_picker_router
+from app.routers import chat as chat_router
 
 # Admin routers
 from app.routers import admin_auth
@@ -122,6 +123,11 @@ async def dashboard_page(request: Request):
 async def users_list_page(request: Request):
     return templates.TemplateResponse("users.html", {"request": request})
 
+# Public profile page for a specific user id
+@app.get("/users/{user_id}", response_class=HTMLResponse, tags=["Pages"])
+async def public_user_profile(request: Request, user_id: int):
+    return templates.TemplateResponse("mypage.html", {"request": request, "view_user_id": user_id})
+
 @app.get("/mypage", response_class=HTMLResponse, tags=["Pages"])
 async def mypage_page(request: Request):
     return templates.TemplateResponse("mypage.html", {"request": request})
@@ -137,6 +143,15 @@ async def account_email_page(request: Request):
 @app.get("/demo", response_class=HTMLResponse, tags=["Pages"])
 def get_demo(request: Request):
     return templates.TemplateResponse("demo.html", {"request": request})
+
+# Chat pages
+@app.get("/chat", response_class=HTMLResponse, tags=["Pages"])
+async def chat_list_page(request: Request):
+    return templates.TemplateResponse("chat_list.html", {"request": request})
+
+@app.get("/chat/rooms/{room_id}", response_class=HTMLResponse, tags=["Pages"])
+async def chat_room_page(request: Request, room_id: int):
+    return templates.TemplateResponse("chat_room.html", {"request": request, "room_id": room_id})
 
 # 생성/상세 페이지: /pages/* 로 고정, 이름 지정
 @app.get("/pages/challenges/new", name="page_challenge_create",
@@ -273,6 +288,7 @@ app.include_router(tags.router, prefix="/api/v1")  # AI 태그 검색 기능
 app.include_router(challengecreating_router)
 app.include_router(challengedetail_router)
 app.include_router(place_picker_router)
+app.include_router(chat_router.router)
 app.include_router(users_mypage.router)
 app.include_router(users_mypage_chat.router)
 app.include_router(users_mypage_more.router)

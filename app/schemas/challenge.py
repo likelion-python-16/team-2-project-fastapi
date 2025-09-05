@@ -451,6 +451,14 @@ class ChallengeItem(BaseModel):
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     created_at: Optional[datetime] = None
+    # 추가 필드들 (프론트 렌더링 일관성 확보)
+    mode: Optional[str] = None
+    payment_type: Optional[str] = None
+    entry_fee: Optional[int] = 0
+    monthly_fee: Optional[int] = 0
+    current_participants: Optional[int] = 0
+    max_participants: Optional[int] = None
+    cover_image_url: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

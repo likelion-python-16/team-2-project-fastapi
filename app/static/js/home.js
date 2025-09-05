@@ -138,6 +138,13 @@ const elFSortDir = $('#f-sortdir');
 
 /* ---- 초기 세팅 ---- */
 document.addEventListener('DOMContentLoaded', async () => {
+  // 로그인 사용자 정보 미리 로드 (내가 만든 챌린지 표시용)
+  try {
+    const t = getAccessToken();
+    if (t) {
+      S.me = await fetchJSON('/api/v1/users/me');
+    }
+  } catch (_) { S.me = null; }
   // 로고 → 홈
   elLogo?.addEventListener('click', (e) => {
     e.preventDefault();
@@ -317,10 +324,12 @@ async function loadRecommended() {
     // 1순위: /api/v1/home/recommended
     let list = [];
     try {
-      list = await fetchJSON('/api/v1/home/recommended');
+      const res = await fetchJSON('/api/v1/home/recommended');
+      list = Array.isArray(res) ? res : (Array.isArray(res?.challenges) ? res.challenges : []);
     } catch (_) {
       // 2순위: /api/v1/challenges/recommended
-      list = await fetchJSON('/api/v1/challenges/recommended');
+      const res2 = await fetchJSON('/api/v1/challenges/recommended');
+      list = Array.isArray(res2) ? res2 : (Array.isArray(res2?.challenges) ? res2.challenges : []);
     }
 
     if (!Array.isArray(list) || list.length === 0) {
@@ -537,10 +546,17 @@ function renderCard(ch) {
   const status = (ch.status || 'recruiting').toLowerCase();
   const start = ch.start_date || ch.starts_at || '';
   const end   = ch.end_date || ch.ends_at || '';
-  const cover = ch.cover_image_url || ch.cover_image || ch.thumbnail || '';
-  const paymentType = (ch.payment_type || 'free').toLowerCase();
-  const entryFee = ch.entry_fee || 0;
-  const monthlyFee = ch.monthly_fee || 0;
+  const cover = ch.cover_image_url || ch.cover_image || ch.thumbnail || ch.thumbnail_url || '';
+  const createdAt = ch.created_at || ch.createdAt || '';
+  // 결제 정보 호환 처리
+  // 우선 payment_type 사용, 없으면 숫자 금액 혹은 fee_type으로 유추
+  const paymentTypeRaw = (ch.payment_type || '').toString().toLowerCase();
+  const entryFee = (ch.entry_fee ?? ch.participation_fee ?? 0) || 0;
+  const monthlyFee = (ch.monthly_fee ?? ch.fee ?? 0) || 0;
+  const paymentType = paymentTypeRaw
+    || ((entryFee > 0 && monthlyFee > 0) ? 'both'
+      : (entryFee > 0 ? 'entry_fee'
+        : (monthlyFee > 0 ? 'monthly_fee' : (ch.fee_type ? (String(ch.fee_type).includes('유료') ? 'paid' : 'free') : 'free'))));
   
   // 참가 현황 정보
   const currentParticipants = ch.current_participants || 0;
@@ -548,6 +564,8 @@ function renderCard(ch) {
   
   // 사용자 참여 상태
   const userParticipation = ch.user_participation;
+  const creatorId = ch.creator_id ?? ch.creatorId;
+  const isMine = !!( (userParticipation && userParticipation.is_creator) || (S.me?.id && creatorId && Number(creatorId) === Number(S.me.id)) );
 
   const paymentBadge = (() => {
     // 백엔드에서 준비된 fee_type 사용 (더 정확한 포맷팅)
@@ -609,29 +627,63 @@ function renderCard(ch) {
     return '';
   })();
 
-  const modeBadge = mode ? `<span class="badge">${mode}</span>` : '';
+  const modeLabel = (m => {
+    if (m === 'online') return '온라인';
+    if (m === 'offline') return '오프라인';
+    if (m === 'hybrid') return '하이브리드';
+    return m || '';
+  })(mode);
+  const modeBadge = modeLabel ? `<span class="badge">${modeLabel}</span>` : '';
 
   const image = cover
     ? `<img class="thumb" src="${escapeHtml(cover)}" alt="thumb">`
     : `<div class="thumb"></div>`;
 
+  const periodText = (() => {
+    const s = formatDate(start);
+    const e = formatDate(end);
+    if (s && e) return `진행기간: ${s} ~ ${e}`;
+    if (s) return `진행기간: ${s}`;
+    if (e) return `진행기간: ~ ${e}`;
+    return '';
+  })();
+
+  const createdText = createdAt ? `생성일: ${formatDate(createdAt)}` : '';
+
   return `
-    <a class="card" href="/pages/challenges/${id}" title="${escapeHtml(title)}">
+    <a class="card ${isMine ? 'mine' : ''}" href="/pages/challenges/${id}" title="${escapeHtml(title)}">
+      ${isMine ? '<div class="sticky-badge">내가 만든 챌린지</div>' : ''}
       ${image}
       <div class="card-body">
         <div class="title">${escapeHtml(title)}</div>
-        <div class="meta">
-          ${modeBadge}
+        <div class="meta-badges">
           ${statusBadge}
-          ${participationBadge}
+          ${modeBadge}
           ${participantsBadge}
           ${paymentBadge}
-          ${start ? `<span class="chip">시작 ${escapeHtml(start)}</span>` : ''}
-          ${end ? `<span class="chip">종료 ${escapeHtml(end)}</span>` : ''}
         </div>
+        ${periodText ? `<div class="info-pill"><span>📅</span><span>${periodText}</span></div>` : ''}
+        ${createdText ? `<div class="info-pill"><span>🕒</span><span>${createdText}</span></div>` : ''}
       </div>
     </a>
   `;
+}
+
+function formatDate(d){
+  if(!d) return '';
+  try{
+    const dt = new Date(d);
+    if (String(dt) !== 'Invalid Date') {
+      const y = dt.getFullYear();
+      const m = String(dt.getMonth()+1).padStart(2,'0');
+      const day = String(dt.getDate()).padStart(2,'0');
+      return `${y}-${m}-${day}`;
+    }
+    // try yyyy-mm-dd substr fallbacks
+    const s = String(d);
+    const m = s.match(/\d{4}-\d{2}-\d{2}/);
+    return m ? m[0] : s;
+  }catch{ return String(d); }
 }
 function escapeHtml(s='') {
   return String(s)
