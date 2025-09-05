@@ -26,6 +26,19 @@
     .btn.primary{background:var(--primary); color:#fff; border-color:var(--primary)}
     .btn.small{height:30px; padding:0 10px; font-size:13px}
     .avatar{width:36px; height:36px; border-radius:50%; overflow:hidden; border:1px solid var(--line); cursor:pointer; display:flex; align-items:center; justify-content:center; background:#f8fafc; font-size:12px; color:#475569}
+    .bell-icon{position:relative; width:36px; height:36px; border-radius:50%; cursor:pointer; display:flex; align-items:center; justify-content:center; background:#f8fafc; border:1px solid var(--line); font-size:16px; transition:background 0.2s ease}
+    .bell-icon:hover{background:#e5e7eb}
+    .bell-badge{position:absolute; top:-4px; right:-4px; width:16px; height:16px; border-radius:50%; background:#DC2626; color:#fff; font-size:11px; display:grid; place-items:center; font-weight:700; border:2px solid #fff}
+    .notification-header{padding:12px 16px; border-bottom:1px solid var(--line); font-size:14px; font-weight:600}
+    .notification-body{max-height:400px; overflow-y:auto}
+    .notification-item{padding:12px 16px; border-bottom:1px solid #f3f4f6; display:flex; align-items:flex-start; gap:8px}
+    .notification-item:hover{background:#f9fafb}
+    .notification-item:last-child{border-bottom:none}
+    .notification-icon{font-size:14px; margin-top:2px}
+    .notification-content{flex:1}
+    .notification-text{font-size:13px; color:var(--text); line-height:1.4; margin-bottom:4px}
+    .notification-time{font-size:11px; color:var(--muted)}
+    .loading{text-align:center; padding:20px; color:var(--muted); font-size:13px}
     .dropdown{position:relative}
     .dropdown-menu{position:absolute; right:0; top:44px; width:200px; background:#fff; border:1px solid var(--line); border-radius:12px; padding:8px; box-shadow:0 10px 30px rgba(0,0,0,.08); display:none; z-index:20}
     .dropdown.open .dropdown-menu{display:block}
@@ -105,6 +118,20 @@
         <a id="create-challenge-btn"
            class="btn primary"
            href="{{ url_for('page_challenge_create') }}">챌린지 생성</a>
+
+        <!-- 알림 벨 -->
+        <div class="dropdown" id="notifications-dd">
+          <div class="bell-icon" id="notifications-trigger" title="알림">🔔<span id="notif-badge" class="bell-badge" style="display:none">!</span></div>
+          <div class="dropdown-menu" id="notifications-menu" style="width: 350px;">
+            <div class="notification-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+              <strong>내 활동 기록</strong>
+              <button id="btn-mark-all-read" class="btn small" type="button" title="모두 읽음">모두 읽음</button>
+            </div>
+            <div class="notification-body" id="notification-list">
+              <div class="loading">알림을 불러오는 중...</div>
+            </div>
+          </div>
+        </div>
 
         <!-- 프로필 드롭다운 -->
         <div class="dropdown" id="profile-dd">
@@ -228,7 +255,159 @@
           location.href = '/login';
         }
       });
+
+      // 알림 기능 초기화
+      initNotifications();
     });
+
+    // 알림 기능 초기화
+    function initNotifications() {
+      const notificationsDropdown = document.getElementById('notifications-dd');
+      const notificationsTrigger = document.getElementById('notifications-trigger');
+      const notificationsList = document.getElementById('notification-list');
+      const notifBadge = document.getElementById('notif-badge');
+      const btnMarkAll = document.getElementById('btn-mark-all-read');
+
+      async function refreshBadge(){
+        const token = localStorage.getItem('access_token');
+        if (!token){ if(notifBadge) notifBadge.style.display='none'; return; }
+        try{
+          const res = await fetch('/api/v1/notifications/my-activities?unread_only=1', { headers: { 'Authorization': 'Bearer '+token, 'Accept':'application/json' }});
+          if(!res.ok){ if(notifBadge) notifBadge.style.display='none'; return; }
+          const data = await res.json();
+          const hasUnread = Array.isArray(data.activities) && data.activities.length > 0;
+          if(notifBadge) notifBadge.style.display = hasUnread ? 'grid' : 'none';
+        }catch(_){ if(notifBadge) notifBadge.style.display='none'; }
+      }
+
+      // 벨 아이콘 클릭 시 드롭다운 토글 및 알림 로드
+      notificationsTrigger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        
+        // 다른 드롭다운들 닫기
+        document.querySelectorAll('.dropdown.open').forEach(dd => {
+          if (dd !== notificationsDropdown) dd.classList.remove('open');
+        });
+        
+        // 알림 드롭다운 토글
+        notificationsDropdown.classList.toggle('open');
+        
+        // 드롭다운이 열렸을 때 알림 로드
+        if (notificationsDropdown.classList.contains('open')) {
+          loadNotifications();
+        }
+      });
+
+      // 외부 클릭 시 드롭다운 닫기
+      document.addEventListener('click', () => {
+        notificationsDropdown.classList.remove('open');
+      });
+
+      // 드롭다운 메뉴 클릭 시 이벤트 전파 중지
+      document.getElementById('notifications-menu').addEventListener('click', (e) => {
+        e.stopPropagation();
+      });
+
+      // 모두 읽음
+      btnMarkAll?.addEventListener('click', async () => {
+        const token = localStorage.getItem('access_token');
+        if (!token) { alert('로그인이 필요합니다'); return; }
+        try{
+          const r = await fetch('/api/v1/notifications/mark-all-read', { method:'POST', headers:{ 'Authorization':'Bearer '+token }});
+          if (!r.ok) throw new Error('요청 실패');
+          // 배지 제거 + 목록 비우기
+          if (notifBadge) notifBadge.style.display = 'none';
+          const list = document.getElementById('notification-list');
+          if (list) list.innerHTML = '<div style="text-align:center; padding:20px; color:#6b7280;">활동 기록이 없습니다</div>';
+        }catch(err){
+          alert('모두 읽음 처리 실패');
+        }
+      });
+    }
+
+    // 알림 목록 로드
+    async function loadNotifications() {
+      const token = localStorage.getItem('access_token');
+      if (!token) {
+        document.getElementById('notification-list').innerHTML = 
+          '<div style="text-align:center; padding:20px; color:#6b7280;">로그인이 필요합니다</div>';
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/v1/notifications/my-activities?unread_only=1', {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json'
+          }
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          renderNotifications(data.activities);
+          // 배지 갱신: unread_only이므로 길이로 판단
+          const notifBadge = document.getElementById('notif-badge');
+          const hasUnread = Array.isArray(data.activities) && data.activities.length > 0;
+          if (notifBadge) notifBadge.style.display = hasUnread ? 'grid' : 'none';
+        } else {
+          document.getElementById('notification-list').innerHTML = 
+            '<div style="text-align:center; padding:20px; color:#dc2626;">알림을 불러오는데 실패했습니다</div>';
+        }
+      } catch (error) {
+        console.error('알림 로드 오류:', error);
+        document.getElementById('notification-list').innerHTML = 
+          '<div style="text-align:center; padding:20px; color:#dc2626;">알림을 불러오는데 실패했습니다</div>';
+      }
+    }
+
+    // 초기/주기적 배지 업데이트
+    document.addEventListener('DOMContentLoaded', () => {
+      setTimeout(()=>{ try{ initNotificationsBadgeOnce?.(); }catch(_){} }, 0);
+    });
+    // 모듈화 없이 내부에서 직접 호출
+    (function(){
+      const t = setInterval(() => {
+        const dd = document.getElementById('notifications-dd');
+        // 열려있지 않을 때만 폴링(열려있으면 loadNotifications에서 갱신됨)
+        if (!dd || !dd.classList.contains('open')) {
+          const token = localStorage.getItem('access_token');
+          if (token) {
+            fetch('/api/v1/notifications/my-activities?unread_only=1', { headers: { 'Authorization': 'Bearer '+token, 'Accept':'application/json' }})
+              .then(r => r.ok ? r.json() : null)
+              .then(data => {
+                const hasUnread = data && Array.isArray(data.activities) && data.activities.length > 0;
+                const badge = document.getElementById('notif-badge');
+                if (badge) badge.style.display = hasUnread ? 'grid' : 'none';
+              })
+              .catch(()=>{});
+          }
+        }
+      }, 15000); // 15초마다 확인
+    })();
+
+    // 알림 목록 렌더링
+    function renderNotifications(activities) {
+      const notificationsList = document.getElementById('notification-list');
+      
+      if (!activities || activities.length === 0) {
+        notificationsList.innerHTML = 
+          '<div style="text-align:center; padding:20px; color:#6b7280;">활동 기록이 없습니다</div>';
+        return;
+      }
+
+      const html = activities.map(activity => `
+        <div class="notification-item" data-id="${activity.id}">
+          <div class="notification-icon">${activity.icon}</div>
+          <div class="notification-content">
+            <div class="notification-text">${activity.title}</div>
+            ${activity.content ? `<div class="notification-text" style="color:#6b7280; font-size:12px;">${activity.content}</div>` : ''}
+            <div class="notification-time">${activity.created_at}</div>
+          </div>
+        </div>
+      `).join('');
+
+      notificationsList.innerHTML = html;
+    }
   </script>
 
   <script src="{{ url_for('static', path='js/home.js') }}"></script>

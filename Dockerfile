@@ -22,32 +22,8 @@ COPY alembic.ini ./
 COPY alembic ./alembic
 COPY ./data ./data
 
-# 🔥 환경별 설정
-# 개발환경에서만 .env 파일 복사
-ARG ENV=development
-COPY .env* ./
-# 프로덕션에서는 환경변수로 직접 주입 권장
-
-# 🆕 환경변수 검증 스크립트 추가
-COPY <<EOF /app/check_env.py
-import os
-import sys
-from app.core.config import settings
-
-try:
-    print(f"Environment: {settings.environment}")
-    if settings.is_production:
-        settings.validate_required_keys()
-        print("✅ Production environment validated")
-    else:
-        print("✅ Development environment loaded")
-except Exception as e:
-    print(f"❌ Environment validation failed: {e}")
-    sys.exit(1)
-EOF
-
-# 환경변수 검증 실행
-RUN python check_env.py
+# 환경 변수는 이미지 빌드에 포함하지 않습니다.
+# 런타임에 docker-compose의 env_file 또는 환경변수로 주입하세요.
 
 # 포트 노출
 EXPOSE 8000

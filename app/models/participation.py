@@ -62,6 +62,8 @@ class Participation(Base, TimestampMixin):
         nullable=False,
         index=True
     )
+    # 활성 여부 (쿼리에서 널리 사용됨). DB에 NOT NULL + DEFAULT 1 권장
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
     
     # ============= 시간 정보 =============
     joined_at = Column(
@@ -71,93 +73,93 @@ class Participation(Base, TimestampMixin):
         index=True,
         comment="참가 신청 시간"
     )
-    activated_at = Column(
-        DateTime, 
-        nullable=True,
-        comment="실제 참가 시작 시간 (결제 완료 후)"
-    )
-    completed_at = Column(DateTime, nullable=True, comment="완료 시간")
-    left_at = Column(DateTime, nullable=True, comment="탈퇴 시간")
+    # activated_at = Column(
+    #     DateTime, 
+    #     nullable=True,
+    #     comment="실제 참가 시작 시간 (결제 완료 후)"
+    # )
+    # completed_at = Column(DateTime, nullable=True, comment="완료 시간")  # 임시 비활성화 - DB에 컬럼이 없음
+    # left_at = Column(DateTime, nullable=True, comment="탈퇴 시간")  # 임시 비활성화 - DB에 컬럼이 없음
     
     # ============= 결제 관련 정보 =============
-    payment_cycle = Column(
-        SAEnum(PaymentCycle, name="payment_cycle_enum"),
-        nullable=True,
-        comment="선택한 결제 방식 (챌린지가 multiple 옵션일 때)"
-    )
-    next_payment_date = Column(
-        Date, 
-        nullable=True,
-        index=True,
-        comment="다음 결제 예정일 (월회비용)"
-    )
-    payment_failed_count = Column(
-        Integer, 
-        default=0, 
-        nullable=False,
-        comment="연속 결제 실패 횟수"
-    )
-    total_paid_amount = Column(
-        Integer, 
-        default=0, 
-        nullable=False,
-        comment="총 결제 금액"
-    )
+    # payment_cycle = Column(
+    #     SAEnum(PaymentCycle, name="payment_cycle_enum"),
+    #     nullable=True,
+    #     comment="선택한 결제 방식 (챌린지가 multiple 옵션일 때)"
+    # )  # 임시 비활성화 - DB에 컬럼이 없음
+    # next_payment_date = Column(
+    #     Date, 
+    #     nullable=True,
+    #     index=True,
+    #     comment="다음 결제 예정일 (월회비용)"
+    # )  # 임시 비활성화 - DB에 컬럼이 없음
+    # payment_failed_count = Column(
+    #     Integer, 
+    #     default=0, 
+    #     nullable=False,
+    #     comment="연속 결제 실패 횟수"
+    # )  # 임시 비활성화 - DB에 컬럼이 없음
+    # total_paid_amount = Column(
+    #     Integer, 
+    #     default=0, 
+    #     nullable=False,
+    #     comment="총 결제 금액"
+    # )  # 임시 비활성화 - DB에 컬럼이 없음
     
     # ============= 진행률 & 통계 =============
-    progress_rate = Column(
-        Float, 
-        default=0.0, 
-        nullable=False,
-        comment="진행률 (0-100%)"
-    )
-    attendance_count = Column(
-        Integer, 
-        default=0, 
-        nullable=False,
-        comment="총 출석 횟수"
-    )
-    total_rounds = Column(
-        Integer, 
-        nullable=True,
-        comment="참가한 시점의 총 회차 수 (변경 추적용)"
-    )
+    # progress_rate = Column(
+    #     Float, 
+    #     default=0.0, 
+    #     nullable=False,
+    #     comment="진행률 (0-100%)"
+    # )  # 임시 비활성화 - DB에 컬럼이 없음
+    # attendance_count = Column(
+    #     Integer, 
+    #     default=0, 
+    #     nullable=False,
+    #     comment="총 출석 횟수"
+    # )  # 임시 비활성화 - DB에 컬럼이 없음  
+    # total_rounds = Column(
+    #     Integer, 
+    #     nullable=True,
+    #     comment="참가한 시점의 총 회차 수 (변경 추적용)"
+    # )  # 임시 비활성화 - DB에 컬럼이 없음
     
     # ============= 탈퇴 관련 =============
-    leave_type = Column(
-        SAEnum(LeaveType, name="leave_type_enum"),
-        nullable=True,
-        comment="탈퇴 사유"
-    )
-    leave_reason = Column(Text, nullable=True, comment="상세 탈퇴 사유")
-    kicked_by = Column(
-        Integer, 
-        ForeignKey("users.id"), 
-        nullable=True,
-        comment="퇴출 처리한 관리자 ID"
-    )
+    # leave_type = Column(
+    #     SAEnum(LeaveType, name="leave_type_enum"),
+    #     nullable=True,
+    #     comment="탈퇴 사유"
+    # )  # 임시 비활성화 - DB에 컬럼이 없음
+    # leave_reason = Column(Text, nullable=True, comment="상세 탈퇴 사유")  # 임시 비활성화 - DB에 컬럼이 없음
+    # kicked_by = Column(
+    #     Integer, 
+    #     ForeignKey("users.id"), 
+    #     nullable=True,
+    #     comment="퇴출 처리한 관리자 ID"
+    # )  # 임시 비활성화 - DB에 컬럼이 없음
     
     # ============= 기타 설정 =============
-    is_notification_enabled = Column(
-        Boolean, 
-        default=True, 
-        nullable=False,
-        comment="알림 수신 여부"
-    )
-    auto_payment_enabled = Column(
-        Boolean, 
-        default=True, 
-        nullable=False,
-        comment="자동 결제 활성화 여부"
-    )
+    # is_notification_enabled = Column(
+    #     Boolean, 
+    #     default=True, 
+    #     nullable=False,
+    #     comment="알림 수신 여부"
+    # )  # 임시 비활성화 - DB에 컬럼이 없음
+    # auto_payment_enabled = Column(
+    #     Boolean, 
+    #     default=True, 
+    #     nullable=False,
+    #     comment="자동 결제 활성화 여부"
+    # )  # 임시 비활성화 - DB에 컬럼이 없음
     
     # 참가 시점 메모/동기
-    join_motivation = Column(Text, nullable=True, comment="참가 동기/목표")
+    # join_motivation = Column(Text, nullable=True, comment="참가 동기/목표")  # 임시 비활성화 - DB에 컬럼이 없음
     
     # ============= 관계 =============
     user = relationship("User", back_populates="participations", foreign_keys=[user_id])
     challenge = relationship("Challenge", back_populates="participations")
-    kicker = relationship("User", foreign_keys=[kicked_by])
+    # kicker = relationship("User", foreign_keys=[kicked_by])  # 임시 비활성화 - kicked_by 필드가 없음
     
     # 결제 관련
     payments = relationship(
@@ -176,26 +178,26 @@ class Participation(Base, TimestampMixin):
         Index("ix_participation_challenge", "challenge_id"),
         Index("ix_participation_status_role", "status", "role"),
         Index("ix_participation_joined_status", "joined_at", "status"),
-        Index("ix_participation_next_payment", "next_payment_date"),
-        Index("ix_participation_progress", "progress_rate"),
+        # Index("ix_participation_next_payment", "next_payment_date"),  # 임시 비활성화 - 컬럼이 없음
+        # Index("ix_participation_progress", "progress_rate"),  # 임시 비활성화 - 컬럼이 없음
         
-        # 체크 제약 조건
-        CheckConstraint(
-            "progress_rate >= 0 AND progress_rate <= 100", 
-            name="ck_participation_progress_range"
-        ),
-        CheckConstraint(
-            "attendance_count >= 0", 
-            name="ck_participation_attendance_positive"
-        ),
-        CheckConstraint(
-            "payment_failed_count >= 0", 
-            name="ck_participation_payment_failed_positive"
-        ),
-        CheckConstraint(
-            "total_paid_amount >= 0",
-            name="ck_participation_total_paid_positive"
-        )
+        # 체크 제약 조건 (임시 비활성화 - 관련 컬럼들이 없음)
+        # CheckConstraint(
+        #     "progress_rate >= 0 AND progress_rate <= 100", 
+        #     name="ck_participation_progress_range"
+        # ),
+        # CheckConstraint(
+        #     "attendance_count >= 0", 
+        #     name="ck_participation_attendance_positive"
+        # ),
+        # CheckConstraint(
+        #     "payment_failed_count >= 0", 
+        #     name="ck_participation_payment_failed_positive"
+        # ),
+        # CheckConstraint(
+        #     "total_paid_amount >= 0",
+        #     name="ck_participation_total_paid_positive"
+        # )
     )
     
     # ============= 비즈니스 로직 메서드 =============
@@ -239,7 +241,7 @@ class Participation(Base, TimestampMixin):
         """참가 활성화 (결제 완료 후 호출)"""
         if self.status == ParticipationStatus.payment_pending:
             self.status = ParticipationStatus.active
-            self.activated_at = datetime.now(timezone.utc)
+            # self.activated_at = datetime.now(timezone.utc)  # 임시 비활성화 - DB에 컬럼이 없음
             self.payment_failed_count = 0
     
     def pause_participation(self, reason: str = None):
@@ -323,8 +325,8 @@ class ParticipationManager:
             user_id=user_id,
             challenge_id=challenge_id,
             role=role,
-            payment_cycle=payment_cycle,
-            join_motivation=join_motivation,
+            # payment_cycle=payment_cycle,  # 임시 비활성화 - DB에 컬럼이 없음
+            # join_motivation=join_motivation,  # 임시 비활성화 - DB에 컬럼이 없음
             status=ParticipationStatus.pending if payment_cycle != PaymentCycle.free else ParticipationStatus.active
         )
         

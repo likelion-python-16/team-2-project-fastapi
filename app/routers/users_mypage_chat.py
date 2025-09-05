@@ -18,6 +18,8 @@ from app.models.chat import ChatMessage
 from app.schemas.mypage_chat import (
     ChatRoomBrief, ChatRoomListOut, MannerScoreOut
 )
+from app.models.review import Review, ReviewStatus
+from sqlalchemy import func
 
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
 
@@ -78,5 +80,24 @@ def my_manner_score(
     me: User = Depends(get_current_user),
 ):
     # 최신값 보장
+    db.refresh(me)
+    return MannerScoreOut(manner_score=int(me.manner_score or 0))
+
+
+@router.post("/me/manner/recompute", response_model=MannerScoreOut)
+def recompute_my_manner(
+    db: Session = Depends(get_db),
+    me: User = Depends(get_current_user),
+):
+    # 평균 평점으로 30~100 선형 환산
+    avg_cnt = db.query(func.avg(Review.rating), func.count(Review.id)).filter(
+        Review.target_user_id == me.id,
+        Review.status != ReviewStatus.deleted,
+    ).first()
+    avg_rating = float(avg_cnt[0] or 0.0)
+    cnt = int(avg_cnt[1] or 0)
+    score = 30.0 if cnt == 0 else (30.0 + (max(1.0, min(5.0, avg_rating)) - 1.0) / 4.0 * 70.0)
+    me.manner_score = max(0.0, min(100.0, round(score)))
+    db.commit()
     db.refresh(me)
     return MannerScoreOut(manner_score=int(me.manner_score or 0))

@@ -44,9 +44,11 @@ class User(Base, TimestampMixin):
     introduction = Column(Text, nullable=False)
     
     # 기본값이 있는 필드들
-    manner_score = Column(Float, default=0.0, nullable=False, index=True)
+    manner_score = Column(Float, default=30.0, nullable=False, index=True)
     total_points = Column(Integer, default=0, nullable=False, index=True)
     penalty_total = Column(Integer, default=0, nullable=False)
+    warning_count = Column(Integer, default=0, nullable=False)  # 경고 횟수
+    is_review_banned = Column(Boolean, default=False, nullable=False)  # 리뷰 작성 금지
     is_admin = Column(Boolean, default=False, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False, index=True)
 
@@ -118,7 +120,7 @@ class User(Base, TimestampMixin):
     invitations_received = relationship("Invitation", foreign_keys="Invitation.invitee_id", back_populates="invitee")
     invitations_reviewed = relationship("Invitation", foreign_keys="Invitation.reviewed_by", back_populates="reviewer")
     point_histories = relationship("PointHistory", back_populates="user")
-    reviews = relationship("Review", back_populates="user")
+    # reviews 관계는 Review 모델에서 정의하므로 여기서는 제거
     helpful_given = relationship("ReviewHelpful", back_populates="user")
     qrcodes = relationship("QRCode", back_populates="user")
     round_attendances = relationship("RoundAttendance", back_populates="user", foreign_keys="RoundAttendance.user_id")
@@ -204,9 +206,39 @@ class User(Base, TimestampMixin):
         return self.name if self.name else self.username
     
     def update_manner_score(self, score_change: float) -> None:
-        """매너 점수 업데이트 (0-100 범위 유지)"""
+        """매너 점수 업데이트 (30-100 범위 유지)"""
         new_score = self.manner_score + score_change
-        self.manner_score = max(0.0, min(100.0, new_score))
+        self.manner_score = max(30.0, min(100.0, new_score))
+    
+    def calculate_manner_score_from_rating(self, rating: float) -> float:
+        """리뷰 별점을 기준으로 매너점수 변화량 계산"""
+        if rating >= 4.5:
+            return 2.0
+        elif rating >= 4.0:
+            return 1.5
+        elif rating >= 3.5:
+            return 1.0
+        elif rating >= 3.0:
+            return 0.5
+        elif rating >= 2.5:
+            return 0.0
+        elif rating >= 2.0:
+            return -0.5
+        elif rating >= 1.5:
+            return -1.0
+        else:
+            return -1.5
+
+    def apply_report_penalty(self) -> str:
+        """신고 승인시 제재 적용 (1회 경고, 2회 리뷰 금지)"""
+        self.warning_count += 1
+        self.update_manner_score(-3.0)  # 매너점수 3점 차감
+        
+        if self.warning_count >= 2:
+            self.is_review_banned = True
+            return "리뷰 작성 금지"
+        else:
+            return "1회 경고"
     
     def add_points(self, points: int) -> None:
         """포인트 추가"""

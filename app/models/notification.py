@@ -12,11 +12,16 @@ class NotificationEvent(str, enum.Enum):
     creator_delegated = "creator_delegated"
     review_created = "review_created"
     review_updated = "review_updated"
+    review_received = "review_received"
     refund_succeeded = "refund_succeeded"
     refund_failed = "refund_failed"
     point_awarded = "point_awarded"
     notice_posted = "notice_posted"
     join_completed = "join_completed"
+    challenge_created = "challenge_created"
+    challenge_joined = "challenge_joined"
+    report_received = "report_received"
+    warning_received = "warning_received"
 
 class Notification(Base, TimestampMixin):
     __tablename__ = "notifications"

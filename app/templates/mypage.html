@@ -86,11 +86,17 @@
 
             <!-- 리뷰 내역 (작은 카드, 평점/내용만) -->
             <div class="card sm" id="my_sec_reviews">
-              <div class="toolbar"><h3 style="margin-right:auto">리뷰 내역</h3><button type="button" id="vis_reviews" class="pill-toggle off" style="margin-left:auto"><span class="dot"></span><span class="label">비공개</span></button></div>
+              <div class="toolbar">
+                <h3 style="margin-right:auto">리뷰 내역</h3>
+                <button type="button" id="vis_reviews" class="pill-toggle off" style="margin-left:auto"><span class="dot"></span><span class="label">비공개</span></button>
+              </div>
               <div class="table-wrap">
                 <table id="tbl_reviews"><thead><tr><th>평점</th><th>내용</th></tr></thead><tbody id="reviews_body"></tbody></table>
               </div>
               <div class="pagination"><button class="btn" id="rev_prev">이전</button><span class="muted" id="rev_info">0-0 / 0</span><button class="btn" id="rev_next">다음</button></div>
+              <div style="text-align: center; margin-top: 12px;">
+                <button class="btn" id="btn_go_my_reviews" style="background: #4338CA; color: white; border: none; padding: 8px 16px; border-radius: 6px;">내가 쓴 리뷰</button>
+              </div>
             </div>
             
 
@@ -211,6 +217,45 @@
   <!-- 토스트 -->
   <div class="toast-zone" id="toasts"></div>
 
-  <script type="module" src="/static/js/mypage.bundle.js?v=2" defer></script>
+  <script type="module" src="/static/js/mypage.bundle.js?v=3" defer></script>
+  <script>
+    // "내가 쓴 리뷰" 버튼을 누를 때 최근 참여/리뷰 챌린지로 이동하도록 시도
+    document.addEventListener('DOMContentLoaded', async () => {
+      const btn = document.getElementById('btn_go_my_reviews');
+      if (!btn) return;
+
+      async function getToken(){
+        return localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+      }
+      async function getMyLatestReviewedChallengeId(){
+        const t = await getToken();
+        if (!t) return null;
+        try{
+          const r = await fetch('/api/v1/reviews/my?size=1', { headers: { 'Authorization': 'Bearer ' + t }});
+          if (!r.ok) return null;
+          const d = await r.json();
+          const it = (d.items && d.items[0]) || null;
+          return it ? it.challenge_id : null;
+        }catch{ return null; }
+      }
+      async function getMyLatestParticipationChallengeId(){
+        const t = await getToken();
+        if (!t) return null;
+        try{
+          const r = await fetch('/api/v1/participations/me/recent', { headers: { 'Authorization': 'Bearer ' + t }});
+          if (!r.ok) return null;
+          const d = await r.json();
+          return (d && d.challenge_id) || null;
+        }catch{ return null; }
+      }
+
+      btn.addEventListener('click', async () => {
+        let cid = await getMyLatestReviewedChallengeId();
+        if (!cid) cid = await getMyLatestParticipationChallengeId();
+        const url = cid ? `/api/my-reviews?challenge_id=${encodeURIComponent(cid)}` : '/api/my-reviews';
+        window.location.href = url;
+      });
+    });
+  </script>
 </body>
 </html>
