@@ -1,7 +1,6 @@
-# app/routers/auth_social.py
 from __future__ import annotations
 from fastapi import APIRouter, Request, Depends, HTTPException, Body
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 from authlib.integrations.starlette_client import OAuth
 from starlette.config import Config as StarConfig
@@ -10,27 +9,33 @@ import secrets
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.user import User
-from app.security import create_access_token, create_refresh_token
+from app.security import (
+    create_access_token,
+    create_refresh_token,
+    validate_password_strength,
+    id_fingerprint,
+    normalize_phone,
+)
+from sqlalchemy.exc import IntegrityError
 
-router = APIRouter(prefix="/auth", tags=["Social Authentication"])
+router = APIRouter(prefix="/auth", tags=["Authentication"])
 
+def _api_base() -> str:
+    return (settings.api_base_url or "http://localhost:8001/api/v1").rstrip('/')
 def _front_base(request: Request) -> str:
-    """프론트엔드 기본 URL 추출"""
     base = (settings.front_base_url or '').strip().rstrip('/')
     if base:
         return base
-    # X-Forwarded-* 헤더 확인
     xf_proto = request.headers.get('x-forwarded-proto')
     xf_host = request.headers.get('x-forwarded-host')
     if xf_proto and xf_host:
         return f"{xf_proto}://{xf_host}"
     return str(request.base_url).rstrip('/')
 
-# OAuth 설정
 star_cfg = StarConfig(environ={})
 oauth = OAuth(star_cfg)
 
-# Google OpenID Connect 설정
+# Google OpenID Connect
 if settings.google_client_id and settings.google_client_secret:
     oauth.register(
         name='google',
@@ -40,8 +45,9 @@ if settings.google_client_id and settings.google_client_secret:
         client_kwargs={'scope': 'openid email profile'},
     )
 
-# Naver OAuth2 설정
+# Naver OAuth2
 if settings.naver_client_id and settings.naver_client_secret:
+    # 요청 스코프를 명시적으로 확장: name, email, profile_image
     oauth.register(
         name='naver',
         api_base_url='https://openapi.naver.com',
@@ -49,599 +55,701 @@ if settings.naver_client_id and settings.naver_client_secret:
         access_token_url='https://nid.naver.com/oauth2.0/token',
         client_id=settings.naver_client_id,
         client_secret=settings.naver_client_secret,
-        client_kwargs={'scope': 'profile email'},
+        client_kwargs={'scope': 'name email profile_image'},
     )
 
 
 @router.get('/login/google')
 async def login_google(request: Request):
-    """Google 로그인 시작"""
+    # authlib OAuth 객체는 iterable이 아니므로 hasattr로 등록 여부 확인
     if not hasattr(oauth, 'google'):
-        raise HTTPException(503, 'Google 로그인이 설정되지 않았습니다')
-    
-    # 콜백 URL 생성
+        raise HTTPException(503, 'Google login not configured')
+    # 현재 요청의 호스트/포트 기준으로 콜백 URL 생성 (세션 일치 보장)
     redirect_uri = str(request.url_for('callback_google'))
-    
-    # 세션 정리
+    # fresh 모드 저장(기존 연동 무시하고 새 계정으로 가져오기)
+    try:
+        if request.query_params.get('fresh') in ('1','true','yes'):
+            request.session['social_fresh'] = True
+    except Exception:
+        pass
+    # clear stale pending merge state when starting a new social login
     try:
         request.session.pop('pending_social', None)
         request.session.pop('merge_candidate_user_id', None)
     except Exception:
         pass
-    
-    # nonce 생성 (ID 토큰용)
+    # nonce for ID token
     nonce = secrets.token_urlsafe(16)
     request.session['nonce'] = nonce
-    
-    # Google 인증 페이지로 리디렉트
+    # 항상 동의 화면 노출 (최신 정보 승인)
+    # 계정 선택만 강제하고, 이미 동의한 앱은 자동 진행
     return await oauth.google.authorize_redirect(
-        request, redirect_uri, nonce=nonce, prompt='consent'
+        request, redirect_uri, nonce=nonce, prompt='select_account', include_granted_scopes='true'
     )
 
 
 @router.get('/callback/google')
 async def callback_google(request: Request, db: Session = Depends(get_db)):
-    """Google 로그인 콜백 처리"""
     if not hasattr(oauth, 'google'):
-        raise HTTPException(503, 'Google 로그인이 설정되지 않았습니다')
-    
+        raise HTTPException(503, 'Google login not configured')
     try:
-        # 액세스 토큰 받기
         token = await oauth.google.authorize_access_token(request)
     except Exception as e:
-        # 상태 불일치 시 재시도
+        # 세션 state가 유실되었을 때 재시도 유도 (authlib 버전에 따라 예외 타입이 다를 수 있음)
         msg = str(e).lower()
         if 'mismatch' in msg and 'state' in msg:
             return RedirectResponse(str(request.url_for('login_google')), status_code=303)
         raise
-    
     nonce = request.session.pop('nonce', None)
-    
-    # ID 토큰에서 사용자 정보 파싱
+    # ID 토큰에서 기본 클레임 파싱
     userinfo = await oauth.google.parse_id_token(token, nonce=nonce)
-    
-    # 추가 사용자 정보 가져오기
+    # 보완: userinfo endpoint로 추가 정보 보강 (특히 picture)
     try:
         resp = await oauth.google.get('userinfo', token=token)
-        if resp and resp.is_success:
-            additional_info = resp.json()
-            userinfo.update(additional_info)
+        if resp and resp.ok:
+            u2 = resp.json() or {}
+            if userinfo is None:
+                userinfo = u2
+            else:
+                # fill missing fields
+                for k in ('email','name','picture','sub'):
+                    if not userinfo.get(k) and u2.get(k):
+                        userinfo[k] = u2.get(k)
     except Exception:
         pass
-    
-    google_id = userinfo.get('sub')
-    email = userinfo.get('email', '').lower()
-    name = userinfo.get('name', '')
-    picture = userinfo.get('picture', '')
-    
-    if not google_id or not email:
-        raise HTTPException(400, 'Google에서 필요한 정보를 받지 못했습니다')
-    
-    # 기존 Google 연동 계정 확인 (provider_id 기반)
-    existing_user = db.query(User).filter(
-        User.provider == 'google',
-        User.provider_id == google_id
-    ).first()
-    
-    if existing_user:
-        # 기존 연동 계정으로 로그인
-        existing_user.token_version = (existing_user.token_version or 0) + 1
-        db.commit()
-        
-        claims = {"sub": existing_user.username, "user_id": existing_user.id, "tv": existing_user.token_version}
-        access_token = create_access_token(data=claims)
-        refresh_token = create_refresh_token(data=claims)
-        
-        # 프론트엔드로 토큰과 함께 리디렉트
-        frontend_url = f"{_front_base(request)}/login?access_token={access_token}&refresh_token={refresh_token}"
-        return RedirectResponse(url=frontend_url, status_code=303)
-    
-    # 동일 이메일의 기존 계정 확인 (일반 가입 또는 provider_id가 없는 Google 사용자)
-    existing_email_user = db.query(User).filter(User.email == email).first()
-    
-    if existing_email_user:
-        # 기존 계정이 있는 경우 Google 정보 업데이트하고 로그인
-        existing_email_user.provider = 'google'
-        existing_email_user.provider_id = google_id
-        if picture:
-            existing_email_user.profile_image = picture
-        
-        existing_email_user.token_version = (existing_email_user.token_version or 0) + 1
-        db.commit()
-        
-        claims = {"sub": existing_email_user.username, "user_id": existing_email_user.id, "tv": existing_email_user.token_version}
-        access_token = create_access_token(data=claims)
-        refresh_token = create_refresh_token(data=claims)
-        
-        frontend_url = f"{_front_base(request)}/login?access_token={access_token}&refresh_token={refresh_token}"
-        return RedirectResponse(url=frontend_url, status_code=303)
-    
-    # 새 계정 생성 필요 - 소셜 회원가입 페이지로 이동
-    request.session['pending_social'] = {
-        'provider': 'google',
-        'provider_id': google_id,
-        'email': email,
-        'name': name,
-        'picture': picture
+    if not userinfo:
+        raise HTTPException(400, 'Google userinfo not found')
+    sub = userinfo.get('sub')
+    email = (userinfo.get('email') or '').lower()
+    name = userinfo.get('name') or (email.split('@')[0] if email else 'google_user')
+    extra = {
+        'gender': None,
+        'picture': userinfo.get('picture')
     }
-    
-    frontend_url = f"{_front_base(request)}/social/onboarding"
-    return RedirectResponse(url=frontend_url, status_code=303)
+    try:
+        pic = extra.get('picture')
+        request.session['last_social_identity'] = {
+            'provider': 'google',
+            'email': email,
+            'name': name,
+            'sub': sub,
+            'picture': pic,
+            'profile_image': pic,
+        }
+        from app.utils.logging import logger as _logger
+        try: _logger.info(f"[social] google userinfo picture={pic}")
+        except Exception: pass
+    except Exception:
+        pass
+    return _issue_tokens_and_redirect(request, db, provider='google', provider_id=sub, email=email, name=name, extra=extra)
 
 
-@router.get('/login/naver')  
+@router.get('/login/naver')
 async def login_naver(request: Request):
-    """네이버 로그인 시작"""
     if not hasattr(oauth, 'naver'):
-        raise HTTPException(503, '네이버 로그인이 설정되지 않았습니다')
-    
+        raise HTTPException(503, 'Naver login not configured')
     redirect_uri = str(request.url_for('callback_naver'))
-    
-    # 세션 정리
+    # clear stale pending merge state when starting a new social login
     try:
         request.session.pop('pending_social', None)
         request.session.pop('merge_candidate_user_id', None)
     except Exception:
         pass
-    
-    # 네이버 인증 페이지로 리디렉트
-    return await oauth.naver.authorize_redirect(request, redirect_uri)
+    # fresh 모드 저장
+    try:
+        if request.query_params.get('fresh') in ('1','true','yes'):
+            request.session['social_fresh'] = True
+    except Exception:
+        pass
+    # 항상 재동의 화면 노출
+    return await oauth.naver.authorize_redirect(request, redirect_uri, auth_type='reprompt')
 
 
 @router.get('/callback/naver')
 async def callback_naver(request: Request, db: Session = Depends(get_db)):
-    """네이버 로그인 콜백 처리"""
     if not hasattr(oauth, 'naver'):
-        raise HTTPException(503, '네이버 로그인이 설정되지 않았습니다')
-    
+        raise HTTPException(503, 'Naver login not configured')
     try:
+        # 사용자가 동의를 취소한 경우(error=access_denied 등) 홈으로 돌려보낸다
+        if request.query_params.get('error'):
+            # optional: 메시지 플래시 용도 쿼리파라미터
+            front = _front_base(request)
+            return RedirectResponse(f"{front}/home", status_code=303)
         token = await oauth.naver.authorize_access_token(request)
     except Exception as e:
         msg = str(e).lower()
         if 'mismatch' in msg and 'state' in msg:
             return RedirectResponse(str(request.url_for('login_naver')), status_code=303)
-        raise
-    
-    # 네이버 사용자 정보 가져오기
+        # 취소/거부 등 기타 오류도 홈으로 안전 리다이렉트
+        front = _front_base(request)
+        return RedirectResponse(f"{front}/home", status_code=303)
+    # 프로필 불러오기
     resp = await oauth.naver.get('/v1/nid/me', token=token)
-    if not resp or not resp.is_success:
-        raise HTTPException(400, '네이버에서 사용자 정보를 받지 못했습니다')
-    
     data = resp.json()
-    userinfo = data.get('response', {})
-    
-    naver_id = userinfo.get('id')
-    email = userinfo.get('email', '').lower()
-    name = userinfo.get('name', '')
-    profile_image = userinfo.get('profile_image', '')
-    birth_year = userinfo.get('birthyear', '')
-    
-    if not naver_id or not email:
-        raise HTTPException(400, '네이버에서 필요한 정보를 받지 못했습니다')
-    
-    # 기존 네이버 연동 계정 확인
-    existing_user = db.query(User).filter(
-        User.provider == 'naver',
-        User.provider_id == naver_id
-    ).first()
-    
-    if existing_user:
-        # 기존 연동 계정으로 로그인
-        existing_user.token_version = (existing_user.token_version or 0) + 1
-        db.commit()
-        
-        claims = {"sub": existing_user.username, "user_id": existing_user.id, "tv": existing_user.token_version}
-        access_token = create_access_token(data=claims)
-        refresh_token = create_refresh_token(data=claims)
-        
-        frontend_url = f"{_front_base(request)}/login?access_token={access_token}&refresh_token={refresh_token}"
-        return RedirectResponse(url=frontend_url, status_code=303)
-    
-    # 동일 이메일의 기존 계정 확인
-    existing_email_user = db.query(User).filter(User.email == email).first()
-    
-    if existing_email_user and not existing_email_user.provider:
-        # 기존 일반 회원가입 계정에 네이버 연동
-        existing_email_user.provider = 'naver'
-        existing_email_user.provider_id = naver_id
-        if profile_image:
-            existing_email_user.profile_image = profile_image
-        if birth_year:
-            existing_email_user.birth_year = birth_year
-            
-        existing_email_user.token_version = (existing_email_user.token_version or 0) + 1
-        db.commit()
-        
-        claims = {"sub": existing_email_user.username, "user_id": existing_email_user.id, "tv": existing_email_user.token_version}
-        access_token = create_access_token(data=claims)
-        refresh_token = create_refresh_token(data=claims)
-        
-        frontend_url = f"{_front_base(request)}/login?access_token={access_token}&refresh_token={refresh_token}"
-        return RedirectResponse(url=frontend_url, status_code=303)
-    
-    # 새 계정 생성 필요
-    request.session['pending_social'] = {
-        'provider': 'naver',
-        'provider_id': naver_id,
-        'email': email,
-        'name': name,
-        'profile_image': profile_image,
-        'birth_year': birth_year
+    info = (data or {}).get('response') or {}
+    pid = info.get('id')
+    email = (info.get('email') or '').lower()
+    # name 동의가 없으면 nickname으로 보강
+    name = info.get('name') or info.get('nickname') or (email.split('@')[0] if email else 'naver_user')
+    extra = {
+        'gender': info.get('gender'),
+        'profile_image': info.get('profile_image'),
+        'birthyear': info.get('birthyear'),
+        'mobile': info.get('mobile') or info.get('mobile_e164'),
     }
-    
-    frontend_url = f"{_front_base(request)}/social/onboarding"
-    return RedirectResponse(url=frontend_url, status_code=303)
-
-
-@router.get('/social/pending')
-async def get_pending_social_info(request: Request):
-    """임시 저장된 소셜 로그인 정보 조회"""
-    pending = request.session.get('pending_social')
-    if not pending:
-        raise HTTPException(404, '대기 중인 소셜 로그인 정보가 없습니다')
-    
-    return {
-        'provider': pending.get('provider'),
-        'email': pending.get('email'),
-        'name': pending.get('name'),
-        'profile_image': pending.get('profile_image') or pending.get('picture'),
-        'birth_year': pending.get('birth_year')
-    }
-
-
-@router.post('/social/complete-signup')
-async def complete_social_signup(request: Request, payload: dict, db: Session = Depends(get_db)):
-    """소셜 로그인 회원가입 완료"""
-    pending = request.session.get('pending_social')
-    if not pending:
-        raise HTTPException(404, '대기 중인 소셜 로그인 정보가 없습니다')
-    
-    # 필수 정보 확인
-    username = payload.get('username', '').strip().lower()
-    phone = payload.get('phone', '').strip()
-    identification_number = payload.get('identification_number', '').strip()
-    region_living = payload.get('region_living', '').strip()
-    region_active = payload.get('region_active', '').strip()
-    
-    if not all([username, phone, identification_number, region_living, region_active]):
-        raise HTTPException(400, '필수 정보가 누락되었습니다')
-    
-    # 중복 체크
-    if db.query(User).filter(User.username == username).first():
-        raise HTTPException(400, '이미 사용중인 사용자명입니다')
-    
-    # 새 사용자 생성
-    from app.security import id_fingerprint, normalize_phone, encrypt_str
-    
-    # 전화번호 암호화 및 지문 생성
-    phone_encrypted = encrypt_str(phone) if phone else None
-    phone_fingerprint = id_fingerprint(phone) if phone else None
-    
-    # 주민번호 암호화 및 지문 생성  
-    identification_encrypted = encrypt_str(identification_number) if identification_number else None
-    identification_fingerprint = id_fingerprint(identification_number) if identification_number else None
-    
-    new_user = User(
-        username=username,
-        email=pending['email'],
-        password_hash='',  # 소셜 로그인은 비밀번호 없음
-        name=pending['name'],
-        phone=normalize_phone(phone) if phone else None,
-        phone_encrypted=phone_encrypted,
-        phone_fingerprint=phone_fingerprint,
-        identification_number=identification_encrypted,
-        identification_fingerprint=identification_fingerprint,
-        region_living=region_living,
-        region_active=region_active,
-        profile_image=pending.get('profile_image', pending.get('picture', '')),
-        provider=pending['provider'],
-        provider_id=pending['provider_id'],
-        birth_year=pending.get('birth_year', ''),
-        email_verified=True,  # 소셜 로그인은 이메일 인증 완료로 간주
-        is_active=True,
-        introduction='',  # 필수 필드이므로 빈 문자열
-        gender='other'  # 기본값
-    )
-    
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    
-    # 태그 연결 처리
-    selected_tags = payload.get('selected_tags', [])
-    if selected_tags:
-        from app.models.tag import Tag
-        from app.models.tag import UserTag
-        
-        for tag_name in selected_tags:
-            # 기존 태그 찾기 또는 생성
-            tag = db.query(Tag).filter(Tag.tag == tag_name).first()
-            if not tag:
-                tag = Tag(tag=tag_name, is_active=True)
-                db.add(tag)
-                db.flush()
-            
-            # 사용자-태그 연결
-            user_tag = UserTag(user_id=new_user.id, tag_id=tag.id)
-            db.add(user_tag)
-        
-        db.commit()
-    
-    # 세션 정리
-    request.session.pop('pending_social', None)
-    
-    # JWT 토큰 생성
-    claims = {"sub": new_user.username, "user_id": new_user.id, "tv": new_user.token_version or 0}
-    access_token = create_access_token(data=claims)
-    refresh_token = create_refresh_token(data=claims)
-    
-    return {
-        'access_token': access_token,
-        'refresh_token': refresh_token,
-        'token_type': 'bearer',
-        'user': {
-            'id': new_user.id,
-            'username': new_user.username,
-            'email': new_user.email,
-            'name': new_user.name
+    try:
+        pic = extra.get('profile_image')
+        request.session['last_social_identity'] = {
+            'provider': 'naver',
+            'email': email,
+            'name': name,
+            'sub': pid,
+            'picture': pic,
+            'profile_image': pic,
         }
-    }
+        from app.utils.logging import logger as _logger
+        try: _logger.info(f"[social] naver userinfo profile_image={pic}")
+        except Exception: pass
+    except Exception:
+        pass
+    return _issue_tokens_and_redirect(request, db, provider='naver', provider_id=pid, email=email, name=name, extra=extra)
 
+
+def _issue_tokens_and_redirect(request: Request, db: Session, provider: str, provider_id: str | None, email: str | None, name: str | None, extra: dict | None = None):
+    if not provider_id and not email:
+        raise HTTPException(400, 'No identifier from provider')
+    # 매핑: provider_id -> email -> 신규
+    user = None
+    if provider_id:
+        user = db.query(User).filter(User.provider == provider, User.provider_id == provider_id).first()
+    # 사용자가 fresh=1로 요청한 경우, 기존 연동을 분리하고 새 계정으로 유입
+    try:
+        fresh = bool(request.session.pop('social_fresh', False))
+    except Exception:
+        fresh = False
+    if user and fresh:
+        # 기존 사용자에서 소셜 연동 해제
+        user.provider = None
+        user.provider_id = None
+        db.commit(); db.refresh(user)
+        user = None
+    if not user and email:
+        user = db.query(User).filter(User.email == email).first()
+    DEFAULT_PROFILE_IMAGE = "/static/pictures/defaultprofile.jpeg"
+
+    if user:
+        # 기존 사용자 업데이트(연동/보강)
+        # 이메일로만 매칭된 경우(아직 provider_id 미연동): 이름까지 같은 경우에만 머지로 안내
+        if (not getattr(user, 'provider', None) or not getattr(user, 'provider_id', None)) and provider_id:
+            def _norm(s: str | None) -> str:
+                return (s or '').strip().casefold()
+            names_match = _norm(user.name) == _norm(name)
+            if not names_match:
+                # 이름이 다르면 신규 온보딩으로 유도 (주민번호 확인 후 연동 안내는 온보딩에서 처리)
+                try:
+                    pic = (extra.get('picture') if extra else None) or (extra.get('profile_image') if extra else None)
+                    request.session['pending_social'] = request.session.get('pending_social') or {
+                        'provider': provider, 'email': email, 'name': name, 'sub': provider_id,
+                        'picture': pic,
+                        'profile_image': pic,
+                    }
+                except Exception:
+                    pass
+                front = _front_base(request)
+                return RedirectResponse(f"{front}/social/onboarding?provider={provider}", status_code=303)
+            try:
+                pic = (extra.get('picture') if extra else None) or (extra.get('profile_image') if extra else None)
+                request.session['pending_social'] = request.session.get('pending_social') or {
+                    'provider': provider, 'email': email, 'name': name, 'sub': provider_id,
+                    'picture': pic,
+                    'profile_image': pic,
+                }
+                request.session['merge_candidate_user_id'] = user.id
+            except Exception:
+                pass
+            front = _front_base(request)
+            return RedirectResponse(f"{front}/social/merge", status_code=303)
+
+        changed = False
+        if provider and provider_id and (not getattr(user, 'provider', None) or not getattr(user, 'provider_id', None)):
+            user.provider = provider
+            user.provider_id = provider_id
+            changed = True
+
+        if extra:
+            # 프로필 이미지: 비어있거나 기본 이미지이면 갱신
+            pic = extra.get('picture') or extra.get('profile_image')
+            if pic and (not user.profile_image or user.profile_image == DEFAULT_PROFILE_IMAGE):
+                user.profile_image = pic
+                changed = True
+            # 휴대전화: 비어 있으면 설정
+            mobile = extra.get('mobile')
+            if mobile and not user.phone_encrypted:
+                try:
+                    user.set_phone(mobile)
+                    changed = True
+                except Exception:
+                    pass
+            # 출생연도: 비어 있으면 설정
+            if extra.get('birthyear') and not getattr(user, 'birth_year', None):
+                user.birth_year = str(extra.get('birthyear'))
+                changed = True
+            # 성별: other이면 갱신
+            g = (extra.get('gender') or '').lower()
+            if g and (user.gender == 'other'):
+                if g in ('m','male','1'):
+                    user.gender = 'male'; changed = True
+                elif g in ('f','female','0'):
+                    user.gender = 'female'; changed = True
+        if changed:
+            db.commit(); db.refresh(user)
+
+        claims = {"sub": user.username, "user_id": user.id, "tv": (user.token_version or 0)}
+        access = create_access_token(data=claims)
+        refresh = create_refresh_token(data=claims)
+        
+        # 쿠키 설정 (듀얼 인증 지원)
+        front = _front_base(request)
+        url = f"{front}/auth/callback?access={access}&refresh={refresh}&provider={provider}"
+        response = RedirectResponse(url, status_code=303)
+        
+        # HttpOnly 쿠키 설정으로 세션 유지
+        from app.core.config import settings
+        secure_flag = not settings.debug  # prod: True, dev: False
+        response.set_cookie(
+            key="access_token",
+            value=access,
+            httponly=True,
+            secure=secure_flag,
+            samesite="lax",
+            max_age=settings.jwt_access_token_expire_minutes * 60,
+            path="/",
+        )
+        return response
+    else:
+        # 기존 계정 없음 → 온보딩으로 유도 (여기서 신규 생성은 하지 않음)
+        try:
+            request.session['pending_social'] = request.session.get('last_social_identity') or {
+                'provider': provider,
+                'email': email,
+                'name': name,
+                'sub': provider_id,
+            }
+            if extra:
+                pic = (extra.get('picture') if extra else None) or (extra.get('profile_image') if extra else None)
+                request.session['pending_social']['picture'] = pic
+                request.session['pending_social']['profile_image'] = pic
+        except Exception:
+            pass
+        front = _front_base(request)
+        url = f"{front}/social/onboarding?provider={provider}"
+        return RedirectResponse(url, status_code=303)
+
+
+@router.post('/match-existing-social')
+def match_existing_social(payload: dict = Body(...), db: Session = Depends(get_db)):
+    """
+    소셜 스텝1에서 기존 계정 존재 가능성을 빠르게 판단하기 위한 매칭 API.
+    입력: { name, phone, identification }
+    출력: { by_name_phone, by_name_ident, by_phone_ident, by_ident_only, email_masked?, username_masked? }
+    """
+    from app.models.user import User
+    name = (payload.get('name') or '').strip()
+    raw_phone = (payload.get('phone') or '').strip()
+    raw_ident = (payload.get('identification') or '').strip()
+
+    # 정규화
+    p_norm = None; p_fp = None
+    try:
+        if raw_phone:
+            p_norm = normalize_phone(raw_phone)
+            if p_norm: p_fp = id_fingerprint(p_norm)
+    except Exception:
+        p_norm = None; p_fp = None
+    i_fp = None
+    try:
+        if raw_ident:
+            import re
+            ident_digits = re.sub(r'\D+', '', raw_ident)
+            if len(ident_digits) == 13:
+                i_fp = id_fingerprint(ident_digits)
+    except Exception:
+        i_fp = None
+
+    # 매칭 쿼리들
+    def q_by_name_phone():
+        if not (name and (p_fp or p_norm)): return None
+        q = db.query(User).filter(User.name == name)
+        if p_fp:
+            q = q.filter(User.phone_fingerprint == p_fp)
+        else:
+            q = q.filter(User.phone == p_norm)
+        return q.first()
+
+    def q_by_name_ident():
+        if not (name and i_fp): return None
+        return db.query(User).filter(User.name == name, User.identification_fingerprint == i_fp).first()
+
+    def q_by_phone_ident():
+        if not ((p_fp or p_norm) and i_fp): return None
+        q = db.query(User).filter(User.identification_fingerprint == i_fp)
+        if p_fp:
+            q = q.filter(User.phone_fingerprint == p_fp)
+        else:
+            q = q.filter(User.phone == p_norm)
+        return q.first()
+
+    def q_by_ident_only():
+        if not i_fp: return None
+        return db.query(User).filter(User.identification_fingerprint == i_fp).first()
+
+    m_name_phone = q_by_name_phone()
+    m_name_ident = q_by_name_ident()
+    m_phone_ident = q_by_phone_ident()
+    m_ident_only = q_by_ident_only()
+
+    # 하나라도 일치하는 사용자가 있으면 마스킹 정보 제공
+    picked = m_ident_only or m_name_ident or m_name_phone or m_phone_ident
+    def mask_username(u: str | None) -> str | None:
+        if not u: return None
+        if len(u) <= 2: return u[0] + '*'
+        return u[:2] + '*' * max(1, len(u) - 3) + u[-1]
+    def mask_email(e: str | None) -> str | None:
+        if not e or '@' not in e: return None
+        local, dom = e.split('@', 1)
+        lm = (local[:2] + '*' * max(1, len(local) - 3) + local[-1]) if len(local) > 2 else (local[0] + '*')
+        parts = dom.split('.')
+        if len(parts) == 1:
+            d = parts[0]
+            dm = (d[:2] + '*' * max(1, len(d) - 3) + d[-1]) if len(d) > 2 else (d[0] + '*')
+            return f"{lm}@{dm}"
+        first = parts[0]
+        rest = '.'.join(parts[1:])
+        fm = (first[:2] + '*' * max(1, len(first) - 3) + first[-1]) if len(first) > 2 else (first[0] + '*')
+        return f"{lm}@{fm}{('.' + rest) if rest else ''}"
+
+    return {
+        'by_name_phone': bool(m_name_phone),
+        'by_name_ident': bool(m_name_ident),
+        'by_phone_ident': bool(m_phone_ident),
+        'by_ident_only': bool(m_ident_only),
+        'email_masked': mask_email(getattr(picked, 'email', None)) if picked else None,
+        'username_masked': mask_username(getattr(picked, 'username', None)) if picked else None,
+    }
 
 @router.get('/identity/last')
 async def last_social_identity(request: Request):
-    """마지막 소셜 로그인 정보 반환"""
+    # 우선 pending_social(생성 지연), 없으면 last_social_identity
     data = request.session.get('pending_social') or request.session.get('last_social_identity') or {}
     return data
 
+# -------------------------
+# Merge UI: info for confirmation
+# -------------------------
+@router.get('/social/merge-info')
+async def social_merge_info(request: Request, db: Session = Depends(get_db)):
+    ident = request.session.get('pending_social') or {}
+    uid = request.session.get('merge_candidate_user_id')
+    if not uid:
+        raise HTTPException(400, 'No merge candidate')
+    user = db.query(User).get(int(uid))
+    if not user:
+        raise HTTPException(404, 'User not found')
+    # phone masked
+    def _mask_phone(raw: str | None) -> str | None:
+        if not raw:
+            return None
+        import re
+        d = re.sub(r'\D+', '', raw)
+        if len(d) >= 7:
+            head = d[:3]
+            tail = d[-2:]
+            if len(d) == 11 and d.startswith('010'):
+                return f"010-****-**{tail}"
+            return f"{head}-****-**{tail}"
+        return None
+    phone_plain = None
+    try:
+        phone_plain = user.get_phone()
+    except Exception:
+        phone_plain = None
+    masked = _mask_phone(phone_plain) or _mask_phone(user.phone)
+    return {
+        'existing': {
+            'id': user.id,
+            'username': user.username,
+            'name': user.name,
+            'email': user.email,
+            'phone_masked': masked,
+            'profile_image_url': user.profile_image,
+        },
+        'social': {
+            'provider': ident.get('provider'),
+            'email': ident.get('email'),
+            'name': ident.get('name'),
+            'picture': ident.get('picture'),
+        }
+    }
 
-@router.post('/social/finalize')
-async def social_finalize(request: Request, payload: dict = Body(...), db: Session = Depends(get_db)):
-    """소셜 로그인 3단계 완료 후 사용자 생성"""
-    ident = request.session.get('pending_social') or request.session.get('last_social_identity')
+# -------------------------
+# Prepare merge from Step1 (set candidate by login, then show merge page)
+# -------------------------
+@router.post('/social/prepare-merge')
+async def social_prepare_merge(request: Request, payload: dict = Body(...), db: Session = Depends(get_db)):
+    login = (payload.get('login') or '').strip().lower()
+    if not login:
+        raise HTTPException(400, 'login is required')
+
+    # ensure we have latest social identity in session
+    # Prefer last_social_identity (most recent login) over leftover pending_social
+    last_ident = request.session.get('last_social_identity')
+    pending_ident = request.session.get('pending_social')
+    ident = last_ident or pending_ident
     if not ident:
         raise HTTPException(400, 'No pending social identity')
-    
-    provider = ident.get('provider')
-    provider_id = ident.get('provider_id') or ident.get('sub')  # 둘 다 지원
-    email = (ident.get('email') or '').lower()
-    
-    # 필수 데이터 검증
-    required_fields = ['name', 'username', 'phone', 'identification_number']
-    for field in required_fields:
-        if not payload.get(field):
-            raise HTTPException(400, f'{field} is required')
-    
-    # 기존 계정 감지 및 연동 제안
-    from app.security import id_fingerprint, normalize_phone
-    
-    # 1. 사용자명 중복 검사
-    existing_user = db.query(User).filter(User.username == payload['username'].lower()).first()
-    if existing_user:
-        raise HTTPException(400, '이미 사용중인 사용자명입니다')
-    
-    # 2. 기존 계정 찾기 (이메일, 전화번호, 주민번호로)
-    merge_candidates = []
-    
-    # 이메일로 기존 계정 찾기
-    if email:
-        email_user = db.query(User).filter(User.email == email).first()
-        if email_user and not email_user.provider:  # 일반 회원가입 계정
-            merge_candidates.append(('email', email_user))
-    
-    # 전화번호로 기존 계정 찾기
+
+    # find existing user by username or email
+    user = db.query(User).filter((User.username == login) | (User.email == login)).first()
+    if not user:
+        raise HTTPException(404, '사용자를 찾을 수 없습니다')
+
     try:
-        normalized_phone = normalize_phone(payload['phone'])
-        if normalized_phone:
-            phone_fp = id_fingerprint(normalized_phone)
-            phone_user = db.query(User).filter(User.phone_fingerprint == phone_fp).first()
-            if phone_user and not phone_user.provider and phone_user not in [u[1] for u in merge_candidates]:
-                merge_candidates.append(('phone', phone_user))
+        request.session['merge_candidate_user_id'] = user.id
+        # If pending_social exists for a different provider, overwrite with latest
+        if pending_ident and last_ident and (pending_ident.get('provider') != last_ident.get('provider')):
+            request.session['pending_social'] = last_ident
+        else:
+            request.session['pending_social'] = ident
     except Exception:
         pass
-    
-    # 주민번호로 기존 계정 찾기 (선택적)
-    try:
-        if payload.get('identification_number'):
-            id_fp = id_fingerprint(payload['identification_number'])
-            id_user = db.query(User).filter(User.identification_fingerprint == id_fp).first()
-            if id_user and not id_user.provider and id_user not in [u[1] for u in merge_candidates]:
-                merge_candidates.append(('identification', id_user))
-    except Exception:
-        pass
-    
-    # 기존 계정이 발견되면 연동 페이지로 안내
-    if merge_candidates:
-        # 세션에 연동 후보 저장
-        candidate = merge_candidates[0][1]  # 첫 번째 후보 선택
-        match_type = merge_candidates[0][0]
-        
+
+    front = _front_base(request)
+    return {'url': f"{front}/social/merge"}
+
+# -------------------------
+# Merge apply: require password, optional field updates
+# -------------------------
+@router.post('/social/merge-apply')
+async def social_merge_apply(request: Request, payload: dict = Body(...), db: Session = Depends(get_db)):
+    ident = request.session.get('pending_social') or {}
+    uid = request.session.get('merge_candidate_user_id')
+    if not uid or not ident:
+        raise HTTPException(400, 'No pending social merge')
+    user: User = db.query(User).get(int(uid))
+    if not user:
+        raise HTTPException(404, 'User not found')
+    password = (payload.get('password') or '').strip()
+    if not user.verify_password(password):
+        raise HTTPException(401, '비밀번호가 올바르지 않습니다')
+    # apply updates
+    if payload.get('update_name') and ident.get('name'):
+        user.name = ident.get('name')
+    if payload.get('update_profile_image') and ident.get('picture'):
+        user.profile_image = ident.get('picture')
+    # 이메일 변경 옵션
+    if payload.get('update_email') and ident.get('email'):
+        new_email = (ident.get('email') or '').strip().lower()
+        if new_email and new_email != (user.email or '').strip().lower():
+            # 중복 검사
+            exists = db.query(User.id).filter(User.email == new_email, User.id != user.id).first()
+            if exists:
+                raise HTTPException(409, '이미 사용 중인 이메일입니다')
+            user.email = new_email
+    if payload.get('update_phone') and payload.get('phone'):
         try:
-            request.session['merge_candidate'] = {
-                'user_id': candidate.id,
-                'username': candidate.username,
-                'email': candidate.email,
-                'name': candidate.name,
-                'match_type': match_type,
-                'social_data': {
-                    'provider': provider,
-                    'provider_id': provider_id,
-                    'email': email,
-                    'name': payload['name'],
-                    'picture': ident.get('picture')
-                }
-            }
+            user.set_phone(payload.get('phone'))
         except Exception:
             pass
-        
-        # 프론트엔드에 연동 제안 응답
-        return {
-            "action": "merge_required",
-            "message": "기존 계정이 발견되었습니다. 계정을 연동하시겠습니까?",
-            "match_type": match_type,
-            "existing_user": {
-                "username": candidate.username,
-                "email": candidate.email,
-                "name": candidate.name
+    # link provider
+    user.provider = ident.get('provider')
+    user.provider_id = ident.get('sub')
+    user.is_active = True
+    user.email_verified = True
+    db.commit(); db.refresh(user)
+    # clear session
+    try:
+        request.session.pop('pending_social', None)
+        request.session.pop('merge_candidate_user_id', None)
+    except Exception:
+        pass
+    # tokens
+    claims = {"sub": user.username, "user_id": user.id, "tv": (user.token_version or 0)}
+    access = create_access_token(data=claims)
+    refresh = create_refresh_token(data=claims)
+    return {"access_token": access, "refresh_token": refresh, "token_type": "bearer"}
+
+# -------------------------
+# Finalize (create user after onboarding)
+# -------------------------
+@router.post('/social/finalize')
+async def social_finalize(request: Request, payload: dict = Body(...), db: Session = Depends(get_db)):
+    """
+    소셜 온보딩 완료 → 새 계정 생성 또는 연동 유도
+    - 자동 생성은 콜백에서 하지 않음. 이 엔드포인트에서 최종 생성.
+    - identification_number가 기존 계정과 일치하면 생성하지 않고 연동 안내 정보 반환.
+    - username은 반드시 명시(자동 생성 금지) → 미제공 시 400.
+    """
+    ident_sess = request.session.get('pending_social') or request.session.get('last_social_identity')
+    if not ident_sess:
+        raise HTTPException(400, 'No pending social identity')
+
+    provider = ident_sess.get('provider')
+    provider_id = ident_sess.get('sub')
+    email = (ident_sess.get('email') or '').lower()
+    social_name = ident_sess.get('name')
+
+    # 이미 연결된 계정이면 토큰만 재발급
+    linked = None
+    if provider and provider_id:
+        linked = db.query(User).filter(User.provider == provider, User.provider_id == provider_id).first()
+    if linked:
+        claims = {"sub": linked.username, "user_id": linked.id, "tv": (linked.token_version or 0)}
+        return JSONResponse({"access_token": create_access_token(data=claims), "refresh_token": create_refresh_token(data=claims), "token_type": "bearer", "user_id": linked.id})
+
+    # 필수 입력: username, identification_number
+    username = (payload.get('username') or '').strip().lower()
+    if not username:
+        raise HTTPException(400, 'username is required')
+    import re as _re
+    if not _re.match(r'^[a-z][a-z0-9]*$', username):
+        raise HTTPException(400, 'username must start with a letter and contain only letters and digits')
+    identification_number = (payload.get('identification_number') or '').strip()
+    if not identification_number:
+        raise HTTPException(400, 'identification_number is required')
+
+    # 주민번호로 기존 사용자 존재 여부 확인 → 있으면 연동 유도 정보 반환
+    try:
+        fp_ident = id_fingerprint(identification_number)
+    except Exception:
+        raise HTTPException(400, '주민등록번호 형식이 올바르지 않습니다')
+    existing_by_ident = db.query(User).filter(User.identification_fingerprint == fp_ident).first()
+    if existing_by_ident:
+        # 연동 안내 (아이디/이메일 전달)
+        return JSONResponse(
+            status_code=409,
+            content={
+                'action': 'merge_required',
+                'message': '기존 계정이 확인되었습니다. 해당 계정으로 로그인하여 연동해 주세요.',
+                'existing': {
+                    'id': existing_by_ident.id,
+                    'username': existing_by_ident.username,
+                    'email': existing_by_ident.email,
+                    'name': existing_by_ident.name,
+                }
             }
-        }
-    
-    # 새 사용자 생성
+        )
+
+    # username/email 중복 검사
+    if db.query(User.id).filter(User.username == username).first():
+        raise HTTPException(409, '이미 사용 중인 아이디입니다')
+    if email and db.query(User.id).filter(User.email == email).first():
+        raise HTTPException(409, '이미 사용 중인 이메일입니다')
+
+    # 생성
     user = User(
-        username=payload['username'].lower(),
-        email=email or f"{payload['username']}@example.com",
-        name=payload['name'],
+        username=username,
+        email=email or f"{username}@example.com",
+        name=(payload.get('name') or '').strip() or social_name or username,
         provider=provider,
         provider_id=provider_id,
         email_verified=True,
         is_active=True,
-        gender=payload.get('gender') or 'other',
-        region_living=payload.get('region_living') or '',
-        region_active=payload.get('region_active') or '',
-        profile_image=payload.get('profile_image') or ident.get('picture') or '/static/pictures/defaultprofile.jpeg',
-        introduction=payload.get('introduction') or '',
-        birth_year=ident.get('birth_year', ''),
+        introduction=(payload.get('introduction') or ''),
     )
-    
-    # 비밀번호 설정 (소셜 로그인이므로 랜덤)
-    user.set_password(secrets.token_urlsafe(12))
-    
-    # 전화번호 설정
+    # 비밀번호는 선택 입력 (없으면 랜덤)
+    raw_pw = (payload.get('password') or '').strip()
+    if raw_pw:
+        if not validate_password_strength(raw_pw):
+            raise HTTPException(400, '비밀번호가 요구사항을 충족하지 않습니다')
+        user.set_password(raw_pw)
+    else:
+        user.set_password(secrets.token_urlsafe(12))
+
+    # 필수: 주민등록번호 저장 (검증 포함)
     try:
-        user.set_phone(payload['phone'])
-    except Exception as e:
-        raise HTTPException(400, f'전화번호 형식이 올바르지 않습니다: {str(e)}')
-    
-    # 주민번호 설정
+        user.set_identification_number(identification_number)
+    except Exception:
+        raise HTTPException(400, '주민등록번호 형식이 올바르지 않습니다')
+
+    # 보조 필드
+    pic = ident_sess.get('picture') or (payload.get('profile_image') or '').strip()
+    if pic:
+        user.profile_image = pic
+    if payload.get('phone'):
+        try:
+            user.set_phone(payload.get('phone'))
+        except Exception:
+            pass
+    if payload.get('gender') in ('male','female','other', None, ''):
+        user.gender = (payload.get('gender') or user.gender)
+    user.region_living = payload.get('region_living') or ''
+    user.region_active = payload.get('region_active') or ''
+
+    # 선제 중복: 전화번호 충돌
     try:
-        user.set_identification_number(payload['identification_number'])
-    except Exception as e:
-        raise HTTPException(400, f'주민등록번호 형식이 올바르지 않습니다: {str(e)}')
-    
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    
-    # 태그 연결 처리
-    selected_tags = payload.get('selected_tags', [])
-    if selected_tags:
-        from app.models.tag import Tag
-        from app.models.tag import UserTag
-        
-        for tag_name in selected_tags:
-            # 기존 태그 찾기 또는 생성
-            tag = db.query(Tag).filter(Tag.tag == tag_name).first()
-            if not tag:
-                tag = Tag(tag=tag_name, is_active=True)
-                db.add(tag)
-                db.flush()
-            
-            # 사용자-태그 연결
-            user_tag = UserTag(user_id=user.id, tag_id=tag.id)
-            db.add(user_tag)
-        
-        db.commit()
-    
-    # 세션 정리
-    try:
-        request.session.pop('pending_social', None)
-        request.session.pop('last_social_identity', None)
+        if payload.get('phone'):
+            p_norm = normalize_phone(payload.get('phone'))
+            p_fp = id_fingerprint(p_norm) if p_norm else None
+            if p_fp:
+                exists_phone = db.query(User.id).filter(User.phone_fingerprint == p_fp).first()
+                if exists_phone:
+                    raise HTTPException(409, '이미 사용 중인 전화번호입니다')
+    except HTTPException:
+        raise
     except Exception:
         pass
-    
-    # JWT 토큰 생성
-    claims = {"sub": user.username, "user_id": user.id, "tv": user.token_version or 0}
-    access_token = create_access_token(data=claims)
-    refresh_token = create_refresh_token(data=claims)
-    
-    return {
-        "access_token": access_token, 
-        "refresh_token": refresh_token, 
+
+    try:
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, '중복된 정보가 있어 가입을 완료할 수 없습니다')
+
+    # 세션 정리 후 토큰 발급
+    try:
+        request.session.pop('pending_social', None)
+    except Exception:
+        pass
+    claims = {"sub": user.username, "user_id": user.id, "tv": (user.token_version or 0)}
+    return JSONResponse({
+        "access_token": create_access_token(data=claims),
+        "refresh_token": create_refresh_token(data=claims),
         "token_type": "bearer",
         "user_id": user.id
-    }
+    })
 
 
-@router.get('/social/merge-info')
-async def get_merge_info(request: Request):
-    """계정 연동 정보 조회"""
-    merge_data = request.session.get('merge_candidate')
-    if not merge_data:
-        raise HTTPException(404, '연동할 계정 정보가 없습니다')
-    
-    # 민감한 정보 마스킹은 현재 구현에서 사용하지 않음
-    
-    return {
-        "existing_account": {
-            "username": merge_data['username'],
-            "email": merge_data['email'],
-            "name": merge_data['name'],
-            "match_type": merge_data['match_type']
-        },
-        "social_data": merge_data['social_data']
-    }
+# -------------------------
+# Link to existing account (no JWT yet)
+# -------------------------
+@router.post('/social/link-existing')
+async def social_link_existing(request: Request, payload: dict = Body(...), db: Session = Depends(get_db)):
+    ident = request.session.get('pending_social') or request.session.get('last_social_identity')
+    if not ident:
+        raise HTTPException(400, 'No pending social identity')
+    provider = ident.get('provider'); provider_id = ident.get('sub')
+    if not (provider and provider_id):
+        raise HTTPException(400, 'Invalid social identity')
 
+    login = (payload.get('login') or '').strip().lower(); password = payload.get('password') or ''
+    if not (login and password):
+        raise HTTPException(400, 'login and password are required')
+    target = db.query(User).filter((User.username == login) | (User.email == login)).first()
+    if not target or not target.verify_password(password):
+        raise HTTPException(401, '아이디/비밀번호가 올바르지 않습니다')
 
-@router.post('/social/merge-confirm')
-async def confirm_merge(request: Request, payload: dict = Body(...), db: Session = Depends(get_db)):
-    """계정 연동 확인 (비밀번호 검증)"""
-    merge_data = request.session.get('merge_candidate')
-    if not merge_data:
-        raise HTTPException(404, '연동할 계정 정보가 없습니다')
-    
-    password = payload.get('password')
-    if not password:
-        raise HTTPException(400, '비밀번호를 입력해주세요')
-    
-    # 기존 계정 조회 및 비밀번호 확인
-    user = db.query(User).filter(User.id == merge_data['user_id']).first()
-    if not user or not user.verify_password(password):
-        raise HTTPException(401, '비밀번호가 올바르지 않습니다')
-    
-    # 소셜 계정 정보로 기존 계정 업데이트
-    social_data = merge_data['social_data']
-    user.provider = social_data['provider']
-    user.provider_id = social_data['provider_id']
-    user.email_verified = True
-    
-    # 프로필 이미지 업데이트 (기존이 기본 이미지인 경우)
-    if social_data.get('picture') and (not user.profile_image or 'defaultprofile' in user.profile_image):
-        user.profile_image = social_data['picture']
-    
-    db.commit()
-    db.refresh(user)
-    
-    # 세션 정리
-    try:
-        request.session.pop('merge_candidate', None)
-        request.session.pop('pending_social', None)
-        request.session.pop('last_social_identity', None)
-    except:
-        pass
-    
-    # JWT 토큰 생성
-    claims = {"sub": user.username, "user_id": user.id, "tv": user.token_version or 0}
-    access_token = create_access_token(data=claims)
-    refresh_token = create_refresh_token(data=claims)
-    
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "bearer",
-        "user_id": user.id,
-        "message": "계정 연동이 완료되었습니다"
-    }
+    # 바인딩
+    if target.provider and target.provider_id and (target.provider != provider or target.provider_id != provider_id):
+        raise HTTPException(409, '이미 다른 소셜이 연결되어 있습니다')
+    target.provider = provider; target.provider_id = provider_id
+    target.is_active = True; target.email_verified = True
+    db.commit(); db.refresh(target)
+    try: request.session.pop('pending_social', None)
+    except Exception: pass
 
-
-@router.post('/social/merge-decline')
-async def decline_merge(request: Request):
-    """계정 연동 거부 - 새 계정으로 진행"""
-    try:
-        request.session.pop('merge_candidate', None)
-    except:
-        pass
-    
-    return {
-        "message": "새 계정으로 진행합니다. 다른 정보를 입력해주세요.",
-        "action": "continue_new_account"
-    }
+    claims = {"sub": target.username, "user_id": target.id, "tv": (target.token_version or 0)}
+    access = create_access_token(data=claims)
+    refresh = create_refresh_token(data=claims)
+    return JSONResponse({"access_token": access, "refresh_token": refresh, "token_type": "bearer", "user_id": target.id})

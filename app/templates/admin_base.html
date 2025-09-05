@@ -34,7 +34,7 @@
           <button class="kt-link" type="submit">로그아웃</button>
         </form>
       {% else %}
-        {% if not on_login and not on_signup %}
+        {% if not on_admin and not on_login and not on_signup %}
           <a href="/login" class="kt-link">로그인</a>
           <a href="/signup" class="kt-link">회원가입</a>
         {% endif %}

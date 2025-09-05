@@ -29,10 +29,9 @@ class SignUpIn(BaseModel):
     def validate_username(cls, v: str) -> str:
         if not v:
             raise ValueError('사용자명은 필수입니다')
-        if not re.match(r'^[a-zA-Z0-9_]+$', v):
-            raise ValueError('사용자명은 영문, 숫자, 언더스코어(_)만 사용 가능합니다')
-        if not v[0].isalpha():
-            raise ValueError('사용자명은 영문으로 시작해야 합니다')
+        # 영문/숫자만 허용, 첫 글자는 영문
+        if not re.match(r'^[A-Za-z][A-Za-z0-9]*$', v):
+            raise ValueError('사용자명은 영문으로 시작하고, 영문/숫자만 사용할 수 있습니다')
         return v.lower()
 
     # ── [신규] phone 정규화/길이 검증(숫자만 9~15자리 권장)
@@ -63,6 +62,9 @@ class SignUpIn(BaseModel):
             return ''
         if len(v) < 2:
             raise ValueError('실명은 2자 이상이어야 합니다')
+        # 한글만 허용 (공백 허용 X). 필요 시 공백 허용하려면 패턴 수정
+        if not re.match(r'^[가-힣]{2,}$', v):
+            raise ValueError('실명은 한글 2자 이상이어야 합니다')
         return v
 
     @validator('identification_number', pre=True)
@@ -73,7 +75,8 @@ class SignUpIn(BaseModel):
         if not re.match(r'^\d{13}$', v):
             raise ValueError('식별번호는 13자리 숫자여야 합니다')
         gender_code = v[6]
-        if gender_code not in ['1', '2', '3', '4']:
+        # 모델(User.set_identification_number)과 동일 기준: 7번째 1~8 허용
+        if gender_code not in ['1','2','3','4','5','6','7','8']:
             raise ValueError('올바르지 않은 식별번호 형식입니다')
         return v
 

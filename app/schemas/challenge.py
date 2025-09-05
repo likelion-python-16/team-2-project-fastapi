@@ -48,6 +48,9 @@ class ChallengeCreate(BaseModel):
     payment_type: PaymentType = PaymentType.free
     entry_fee: Optional[int] = 0
     monthly_fee: Optional[int] = 0
+    # ← 레거시 호환 (UI가 fee/participation_fee를 보낼 수 있음)
+    fee: Optional[int] = None
+    participation_fee: Optional[int] = None
 
     # 참가 인원
     min_participants: Optional[int] = 1
@@ -70,6 +73,7 @@ class ChallengeCreate(BaseModel):
     same_place_for_all_rounds: Optional[bool] = False
     default_place_name: Optional[str] = None
     default_address: Optional[str] = None  # road_address 통합
+    default_map_url: Optional[str] = None  # 대표 지도 링크
     default_road_address: Optional[str] = None  # 호환성
     default_map_url: Optional[str] = None  # 호환성
     default_place_id: Optional[str] = None  # 호환성
@@ -220,6 +224,9 @@ class ChallengeUpdate(BaseModel):
     payment_type: Optional[PaymentType] = None
     entry_fee: Optional[int] = None
     monthly_fee: Optional[int] = None
+    # ← 레거시 호환
+    fee: Optional[int] = None
+    participation_fee: Optional[int] = None
 
     # 참가 인원
     min_participants: Optional[int] = None
@@ -242,6 +249,7 @@ class ChallengeUpdate(BaseModel):
     same_place_for_all_rounds: Optional[bool] = None
     default_place_name: Optional[str] = None
     default_address: Optional[str] = None  # road_address 통합
+    default_map_url: Optional[str] = None  # 대표 지도 링크
     default_road_address: Optional[str] = None  # 호환성
     default_map_url: Optional[str] = None  # 호환성
     default_place_id: Optional[str] = None  # 호환성
@@ -384,11 +392,13 @@ class ChallengeResponse(BaseModel):
     same_place_for_all_rounds: bool = False
     default_place_name: Optional[str] = None
     default_address: Optional[str] = None  # road_address 통합
+    default_map_url: Optional[str] = None
     default_latitude: Optional[float] = None
     default_longitude: Optional[float] = None
 
     # 기본 설정
-    require_approval: bool = False
+    # 일부 레거시 레코드에서 NULL일 수 있으므로 Optional로 허용하고 기본값 False로 반환
+    require_approval: Optional[bool] = False
     is_public: bool = True
 
     # 태그

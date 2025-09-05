@@ -1,81 +1,53 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>이메일 인증 실패</title>
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .container {
-            background: white;
-            padding: 40px;
-            border-radius: 12px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-            text-align: center;
-            max-width: 400px;
-            width: 90%;
-        }
-        .error-icon {
-            width: 64px;
-            height: 64px;
-            background: #ef4444;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 20px;
-            color: white;
-            font-size: 32px;
-        }
-        h1 {
-            color: #1f2937;
-            margin-bottom: 16px;
-            font-size: 24px;
-        }
-        p {
-            color: #6b7280;
-            margin-bottom: 24px;
-            line-height: 1.5;
-        }
-        .btn {
-            background: #4f46e5;
-            color: white;
-            padding: 12px 24px;
-            border: none;
-            border-radius: 8px;
-            text-decoration: none;
-            display: inline-block;
-            font-weight: 500;
-            transition: background 0.2s;
-            margin: 0 8px;
-        }
-        .btn:hover {
-            background: #4338ca;
-        }
-        .btn-secondary {
-            background: #6b7280;
-        }
-        .btn-secondary:hover {
-            background: #4b5563;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="error-icon">❌</div>
-        <h1>이메일 인증에 실패했습니다</h1>
-        <p>인증 링크가 만료되었거나 유효하지 않습니다.<br>다시 시도해 주세요.</p>
-        <a href="/login" class="btn">로그인 페이지로</a>
-        <a href="/" class="btn btn-secondary">홈으로</a>
+{% extends "final.html" %}
+{% block title %}이메일 인증 실패{% endblock %}
+{% block content %}
+
+<!-- ✅ 상위 레이아웃 영향 무시: 뷰포트 전체를 덮는 fixed 그리드 -->
+<div class="fixed inset-0 grid place-items-center px-4 z-10">
+  <div class="kt-card w-full max-w-[500px] mx-auto">
+    <div class="kt-card-content p-8 text-center">
+      <h2 class="text-xl font-semibold mb-2">❌ 이메일 인증에 실패했습니다</h2>
+      {% set msg_map = {
+        'invalid_token': '유효하지 않은 인증 링크입니다.',
+        'used': '이미 사용된 인증 링크입니다.',
+        'expired': '만료된 인증 링크입니다.',
+        'user_not_found': '사용자를 찾을 수 없습니다.',
+        'email_changed': '이메일이 변경되어 이 링크는 무효화되었습니다. 새 이메일로 받은 메일을 확인해 주세요.',
+        'unknown': '인증 처리 중 오류가 발생했습니다.'
+      } %}
+      <p class="text-muted-foreground mb-6">
+        {{ msg_map.get(reason, '인증 처리 중 오류가 발생했습니다.') }}
+      </p>
+
+      <!-- A. 이메일로 재전송 -->
+      <div class="text-left mb-5 p-4 rounded-lg border border-border">
+        <div class="font-medium mb-2 text-left">A) 같은 이메일로 인증 메일 다시 받기</div>
+        <div class="flex gap-2">
+          <input id="resendEmail" type="email" class="kt-input w-full" placeholder="가입했던 이메일 입력" />
+          <button id="resendBtnEmail" class="kt-btn kt-btn-ghost whitespace-nowrap">재전송</button>
+        </div>
+        <div id="resendMsg" class="text-xs text-muted-foreground mt-1"></div>
+      </div>
+
+      <!-- B. 이메일을 잘못 입력했어요 (수정 + 재전송) -->
+      <div class="text-left p-4 rounded-lg border border-border">
+        <div class="font-medium mb-2 text-left">B) 이메일을 잘못 입력했어요 (수정 후 재전송)</div>
+        <div class="grid grid-cols-1 gap-2">
+          <input id="fixLogin" type="text" class="kt-input w-full" placeholder="아이디 또는 (잘못 쓴) 이전 이메일" />
+          <input id="fixPassword" type="password" class="kt-input w-full" placeholder="가입 비밀번호" />
+          <div class="flex gap-2">
+            <input id="fixNewEmail" type="email" class="kt-input w-full" placeholder="새 이메일" />
+            <button id="fixBtn" class="kt-btn kt-btn-ghost whitespace-nowrap">이메일 수정 + 재전송</button>
+          </div>
+        </div>
+        <div id="fixMsg" class="text-xs text-muted-foreground mt-1"></div>
+      </div>
+
+      <a href="/login" class="kt-btn kt-btn-primary w-full mt-4">로그인 화면으로</a>
     </div>
-</body>
-</html>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}{% endblock %}

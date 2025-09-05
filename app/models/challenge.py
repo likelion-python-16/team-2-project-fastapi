@@ -84,6 +84,8 @@ class Challenge(Base, TimestampMixin):
     # 오프라인
     default_place_name = Column(String(200), nullable=True)
     default_address = Column(String(300), nullable=True)
+    # 대표 지도 링크(네이버/카카오 등)
+    default_map_url = Column(Text, nullable=True)
     default_latitude = Column(Float, nullable=True)
     default_longitude = Column(Float, nullable=True)
     

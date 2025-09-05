@@ -34,14 +34,62 @@
   .profile-dropdown-item{display:flex; align-items:center; gap:8px; padding:10px 10px; border-radius:10px; color:#1f2937; text-decoration:none}
   .profile-dropdown-item:hover{background:#F9FAFB}
   .profile-divider{height:1px; background:#e5e7eb; margin:6px 0}
+  
+  /* 상태별 알림 박스 */
+  .alert-box {
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    color: white;
+    font-weight: 500;
+  }
+  .alert-rejected { background-color: #dc2626; } /* 빨간색 */
+  .alert-pending { background-color: #4b5563; } /* 짙은 회색 */
+  .alert-approved { background-color: #059669; } /* 녹색 */
+
+  /* 요청 상태 배지: 흰 글씨 + 색 박스 */
+  .status-badge{display:inline-block;padding:4px 10px;border-radius:9999px;font-weight:700;font-size:12px;color:#fff}
+  .status-approved{background:#16a34a} /* green-600 */
+  .status-rejected{background:#f59e0b} /* orange-500 */
+  .status-pending{background:#2563eb}  /* blue-600 */
+  .ctrl32{height:32px; padding:0 10px}
+  .action-row{display:flex; align-items:center; justify-content:space-between; gap:8px}
+  .action-left{display:flex; align-items:center; gap:8px}
+  .action-right{margin-left:auto; display:flex; align-items:center; gap:6px}
+  .badge-chip{display:inline-block; padding:4px 10px; border-radius:9999px; font-weight:700; font-size:12px; line-height:1;}
+  .badge-primary{background:#2563eb; color:#fff}
 </style>
 
 <main class="max-w-[1120px] mx-auto p-6 w-full">
+  <!-- 상태 알림 박스 -->
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const success = urlParams.get('success');
+    if (success) {
+      const map = {
+        rejected: '<div class="alert-box alert-rejected">신청이 거절되었습니다.</div>',
+        approved: '<div class="alert-box alert-approved">신청이 승인되었습니다.</div>',
+        demoted: '<div class="alert-box alert-rejected">관리자 권한이 해제되었습니다.</div>',
+        note_saved: '<div class="alert-box alert-approved">비고가 저장되었습니다.</div>',
+      };
+      const alertHtml = map[success] || '';
+      if (alertHtml) {
+        document.addEventListener('DOMContentLoaded', function() {
+          const main = document.querySelector('main');
+          const firstChild = main.firstElementChild;
+          const alertDiv = document.createElement('div');
+          alertDiv.innerHTML = alertHtml;
+          main.insertBefore(alertDiv.firstElementChild, firstChild);
+          const u = new URL(window.location.href);
+          u.searchParams.delete('success');
+          window.history.replaceState({}, '', u);
+        });
+      }
+    }
+  </script>
+
   <div class="flex items-center justify-between mb-4">
-    <div class="flex items-center gap-3">
-      <h1 class="text-xl font-semibold">관리자 대시보드</h1>
-      <a href="/home" class="text-sm text-blue-600 hover:text-blue-800">← 홈으로 돌아가기</a>
-    </div>
+    <h1 class="text-xl font-semibold">관리자 대시보드</h1>
     <div class="flex items-center gap-3">
       <!-- 관리자 모드 토글 -->
       <div class="flex items-center gap-2">
@@ -147,13 +195,23 @@
 
   <!-- 관리자 신청 관리 섹션 -->
   <div class="section">
-    <h2>관리자 권한 신청 관리</h2>
+    <div class="flex items-center justify-between mb-2">
+      <h2>관리자 권한 신청 관리</h2>
+      <div class="flex items-center gap-2">
+        <form id="reqSearchForm" class="flex items-center gap-1" method="get" action="/admin">
+          <input type="text" name="q" value="{{ search_query }}" placeholder="신청자 검색" class="kt-input ctrl32" />
+          <button class="kt-btn kt-btn-sm ctrl32" type="submit">검색</button>
+        </form>
+        <a href="/admin/requests-history" class="kt-btn kt-btn-light ctrl32">히스토리</a>
+      </div>
+    </div>
     <div class="kt-card">
       <div class="kt-card-content p-4">
         {% if admin_requests and admin_requests|length > 0 %}
         <table class="kt">
           <thead>
             <tr>
+              <th style="width:38px"><input type="checkbox" id="select_all_reqs"/></th>
               <th>ID</th>
               <th>신청자</th>
               <th>이메일</th>
@@ -161,71 +219,84 @@
               <th>신청일</th>
               {% if admin.is_superadmin %}
               <th>작업</th>
+              <th>비고</th>
               {% endif %}
             </tr>
           </thead>
           <tbody>
             {% for req in admin_requests %}
             <tr>
+              <td><input type="checkbox" class="req_row_ck" value="{{ req.id }}"/></td>
               <td>#{{ req.id }}</td>
               <td>
-                <a class="kt-link" href="/admin/user-history?user_id={{ req.user.id }}">
-                  {{ req.user.name }} ({{ req.user.username }})
-                </a>
+                <span>{{ req.user.name }} ({{ req.user.username }})</span>
               </td>
               <td>{{ req.user.email }}</td>
               <td>
                 {% if req.status == 'pending' %}
-                  <span class="kt-badge kt-badge-secondary bg-gray-200 text-gray-700">대기중</span>
+                  <span class="status-badge status-pending">대기중</span>
                 {% elif req.status == 'approved' %}
                   {% if not req.user.is_admin %}
-                    <span class="kt-badge kt-badge-warning bg-amber-100 text-amber-700">권한 해제</span>
+                    <span class="status-badge status-rejected" title="권한 해제됨">권한 해제</span>
                   {% else %}
-                    <span class="kt-badge kt-badge-success bg-green-100 text-green-700">승인됨</span>
+                    <span class="status-badge status-approved">승인됨</span>
                   {% endif %}
                 {% elif req.status == 'rejected' %}
-                  <span class="kt-badge kt-badge-danger bg-red-100 text-red-700">거절됨</span>
+                  <span class="status-badge status-rejected">거절됨</span>
+                {% elif req.status == 'revoked' %}
+                  <span class="status-badge status-rejected">권한 해제</span>
                 {% endif %}
               </td>
               <td>{{ req.created_at.strftime('%Y-%m-%d %H:%M') if req.created_at else '-' }}</td>
               {% if admin.is_superadmin %}
               <td>
                 {% if req.status == 'pending' %}
-                  <div class="flex items-center gap-2">
-                    <form action="/admin/approve-request" method="post">
-                      <input type="hidden" name="request_id" value="{{ req.id }}"/>
-                      <button type="submit" class="kt-btn kt-btn-sm kt-btn-success text-xs">승인</button>
-                    </form>
-                    <a class="kt-btn kt-btn-sm kt-btn-danger text-xs" href="/admin/reject-request?request_id={{ req.id }}">거절</a>
-                    <a class="kt-link text-xs" href="/admin/user-history?user_id={{ req.user.id }}">히스토리</a>
+                  <div class="action-row">
+                    <div class="action-left">
+                      <a class="kt-btn kt-btn-sm kt-btn-success text-xs ctrl32" href="/admin/approve-request?request_id={{ req.id }}">승인</a>
+                      <a class="kt-btn kt-btn-sm kt-btn-danger text-xs ctrl32" href="/admin/reject-request?request_id={{ req.id }}">거절</a>
+                    </div>
                   </div>
                 {% elif req.status == 'approved' and req.user.is_admin %}
-                  <div class="flex items-center gap-2">
-                    {% if req.user.is_superadmin %}
-                      <span class="kt-badge kt-badge-primary text-xs">책임관리자</span>
-                    {% else %}
-                      <form action="/admin/promote-superadmin" method="post" style="display: inline;">
-                        <input type="hidden" name="user_id" value="{{ req.user.id }}" />
-                        <button type="submit" class="kt-btn kt-btn-sm kt-btn-primary text-xs">책임관리자 임명</button>
-                      </form>
-                    {% endif %}
-                    <a href="/admin/demote-admin?user_id={{ req.user.id }}" class="kt-btn kt-btn-sm kt-btn-secondary text-xs">권한 해제</a>
-                    <a class="kt-link text-xs" href="/admin/user-history?user_id={{ req.user.id }}">히스토리</a>
+                  <div class="action-row">
+                    <div class="action-left">
+                      {% if not req.user.is_superadmin %}
+                        <form action="/admin/promote-superadmin" method="post" style="display:inline;">
+                          <input type="hidden" name="user_id" value="{{ req.user.id }}" />
+                          <button type="submit" class="kt-btn kt-btn-sm kt-btn-primary text-xs ctrl32">책임관리자 임명</button>
+                        </form>
+                      {% endif %}
+                    </div>
+                    <div class="action-right" title="권한 해제">
+                      <span class="text-sm text-gray-600">{{ '최고 권한 해제' if req.user.is_superadmin else '권한 해제' }}</span>
+                      <label class="switch">
+                        <input type="checkbox" onchange="toggleRevoke({{ req.user.id }}, this, {{ 'true' if req.user.is_superadmin else 'false' }})"/>
+                        <span class="slider"></span>
+                      </label>
+                    </div>
                   </div>
                 {% elif req.status == 'rejected' %}
-                  <div class="flex items-center gap-3">
-                    <span class="kt-badge kt-badge-danger text-xs">거절됨</span>
-                    <div class="flex items-center gap-2">
-                      <span class="text-sm text-gray-600">재승인:</span>
+                  <div class="action-row">
+                    <div class="action-left"></div>
+                    <div class="action-right" title="재승인">
+                      <span class="text-sm text-gray-600">재승인</span>
                       <label class="switch">
                         <input type="checkbox" 
                                onchange="toggleApproval({{ req.id }}, this.checked)"
                                data-request-id="{{ req.id }}">
                         <span class="slider"></span>
                       </label>
-                      <a class="kt-link text-xs" href="/admin/user-history?user_id={{ req.user.id }}">히스토리</a>
                     </div>
                   </div>
+                {% endif %}
+              </td>
+              <td>
+                {% if admin.is_superadmin %}
+                  {% if req.note %}
+                    <a class="kt-btn kt-btn-sm" href="/admin/request-note?request_id={{ req.id }}">보기/수정</a>
+                  {% else %}
+                    <a class="kt-btn kt-btn-sm kt-btn-light" href="/admin/request-note?request_id={{ req.id }}">작성</a>
+                  {% endif %}
                 {% endif %}
               </td>
               {% endif %}
@@ -240,11 +311,10 @@
     </div>
   </div>
 
+
 </main>
 
-{% set modal_back_href = '/admin' %}
-{% include "includes/welcome_modal_partial.html" %}
-{% set modal_back_href = none %}
+{# welcome 모달 제거됨 #}
 
 <script>
 // 승인 토글 함수
@@ -284,9 +354,46 @@ async function toggleApproval(requestId, isApproved) {
   }
 }
 
+// 권한 해제 토글 함수
+async function toggleRevoke(userId, checkbox, isSuperadmin){
+  if (!checkbox.checked){ return; }
+  let scope = 'all';
+  if (isSuperadmin){
+    const choice = confirm('책임관리자 권한만 해제하시겠습니까?\n확인: 책임만 해제, 취소: 전체 관리자 권한 해제');
+    scope = choice ? 'super_only' : 'all';
+  }
+  const note = prompt('권한 해제 사유를 입력하세요 (필수):');
+  if (!note || !note.trim()) { checkbox.checked = false; return; }
+  try{
+    const res = await fetch(`/admin/users/${userId}/revoke`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note, scope })
+    });
+    const j = await res.json();
+    if (j.ok){
+      // 성공 메시지 표시 후 새로고침
+      const u = new URL(window.location.href);
+      u.searchParams.set('success','demoted');
+      window.location.href = u.toString();
+    }else{
+      alert(j.detail || '처리에 실패했습니다');
+      checkbox.checked = false;
+    }
+  }catch(e){
+    alert('네트워크 오류가 발생했습니다');
+    checkbox.checked = false;
+  }
+}
+
+// 선택 전체 토글
+document.getElementById('select_all_reqs')?.addEventListener('change', function(){
+  document.querySelectorAll('.req_row_ck').forEach((el)=>{ el.checked = this.checked; });
+});
+
 // 관리자 모드 토글 함수 추가
 async function toggleAdminMode() {
-  const isAdminMode = {{ 'true' if request.state.admin_mode else 'false' }};
+  const isAdminMode = {{ request.state.admin_mode | tojson }};
   
   if (isAdminMode) {
     // 관리자 모드 끄기

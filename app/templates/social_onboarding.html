@@ -10,7 +10,10 @@
         <h3 class="text-lg font-medium text-mono mb-2.5">소셜 가입 안내</h3>
         <!-- Compact identity: avatar + name/email two lines -->
         <div id="miniIdentity" class="flex items-center justify-center gap-3 mb-2.5 hidden">
-          <img id="miniAvatar" alt="avatar" class="w-9 h-9 rounded-full border border-border object-cover"/>
+          <div class="relative w-9 h-9">
+            <img id="miniAvatar" alt="avatar" class="w-9 h-9 rounded-full border border-border object-cover"/>
+            <div id="miniInitial" class="absolute inset-0 rounded-full hidden flex items-center justify-center text-white text-xs font-semibold" style="background:#EF4444"></div>
+          </div>
           <div class="text-left text-sm">
             <div id="miniName" class="text-foreground"></div>
             <div id="miniEmail" class="text-muted-foreground"></div>
@@ -47,8 +50,13 @@ document.addEventListener('DOMContentLoaded', async function(){
       if (j){
         document.getElementById('miniName').textContent = '이름: ' + (j.name || '-');
         document.getElementById('miniEmail').textContent = '이메일: ' + (j.email || '-');
-        const pic = j.picture || '';
-        if (pic){ const img=document.getElementById('miniAvatar'); img.src = pic; img.onerror=()=>{img.style.display='none'}; }
+        const pic = j.picture || j.profile_image || '';
+        const img=document.getElementById('miniAvatar');
+        const ini=document.getElementById('miniInitial');
+        function showIni(){ const base=(j.name||(j.email||'').split('@')[0]||'?').trim(); const arr=Array.from(base); const last2=arr.length?arr.slice(Math.max(0,arr.length-2)).join(''):'?'; ini.textContent=last2; ini.classList.remove('hidden'); img.style.display='none'; }
+        function tryPic(u){ let tries=0; function next(){ if(tries>2){showIni();return;} tries++; try{ const x=new URL(img.src); if(x.hostname.endsWith('googleusercontent.com')){ x.pathname=x.pathname.replace(/=s\d+-c/,'=s'+(96*(tries+1))+'-c'); if(!x.searchParams.has('sz')) x.searchParams.set('sz', String(96*(tries+1))); img.src=x.toString(); return; } }catch(_){ } showIni(); }
+          img.onerror=next; img.onload=()=>ini.classList.add('hidden'); img.src=u; }
+        if (pic){ tryPic(pic); } else { showIni(); }
         wrap.classList.remove('hidden');
       }
     }

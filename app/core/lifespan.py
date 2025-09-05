@@ -4,6 +4,8 @@ from .database import init_db
 # from .config import settings  # unused
 from ..utils.logging import logger
 from app.services.map_version import start_version_refresher
+from pathlib import Path
+import shutil
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -68,6 +70,25 @@ async def lifespan(_: FastAPI):
             db.close()
     except Exception as e:
         logger.warning(f"⚠️ 태그 시드 중 오류: {e}")
+
+    # 기본 커버 이미지 보장: challengersdefaultimage.png 가 없으면 기본 프로필 이미지로 복사
+    try:
+        static_dir = Path("app") / "static"
+        covers_dir = static_dir / "uploads" / "challenges" / "covers"
+        covers_dir.mkdir(parents=True, exist_ok=True)
+        default_src = static_dir / "pictures" / "defaultprofile.jpeg"
+        default_dst = covers_dir / "challengersdefaultimage.png"
+        fallback_dst = covers_dir / "challengersdefaultimage1.png"
+        if default_src.exists():
+            if not default_dst.exists():
+                shutil.copyfile(default_src, default_dst)
+                logger.info("✅ 기본 커버 이미지(challengersdefaultimage.png) 생성")
+            if not fallback_dst.exists():
+                shutil.copyfile(default_src, fallback_dst)
+        else:
+            logger.warning("⚠️ 기본 프로필 이미지가 없어 커버 기본 생성은 건너뜁니다")
+    except Exception as e:
+        logger.warning(f"⚠️ 기본 커버 이미지 보장 중 오류: {e}")
     
     # 백그라운드 태스크 시작
     import asyncio

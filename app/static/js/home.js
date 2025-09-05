@@ -19,7 +19,12 @@ function parseJwt(token) {
   }
 }
 function getAccessToken() {
-  return localStorage.getItem('access_token') || null;
+  // Prefer persistent token; fall back to session token
+  return (
+    localStorage.getItem('access_token') ||
+    sessionStorage.getItem('access_token') ||
+    null
+  );
 }
 function authHeader() {
   const t = getAccessToken();
@@ -136,6 +141,29 @@ const elFEt = $('#f-et');
 const elFSortBy = $('#f-sortby');
 const elFSortDir = $('#f-sortdir');
 
+/* ---- Avatar helpers ---- */
+const DEFAULT_AVATAR_URL = '/static/pictures/defaultprofile.jpeg';
+function normalizeAvatarUrl(raw) {
+  if (!raw || typeof raw !== 'string') return DEFAULT_AVATAR_URL;
+  let url = raw.trim();
+  // Ensure https for external images
+  if (url.startsWith('//')) url = 'https:' + url;
+  if (url.startsWith('http://lh3.googleusercontent.com')) url = url.replace('http://', 'https://');
+  // Google avatar sizing: add size if missing
+  if (/\.googleusercontent\.com\//.test(url) && !(/[?&]sz=\d+/.test(url) || /=(s|w)\d+/.test(url))) {
+    url += (url.includes('?') ? '&' : '?') + 'sz=96';
+  }
+  return url;
+}
+function getAvatarUrl(user) {
+  try {
+    const raw = user?.profile_image_url || user?.profile_image || user?.avatar_url || user?.avatar;
+    return normalizeAvatarUrl(raw);
+  } catch (_) {
+    return DEFAULT_AVATAR_URL;
+  }
+}
+
 /* ---- 초기 세팅 ---- */
 document.addEventListener('DOMContentLoaded', async () => {
   // 로고 → 홈
@@ -233,53 +261,104 @@ function wireProfileDropdown() {
   const menu = $('#profile-menu');
 
   const token = getAccessToken();
-  let name = 'ME';
-  if (token) {
-    const p = parseJwt(token);
-    if (p?.username) name = String(p.username).slice(0, 2).toUpperCase();
-  }
-  trigger.textContent = name;
-
-  trigger.addEventListener('click', async () => {
-    dd.classList.toggle('open');
-    if (!dd.classList.contains('open')) return;
-
-    // me 정보 로드 (선택)
+  // Resolve user (prefer API; fall back to token payload) and set avatar
+  (async () => {
     try {
-      S.me = await fetchJSON('/api/v1/users/me');
-    } catch (_) {
-      S.me = null;
-    }
+      if (token) {
+        try {
+          S.me = await fetchJSON('/api/v1/users/me');
+        } catch (_) {
+          const p = parseJwt(token) || {};
+          if (p && (p.sub || p.user_id)) {
+            S.me = { id: p.user_id || null, username: p.sub || null };
+          } else {
+            S.me = null;
+          }
+        }
+      } else {
+        try { S.me = await fetchJSON('/api/v1/users/me'); } catch (_) { S.me = null; }
+      }
+    } catch (_) { S.me = null; }
+    const avatarUrl = getAvatarUrl(S.me || {});
+    const img = new Image();
+    img.alt = 'avatar';
+    img.referrerPolicy = 'no-referrer';
+    img.style.cssText = 'width:36px;height:36px;border-radius:50%;object-fit:cover;display:block;';
+    img.src = avatarUrl;
+    img.onerror = () => { img.src = DEFAULT_AVATAR_URL; };
+    trigger.innerHTML = '';
+    trigger.appendChild(img);
 
-    const isLogin = !!token && !!parseJwt(token);
+    // Toggle login button vs avatar dropdown on init
+    const loginBtn = document.getElementById('login-btn');
+    const isLoginInit = !!S.me || (!!token && !!parseJwt(token));
+    if (isLoginInit) {
+      if (loginBtn) loginBtn.style.display = 'none';
+      dd.style.display = '';
+    } else {
+      if (loginBtn) loginBtn.style.display = 'inline-flex';
+      dd.style.display = 'none';
+    }
+  })();
+
+  async function populateMenu() {
+    // me 정보 로드/갱신 (있으면 갱신 시도)
+    try { S.me = await fetchJSON('/api/v1/users/me'); } catch (_) { /* keep S.me */ }
+
+    const tk = getAccessToken();
+    const isLogin = !!S.me || (!!tk && !!parseJwt(tk));
     const isAdmin = S.me?.is_admin || S.me?.is_superadmin || false;
+
+    // Toggle login button vs avatar dropdown dynamically
+    const loginBtn = document.getElementById('login-btn');
+    if (isLogin) {
+      if (loginBtn) loginBtn.style.display = 'none';
+      dd.style.display = '';
+    } else {
+      if (loginBtn) loginBtn.style.display = 'inline-flex';
+      dd.style.display = 'none';
+      return; // no menu for guests
+    }
     
     menu.innerHTML = `
-      <div class="dropdown-item"><strong>${S.me?.username || 'Guest'}</strong></div>
-      <div class="divider"></div>
-      ${
-        isLogin
-          ? `
-            <a class="dropdown-item" href="/mypage">마이페이지</a>
-            <a class="dropdown-item" href="/pages/challenges/new">챌린지 생성</a>
-            <a class="dropdown-item" href="/account/edit">회원정보 수정</a>
-            ${isAdmin ? '<div class="divider"></div><button class="dropdown-item" onclick="enterAdminMode()" style="color: #dc2626; font-weight: 600; border: none; background: none; width: 100%; text-align: left; cursor: pointer;">🛡️ 관리자 모드</button>' : ''}
-            <div class="divider"></div>
-            <button class="dropdown-item" id="logout-btn">로그아웃</button>
-          `
-          : `
-            <a class="dropdown-item" href="/login">로그인</a>
-            <a class="dropdown-item" href="/signup">회원가입</a>
-          `
-      }
+      ${S.me?.username ? `<div class=\"dropdown-item\"><strong>${S.me.username}</strong></div><div class=\"divider\"></div>` : ''}
+      ${isLogin ? `
+        <a class="dropdown-item" href="/mypage">마이페이지</a>
+        <a class="dropdown-item" href="/account/edit">회원정보 수정</a>
+      ` : `
+        <a class="dropdown-item" href="/login">로그인</a>
+        <a class="dropdown-item" href="/signup">회원가입</a>
+      `}
     `;
-    const logout = $('#logout-btn');
-    logout?.addEventListener('click', () => {
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      location.href = '/login';
-    });
-  });
+    if (isLogin) {
+      const divider = document.createElement('div');
+      divider.className = 'divider';
+      const btn = document.createElement('button');
+      btn.id = 'logout-btn';
+      btn.type = 'button';
+      btn.className = 'dropdown-item';
+      btn.textContent = '로그아웃';
+      menu.appendChild(divider);
+      menu.appendChild(btn);
+      btn.addEventListener('click', async () => {
+        try { await fetch('/api/v1/auth/logout', { method: 'POST', credentials: 'include' }); } catch (_) {}
+        try { localStorage.removeItem('access_token'); } catch (_) {}
+        try { sessionStorage.removeItem('access_token'); } catch (_) {}
+        window.location.href = '/home';
+      });
+    }
+  }
+
+  // Hover open/close
+  function openMenu(){ dd.classList.add('open'); }
+  function closeMenu(){ dd.classList.remove('open'); }
+  let hoverTimer = null;
+  trigger.addEventListener('mouseenter', async () => { clearTimeout(hoverTimer); openMenu(); await populateMenu(); });
+  dd.addEventListener('mouseenter', () => { clearTimeout(hoverTimer); });
+  dd.addEventListener('mouseleave', () => { hoverTimer = setTimeout(closeMenu, 100); });
+  // Keyboard focus support
+  trigger.addEventListener('focus', async () => { openMenu(); await populateMenu(); });
+  dd.addEventListener('focusout', (e) => { if (!dd.contains(e.relatedTarget)) closeMenu(); });
 
   // 외부 클릭 닫기
   document.addEventListener('click', (e) => {
@@ -305,25 +384,29 @@ async function bootstrapHome() {
 
 /* ---- 추천 ---- */
 async function loadRecommended() {
-  const token = getAccessToken();
-  if (!token) {
-    elHomeRecLoginReq.style.display = 'block';
-    elHomeRecNotice.style.display = 'none';
-    elHomeRecList.innerHTML = '';
-    return;
-  }
-
   try {
-    // 1순위: /api/v1/home/recommended
-    let list = [];
-    try {
-      list = await fetchJSON('/api/v1/home/recommended');
-    } catch (_) {
-      // 2순위: /api/v1/challenges/recommended
-      list = await fetchJSON('/api/v1/challenges/recommended');
+    // Guests: hide the whole Recommended section
+    const hasToken = !!getAccessToken();
+    if (!hasToken) {
+      const sec = elHomeRecList?.closest('.section');
+      if (sec) sec.style.display = 'none';
+      return;
+    }
+    // 1순위: /api/v1/home/recommended (객체 응답 {success, challenges})
+    let res = await fetchJSON('/api/v1/home/recommended');
+    let list = Array.isArray(res?.challenges) ? res.challenges : (Array.isArray(res) ? res : []);
+    const personalized = !!res?.personalized;
+
+    // 2순위: /api/v1/challenges/recommended (존재하지 않을 수 있음)
+    if (!list.length) {
+      try {
+        const r2 = await fetchJSON('/api/v1/challenges/recommended');
+        list = Array.isArray(r2) ? r2 : (Array.isArray(r2?.items) ? r2.items : []);
+      } catch (_) {}
     }
 
-    if (!Array.isArray(list) || list.length === 0) {
+    if (!list.length) {
+      // 로그인 상태에서만 안내, 게스트는 섹션 숨김
       elHomeRecLoginReq.style.display = 'none';
       elHomeRecNotice.style.display = 'block';
       elHomeRecNotice.textContent = '아직 추천할 항목이 없어요. 관심사 태그를 추가해 보세요.';
@@ -335,6 +418,7 @@ async function loadRecommended() {
     elHomeRecNotice.style.display = 'none';
     elHomeRecList.innerHTML = renderCardList(list.slice(0, 6));
   } catch (e) {
+    // 실패 시 조용히 숨김
     elHomeRecLoginReq.style.display = 'none';
     elHomeRecNotice.style.display = 'block';
     elHomeRecNotice.textContent = '추천 데이터를 불러오지 못했습니다.';
@@ -347,8 +431,9 @@ async function loadRecommended() {
 async function loadFollowing() {
   const token = getAccessToken();
   if (!token) {
-    elHomeFollowLoginReq.style.display = 'block';
-    elHomeFollowList.innerHTML = '';
+    // Guests: hide the whole Following section
+    const sec = elHomeFollowList?.closest('.section');
+    if (sec) sec.style.display = 'none';
     return;
   }
   try {
@@ -374,38 +459,38 @@ async function loadFollowing() {
 async function loadLatest(page = 1) {
   S.home.latest_page = page;
   try {
-    // 사용자 참여 상태가 포함된 챌린지 목록 사용
-    const token = getAccessToken();
     let list = [];
     let total = 0;
-    
-    if (token) {
-      // 로그인된 사용자: 참여 상태 포함 API 사용
-      const data = await fetchJSON('/api/v1/challenges/with-participation');
-      list = Array.isArray(data) ? data : [];
-      
-      // 페이지네이션을 위한 처리 (간단히 클라이언트 사이드에서 처리)
-      const start = (S.home.latest_page - 1) * S.home.latest_size;
-      const end = start + S.home.latest_size;
-      const paginatedList = list.slice(start, end);
-      total = list.length;
-      list = paginatedList;
-    } else {
-      // 비로그인 사용자: 기존 API 사용
+
+    // 1차 시도: 정렬/페이지 파라미터 지원 버전
+    try {
       const params = new URLSearchParams({
-        sort: 'created_at',
-        order: 'desc',
-        page: String(S.home.latest_page),
-        size: String(S.home.latest_size)
+        sort: 'created_at', order: 'desc',
+        page: String(S.home.latest_page), size: String(S.home.latest_size)
       });
       const data = await fetchJSON(`/api/v1/challenges?${params.toString()}`);
       list = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : data?.results || []);
       total = Number(data?.total || data?.count || (Array.isArray(data) ? data.length : 0));
+    } catch (_) {
+      // 2차 시도: 상태별 엔드포인트 (recruiting)
+      try {
+        const data = await fetchJSON('/api/v1/challenges/status/recruiting');
+        list = Array.isArray(data) ? data : [];
+        total = list.length;
+      } catch (__) {
+        // 3차 시도: 기본 목록
+        const data = await fetchJSON('/api/v1/challenges');
+        list = Array.isArray(data) ? data : [];
+        total = list.length;
+      }
+      // 클라이언트 페이지네이션
+      const start = (S.home.latest_page - 1) * S.home.latest_size;
+      const end = start + S.home.latest_size;
+      list = list.slice(start, end);
     }
 
     S.home.latest = list;
     S.home.latest_total = total;
-
     elHomeLatestList.innerHTML = list?.length ? renderCardList(list) : '<div class="empty">등록된 챌린지가 없습니다.</div>';
     renderPagination(elHomeLatestPag, S.home.latest_page, Math.max(1, Math.ceil(total / S.home.latest_size)), (p)=>loadLatest(p));
   } catch (e) {
@@ -437,33 +522,62 @@ function clearFilters() {
 }
 
 async function doSearchFlow() {
+  // If query cleared → restore home sections
+  if (!S.search.query || !S.search.query.trim()) {
+    elSearchArea.style.display = 'none';
+    elHomeSections.style.display = 'block';
+    await bootstrapHome();
+    return;
+  }
+
   elHomeSections.style.display = 'none';
   elSearchArea.style.display = 'block';
 
   try {
-    const qs = new URLSearchParams();
-    if (S.search.query) qs.set('q', S.search.query);
+    // helper to call search by status value
+    const callSearch = async (status) => {
+      const qs = new URLSearchParams();
+      qs.set('q', S.search.query);
+      if (status) qs.set('status', status);
+      if (S.search.filters.location) qs.set('location', S.search.filters.location);
+      if (S.search.filters.start_from) qs.set('start_from', S.search.filters.start_from);
+      if (S.search.filters.start_to)   qs.set('start_to', S.search.filters.start_to);
+      if (S.search.filters.end_from)   qs.set('end_from', S.search.filters.end_from);
+      if (S.search.filters.end_to)     qs.set('end_to', S.search.filters.end_to);
+      if (S.search.filters.sort_by)    qs.set('sort', S.search.filters.sort_by);
+      if (S.search.filters.sort_dir)   qs.set('order', S.search.filters.sort_dir);
+      qs.set('page', String(S.search.page));
+      qs.set('size', String(S.search.size));
+      return await fetchJSON(`/api/v1/challenges/search?${qs.toString()}`);
+    };
 
-    // 필터
-    if (S.search.filters.status) qs.set('status', S.search.filters.status);
-    if (S.search.filters.location) qs.set('location', S.search.filters.location);
-    if (S.search.filters.start_from) qs.set('start_from', S.search.filters.start_from);
-    if (S.search.filters.start_to)   qs.set('start_to', S.search.filters.start_to);
-    if (S.search.filters.end_from)   qs.set('end_from', S.search.filters.end_from);
-    if (S.search.filters.end_to)     qs.set('end_to', S.search.filters.end_to);
-    if (S.search.filters.sort_by)    qs.set('sort', S.search.filters.sort_by);
-    if (S.search.filters.sort_dir)   qs.set('order', S.search.filters.sort_dir);
-
-    qs.set('page', String(S.search.page));
-    qs.set('size', String(S.search.size));
-
-    // /api/v1/challenges/search 사용 (팀원 코드와 동일)
-    const data = await fetchJSON(`/api/v1/challenges/search?${qs.toString()}`);
+    // Try current status; if empty, try active → completed as fallback
+    let data = await callSearch(S.search.filters.status || 'recruiting');
     console.log('🔍 검색 API 응답:', data);
     
     // search 응답 구조에 맞게 처리
-    const matched = Array.isArray(data.matched_challenges) ? data.matched_challenges : [];
-    const rec = Array.isArray(data.recommended_by_tag_challenges) ? data.recommended_by_tag_challenges : [];
+    let matched = Array.isArray(data.matched_challenges) ? data.matched_challenges : [];
+    let rec = Array.isArray(data.recommended_by_tag_challenges) ? data.recommended_by_tag_challenges : [];
+
+    if (matched.length === 0 && rec.length === 0) {
+      const fallbacks = ['active', 'completed'];
+      for (const st of fallbacks) {
+        const d2 = await callSearch(st);
+        const m2 = Array.isArray(d2.matched_challenges) ? d2.matched_challenges : [];
+        const r2 = Array.isArray(d2.recommended_by_tag_challenges) ? d2.recommended_by_tag_challenges : [];
+        if (m2.length || r2.length) { data = d2; matched = m2; rec = r2; break; }
+      }
+      // Final safety: client-side title contains fallback across all public challenges
+      if (matched.length === 0 && rec.length === 0) {
+        try {
+          const all = await fetchJSON('/api/v1/challenges');
+          const arr = Array.isArray(all?.items) ? all.items : (Array.isArray(all) ? all : []);
+          const q = S.search.query.trim();
+          const filt = arr.filter(ch => (ch?.title || '').toLowerCase().includes(q.toLowerCase()));
+          matched = filt;
+        } catch (_) {}
+      }
+    }
     console.log('🔍 처리된 데이터:', {matched_count: matched.length, rec_count: rec.length});
     
     // 검색 분석 결과 로깅 (디버깅용) 

@@ -84,7 +84,10 @@ async def auto_create_rounds_on_challenge_create(db: Session, challenge: Challen
         and road
         and (lat is None or lon is None)
     ):
-        geo = await geocode(road)
+        try:
+            geo = await geocode(road)
+        except Exception:
+            geo = None
         if geo:
             lat = geo.get("lat")
             lon = geo.get("lng")
@@ -94,7 +97,10 @@ async def auto_create_rounds_on_challenge_create(db: Session, challenge: Challen
 
     # 지도 링크 만들기 (좌표가 있으면 마커 보장)
     if challenge.mode == ChallengeMode.offline and same_all and pname and (lat is not None and lon is not None):
-        map_url = build_naver_map_url(pname, lat, lon, None)
+        try:
+            map_url = build_naver_map_url(pname, lat, lon, None)
+        except Exception:
+            map_url = None
 
     for i in range(1, n + 1):
         processing_at = _compute_processing_date(challenge, i)  # ✅ Date 타입

@@ -4,6 +4,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Any
 from fastapi import FastAPI, Request
+from fastapi import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -12,6 +13,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.encoders import jsonable_encoder
 
 # Moved to lifespan.py:
 # from app.core.database import SessionLocal
@@ -70,6 +72,64 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 BASE_DIR = Path(__file__).parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
+# Admin HTML UX: redirect unauthenticated/forbidden admin HTML requests
+@app.exception_handler(HTTPException)
+async def http_exception_to_redirect(request: Request, exc: HTTPException):
+    try:
+        path = request.url.path or ''
+        accepts_html = 'text/html' in (request.headers.get('accept') or '')
+        if path.startswith('/admin') and accepts_html and exc.status_code in (401, 403):
+            try:
+                u = getattr(request.state, 'user', None)
+                if u is not None and getattr(u, 'is_admin', False):
+                    return RedirectResponse(url='/admin', status_code=303)
+            except Exception:
+                pass
+            return RedirectResponse(url='/admin/login', status_code=303)
+    except Exception:
+        pass
+    # Ensure detail is JSON serializable (enums, datetimes, jinja Undefined, etc.)
+    try:
+        return JSONResponse(status_code=exc.status_code, content=jsonable_encoder({"detail": exc.detail}))
+    except TypeError:
+        # Fallback: coerce detail to string when non-serializable (e.g., jinja2.Undefined)
+        return JSONResponse(status_code=exc.status_code, content={"detail": str(exc.detail)})
+
+# Lightweight middleware to inject current user + admin_mode flag from cookie for templates
+@app.middleware("http")
+async def inject_current_user_from_cookie(request: Request, call_next):
+    try:
+        token = request.cookies.get("access_token")
+        if token:
+            # Lazy imports to avoid circulars
+            from app.security import verify_token as _verify_token
+            from app.core.database import SessionLocal as _SessionLocal
+            payload = _verify_token(token)
+            if payload and payload.get("sub"):
+                db = _SessionLocal()
+                try:
+                    from app.models.user import User as _User
+                    uid = payload.get("sub")
+                    user = None
+                    try:
+                        user = db.query(_User).filter(_User.id == int(uid)).first()
+                    except Exception:
+                        pass
+                    if not user and uid and hasattr(_User, "username"):
+                        user = db.query(_User).filter(_User.username == str(uid)).first()
+                    if user:
+                        request.state.user = user
+                        try:
+                            request.state.admin_mode = bool(payload.get("admin_mode"))
+                        except Exception:
+                            request.state.admin_mode = False
+                finally:
+                    db.close()
+    except Exception:
+        pass
+    response = await call_next(request)
+    return response
+
 # ---------------------------
 # HTML Pages
 # ---------------------------
@@ -104,6 +164,25 @@ async def social_signup_step2(request: Request):
 async def social_signup_step3(request: Request):
     return templates.TemplateResponse("signup3forsocial.html", {"request": request})
 
+# Backward-compatible aliases for old links
+@app.get("/signup/social/step2", response_class=HTMLResponse, tags=["Pages"])  
+async def signup_social_step2_alias():
+    return RedirectResponse(url="/social/step2", status_code=307)
+
+@app.get("/signup/social/step3", response_class=HTMLResponse, tags=["Pages"])  
+async def signup_social_step3_alias():
+    return RedirectResponse(url="/social/step3", status_code=307)
+
+# Completion aliases
+@app.get("/social/complete", response_class=HTMLResponse, tags=["Pages"])  
+async def social_complete_page(request: Request):
+    # 소셜 가입 완료 화면 렌더링
+    return templates.TemplateResponse("signup_complete_social.html", {"request": request})
+
+@app.get("/signup/social/complete", response_class=HTMLResponse, tags=["Pages"])  
+async def signup_social_complete_alias():
+    return RedirectResponse(url="/social/complete", status_code=307)
+
 @app.get("/social/onboarding", response_class=HTMLResponse, tags=["Pages"])
 async def social_onboarding():
     """소셜 로그인 후 신규 사용자 온보딩"""
@@ -114,6 +193,17 @@ async def social_merge_page(request: Request):
     """계정 연동 확인 페이지"""
     return templates.TemplateResponse("social_merge.html", {"request": request})
 
+@app.get("/social/merge-done", response_class=HTMLResponse, tags=["Pages"])
+async def social_merge_done_page(request: Request):
+    """계정 연동 완료 페이지"""
+    return templates.TemplateResponse("social_merge_done.html", {"request": request})
+
+# Social login tokens callback page
+@app.get("/auth/callback", response_class=HTMLResponse, tags=["Pages"])
+async def auth_callback_page(request: Request):
+    """Front callback that stores access/refresh from query params and redirects."""
+    return templates.TemplateResponse("auth_callback.html", {"request": request})
+
 @app.get("/dashboard", response_class=HTMLResponse, tags=["Pages"])
 async def dashboard_page(request: Request):
     return templates.TemplateResponse("dashboard.html", {"request": request})
@@ -122,9 +212,6 @@ async def dashboard_page(request: Request):
 async def users_list_page(request: Request):
     return templates.TemplateResponse("users.html", {"request": request})
 
-@app.get("/mypage", response_class=HTMLResponse, tags=["Pages"])
-async def mypage_page(request: Request):
-    return templates.TemplateResponse("mypage.html", {"request": request})
 
 @app.get("/account/edit", response_class=HTMLResponse, tags=["Pages"])
 async def account_edit_page(request: Request):
@@ -159,17 +246,13 @@ def payment_fail_page(request: Request):
     return templates.TemplateResponse("payments_fail.html", {"request": request})
 
 # 이메일 인증 성공/실패 페이지
-@app.get("/verify/success", response_class=HTMLResponse, tags=["Email Verification"])
-def verify_success_page():
-    with open("app/templates/verify_success.html", "r", encoding="utf-8") as f:
-        content = f.read()
-    return HTMLResponse(content=content)
+@app.get("/verify/success", response_class=HTMLResponse, tags=["Email Verification"]) 
+def verify_success_page(request: Request):
+    return templates.TemplateResponse("verify_success.html", {"request": request})
 
-@app.get("/verify/fail", response_class=HTMLResponse, tags=["Email Verification"])
-def verify_fail_page():
-    with open("app/templates/verify_fail.html", "r", encoding="utf-8") as f:
-        content = f.read()  
-    return HTMLResponse(content=content)
+@app.get("/verify/fail", response_class=HTMLResponse, tags=["Email Verification"]) 
+def verify_fail_page(request: Request):
+    return templates.TemplateResponse("verify_fail.html", {"request": request})
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(_: Request, exc: RequestValidationError):

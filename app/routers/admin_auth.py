@@ -28,8 +28,58 @@ def _issue_cookie_token(user: User, admin_mode: bool, minutes: int | None = None
 
 
 @router.get("/choice", response_class=HTMLResponse)
-def admin_login_choice_page(request: Request):
-    return templates.TemplateResponse("admin_login_choice.html", {"request": request})
+def admin_login_choice_page(request: Request, status: str = None, user_id: int = None, db: Session = Depends(get_db)):
+    context = {"request": request}
+    
+    # status=check이고 user_id가 있으면 관리자 신청 상태 확인
+    if status == "check" and user_id:
+        from app.models.admin_request import AdminRequest
+        from app.models.user import User
+        
+        try:
+            # 사용자 정보 확인
+            user = db.query(User).filter(User.id == user_id).first()
+            if user:
+                # 관리자 신청 상태 확인 (최신 신청 기준)
+                admin_request = db.query(AdminRequest).filter(
+                    AdminRequest.user_id == user_id
+                ).order_by(AdminRequest.created_at.desc()).first()
+                
+                if admin_request:
+                    if admin_request.status == "pending":
+                        context.update({
+                            "status_message": "관리자 신청이 검토 중입니다",
+                            "status_type": "pending",
+                            "message_detail": "신청해주신 관리자 권한이 현재 검토 중입니다. 승인까지 조금만 기다려 주세요."
+                        })
+                    elif admin_request.status == "rejected":
+                        context.update({
+                            "status_message": "관리자 신청이 거절되었습니다",
+                            "status_type": "rejected", 
+                            "message_detail": "신청하신 관리자 권한이 거절되었습니다. 자세한 사항은 관리자에게 문의해주세요."
+                        })
+                    elif admin_request.status == "approved":
+                        context.update({
+                            "status_message": "관리자 권한이 승인되었습니다",
+                            "status_type": "approved",
+                            "message_detail": "관리자 권한이 승인되었습니다. 다시 로그인해주세요."
+                        })
+                else:
+                    # 신청 내역이 없는 경우
+                    context.update({
+                        "status_message": "관리자가 아니신가요?",
+                        "status_type": "no_request",
+                        "message_detail": "관리자 권한 신청을 통해 관리자로 등록하실 수 있습니다."
+                    })
+        except Exception as e:
+            # 오류 발생 시 기본 메시지
+            context.update({
+                "status_message": "관리자가 아니신가요?",
+                "status_type": "error",
+                "message_detail": "관리자 권한 확인 중 오류가 발생했습니다."
+            })
+    
+    return templates.TemplateResponse("admin_login_choice.html", context)
 
 
 @router.get("/login", response_class=HTMLResponse)
@@ -120,12 +170,8 @@ def admin_login(
             status_code=200,
         )
     if not user.is_admin:
-        # 관리자가 아닌 계정은 페이지에서 안내
-        return templates.TemplateResponse(
-            "admin_login.html",
-            {"request": request, "error": "관리자 계정이 아닙니다. 일반 로그인 또는 권한 신청을 이용해 주세요.", "admin_signup_enabled": admin_signup_enabled},
-            status_code=200,
-        )
+        # 관리자가 아닌 계정은 /admin/choice로 리다이렉트하여 상태별 안내
+        return RedirectResponse(url=f"/admin/choice?status=check&user_id={user.id}", status_code=303)
 
     # 관리자 로그인은 아이디/비밀번호만으로 가능하도록 변경
     # 추가 정보 검증은 생략
@@ -359,33 +405,12 @@ def admin_request(db: Session = Depends(get_db), request: Request = None):
 
 
 @router.post("/logout")
-def admin_logout():
-    # Turn off admin_mode but keep user session by reissuing cookie if possible
-    try:
-        token = request.cookies.get("access_token")
-        from app.security import verify_token
-        payload = verify_token(token) if token else None
-        uid = int(payload.get("sub")) if payload and payload.get("sub") else None
-    except Exception:
-        uid = None
-
+def admin_logout(request: Request):
+    """관리자 메뉴에서 로그아웃 시, 완전히 로그아웃하여 비로그인 홈으로 이동."""
     resp = RedirectResponse(url="/home", status_code=303)
-    secure_flag = not settings.debug
-    if uid:
-        # issue user-mode token (admin_mode=False)
-        token2 = create_access_token({"sub": str(uid), "admin_mode": False})
-        resp.set_cookie(
-            key="access_token",
-            value=token2,
-            httponly=True,
-            secure=secure_flag,
-            samesite="lax",
-            max_age=settings.jwt_access_token_expire_minutes * 60,
-            path="/",
-        )
-    else:
-        # fallback: delete cookie
-        resp.delete_cookie(key="access_token", path="/")
+    # 관리자/사용자 겸용 토큰 쿠키 제거
+    for name in ("access_token", "session", "refresh_token"):
+        resp.delete_cookie(key=name, path="/")
     return resp
 
 
@@ -532,7 +557,7 @@ def admin_signup_request(
     except Exception:
         pass
     
-    # 새 사용자 생성 (비활성 상태로)
+    # 새 사용자 생성
     user = User(
         username=username,
         email=email,
@@ -540,7 +565,7 @@ def admin_signup_request(
         name=name,
         is_admin=False,
         is_superadmin=False,
-        is_active=False,  # 승인 전까지 비활성
+        is_active=False,
         email_verified=False,
         introduction="",
     )
@@ -570,20 +595,16 @@ def admin_signup_request(
     except Exception:
         pass
 
-    # also_user 체크 시, 가입 추가 단계로 이동할 수 있도록 한시 쿠키 설정 후 step2으로 이동
+    # also_user 체크 시: 즉시 일반 회원 활성화 + 이메일 인증 처리 후 진행상황 페이지로 이동
     if str(also_user or 0) == '1':
-        resp = RedirectResponse(url="/admin/signup-request2_2", status_code=303)
-        secure_flag = not settings.debug
-        resp.set_cookie(
-            key="allow_signup_steps",
-            value="1",
-            httponly=True,
-            secure=secure_flag,
-            samesite="lax",
-            max_age=60*30,
-            path="/",
-        )
-        return resp
+        try:
+            user.is_active = True
+            user.email_verified = True
+            db.add(user)
+            db.commit()
+        except Exception:
+            db.rollback()
+        return RedirectResponse(url="/admin/requested", status_code=303)
 
     return RedirectResponse(url="/admin/requested", status_code=303)
 
@@ -609,6 +630,9 @@ def admin_signup_request2_step2_page(request: Request):
 @router.get("/signup-request2_3", response_class=HTMLResponse)
 def admin_signup_request2_step3_page(request: Request):
     return templates.TemplateResponse("admin_signup_request2_3.html", {"request": request})
+
+
+
 
 
 # Bearer token 기반 admin 모드 전환 (API용)

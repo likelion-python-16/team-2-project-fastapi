@@ -1,0 +1,100 @@
+{% extends "final.html" %}
+{% block title %}신청 이력 - Team Project{% endblock %}
+{% block content %}
+<style>
+  body { flex-direction: column; }
+  table.kt { width:100%; border-collapse:collapse }
+  table.kt th, table.kt td { border-bottom:1px solid #eee; padding:10px 8px; text-align:left; font-size:14px }
+  table.kt th { color:#6b7280; font-weight:600 }
+  .ctrl32{height:32px; padding:0 10px}
+  .status-badge{display:inline-block;padding:4px 10px;border-radius:9999px;font-weight:700;font-size:12px;color:#fff}
+  .status-applied{background:#2563eb}
+  .status-approved{background:#16a34a}
+  .status-rejected{background:#ef4444}
+  .status-reapproved{background:#0ea5e9}
+  .status-promoted_super{background:#7c3aed}
+  .status-demoted_super_only{background:#f59e0b}
+  .status-demoted_all{background:#b91c1c}
+  .status-auto_rejected{background:#6b7280}
+  .muted{ color:#6b7280 }
+</style>
+
+<main class="max-w-[1120px] mx-auto p-6 w-full">
+  <div class="flex items-center justify-between mb-4">
+    <h1 class="text-xl font-semibold">관리자 신청 이력</h1>
+    <a href="/admin" class="kt-btn">대시보드</a>
+  </div>
+
+  <form class="flex items-center gap-2 mb-4" method="get" action="/admin/requests-history">
+    <input class="kt-input ctrl32" type="text" name="q" value="{{ search_query or '' }}" placeholder="이름/아이디/이메일 검색" />
+    <select class="kt-input ctrl32" name="action">
+      {% set af = action_filter or '' %}
+      <option value="">전체 액션</option>
+      <option value="applied" {{ 'selected' if af=='applied' else '' }}>신청</option>
+      <option value="approved" {{ 'selected' if af=='approved' else '' }}>승인</option>
+      <option value="rejected" {{ 'selected' if af=='rejected' else '' }}>거절</option>
+      <option value="reapproved" {{ 'selected' if af=='reapproved' else '' }}>재승인</option>
+      <option value="promoted_super" {{ 'selected' if af=='promoted_super' else '' }}>책임 임명</option>
+      <option value="demoted_super_only" {{ 'selected' if af=='demoted_super_only' else '' }}>책임 해제</option>
+      <option value="demoted_all" {{ 'selected' if af=='demoted_all' else '' }}>권한 해제</option>
+      <option value="auto_rejected" {{ 'selected' if af=='auto_rejected' else '' }}>자동 만료</option>
+    </select>
+    <select class="kt-input ctrl32" name="sort">
+      {% set so = sort_option or 'time_desc' %}
+      <option value="time_desc" {{ 'selected' if so=='time_desc' else '' }}>최신순</option>
+      <option value="time_asc" {{ 'selected' if so=='time_asc' else '' }}>오래된순</option>
+      <option value="name_asc" {{ 'selected' if so=='name_asc' else '' }}>이름 ↑</option>
+      <option value="name_desc" {{ 'selected' if so=='name_desc' else '' }}>이름 ↓</option>
+    </select>
+    <button class="kt-btn ctrl32" type="submit">필터</button>
+  </form>
+
+  {% if rows and rows|length > 0 %}
+    <table class="kt">
+      <thead>
+        <tr>
+          <th>일시</th>
+          <th>신청자</th>
+          <th>액션</th>
+          <th>처리자</th>
+          <th>비고</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td>{{ r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else '-' }}</td>
+          <td>
+            {{ r.user.name if r.user else '-' }}
+            <span class="muted">({{ r.user.username if r.user else '-' }})</span>
+            {% set left = pending_left_map.get(r.user_id) if pending_left_map else None %}
+            {% if left and left > 0 %}
+              <div class="text-xs muted">만료까지 약 {{ (left // 60) }}분 남음</div>
+            {% endif %}
+          </td>
+          <td>
+            {% set a = r.action %}
+            {% set label = {
+              'applied':'신청',
+              'approved':'승인',
+              'rejected':'거절',
+              'reapproved':'재승인',
+              'promoted_super':'책임 임명',
+              'demoted_super_only':'책임 해제',
+              'demoted_all':'권한 해제',
+              'auto_rejected':'자동 만료'
+            }[a] if a in ['applied','approved','rejected','reapproved','promoted_super','demoted_super_only','demoted_all','auto_rejected'] else a %}
+            <span class="status-badge status-{{ a | replace(' ','_') }}">{{ label }}</span>
+          </td>
+          <td>{{ r.actor.name if r.actor else '-' }}</td>
+          <td>{{ r.note or '' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="muted">표시할 이력이 없습니다.</div>
+  {% endif %}
+</main>
+{% endblock %}
+

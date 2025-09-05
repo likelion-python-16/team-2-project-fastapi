@@ -51,8 +51,12 @@
     }
 
     function token(){
-      try{const t=localStorage.getItem("access_token"); if(t) return t;}catch{}
-      const m=document.cookie.match(/(?:^|;)\s*access_token=([^;]+)/); return m?decodeURIComponent(m[1]):null;
+      try{
+        const t = (localStorage.getItem("access_token") || sessionStorage.getItem("access_token"));
+        if (t) return t;
+      }catch{}
+      const m = document.cookie.match(/(?:^|;)\s*access_token=([^;]+)/);
+      return m ? decodeURIComponent(m[1]) : null;
     }
 
     async function safeText(r){ try{ return await r.text(); }catch{ return ""; } }
@@ -210,11 +214,23 @@
       }
       if(u.avatar_url || u.profile_image){
         const raw = u.avatar_url || u.profile_image;
+        const normalize = (url)=>{
+          if(!url) return '/static/pictures/defaultprofile.jpeg';
+          let v = String(url).trim();
+          if (v.startsWith('//')) v = 'https:' + v;
+          if (v.startsWith('http://lh3.googleusercontent.com')) v = v.replace('http://','https://');
+          if (/\.googleusercontent\.com\//.test(v) && !(/[?&]sz=\d+/.test(v) || /=(s|w)\d+/.test(v))) {
+            v += (v.includes('?') ? '&' : '?') + 'sz=96';
+          }
+          return v;
+        };
+        const src0 = normalize(raw);
         const bust = (url)=> url + (url.includes('?')? '&':'?') + 'v=' + Date.now();
-        const src = bust(raw);
-        const prev = qs("avatar_preview"); if(prev) prev.src = src;
-        const edit = qs("edit_avatar_preview"); if(edit) edit.src = src;
-        const ha = qs("hero_avatar"); if(ha) ha.src = src;
+        const src = bust(src0);
+        const setImg = (el)=>{ if(!el) return; el.referrerPolicy='no-referrer'; el.onerror=()=>{ el.src='/static/pictures/defaultprofile.jpeg'; }; el.src = src; };
+        setImg(qs("avatar_preview"));
+        setImg(qs("edit_avatar_preview"));
+        setImg(qs("hero_avatar"));
       }
     }
 

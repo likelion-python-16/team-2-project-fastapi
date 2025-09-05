@@ -393,7 +393,8 @@ templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 async def mypage_self(request: Request):
     ctx = {"request": request, "view_user_id": None}
     try:
-        return templates.TemplateResponse("mypage/index.html", ctx)
+        # Prefer the consolidated single-file template
+        return templates.TemplateResponse("mypage.html", ctx)
     except TemplateNotFound:
         html = f"""
         <!doctype html>
@@ -411,7 +412,7 @@ async def mypage_self(request: Request):
 async def mypage_public(request: Request, user_id: int):
     ctx = {"request": request, "view_user_id": user_id}
     try:
-        return templates.TemplateResponse("mypage/index.html", ctx)
+        return templates.TemplateResponse("mypage.html", ctx)
     except TemplateNotFound:
         html = f"""
         <!doctype html>
@@ -668,5 +669,4 @@ def change_password(
     db.commit()
     
     return {"message": "비밀번호가 변경되었습니다"}
-
 

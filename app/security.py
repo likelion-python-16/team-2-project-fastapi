@@ -305,3 +305,17 @@ def get_current_user_optional(
         return user
     except Exception:
         return None
+
+
+# -------------------------------
+# Gate: require verified email (optional use)
+# -------------------------------
+def require_verified_user(current_user = Depends(get_current_user)):
+    """Raise 403 if current_user.email_verified is False.
+
+    Use on endpoints that strictly require verified email (e.g., email change,
+    sensitive PII updates, payout settings). Non-destructive: attach only where needed.
+    """
+    if not getattr(current_user, "email_verified", False):
+        raise HTTPException(status_code=403, detail="이메일 인증이 필요합니다")
+    return current_user

@@ -71,7 +71,7 @@
     <div class="col">
       <div class="field">
         <label for="title">챌린지 명</label>
-        <input id="title" placeholder="예: 매주 수요일 축구게임">
+        <input id="title" placeholder="예: 매주 수요일 축구게임" minlength="2">
       </div>
 
       <div class="field">
@@ -366,7 +366,8 @@ async function _doSearchPlace(){
   if(!q){ box.style.display='none'; box.innerHTML=''; return; }
 
   try{
-    const data = await apiGet('/naver/local', { q, display: 10, start: 1 });
+    // cache_enabled:false → 빈 결과가 캐시에 남아있는 경우를 회피
+    const data = await apiGet('/naver/local', { q, display: 10, start: 1, cache_enabled: false });
     _placeItems = data.items || [];
   }catch(e){
     alert('검색 실패'); return;
@@ -519,7 +520,13 @@ const endEl   = document.getElementById('end');
 const startErr= document.getElementById('startError');
 const endErr  = document.getElementById('endError');
 
-function fmt(d){ return d.toISOString().slice(0,10); }
+function fmt(d){
+  // Use local time to avoid UTC shift (which can make min=어제로 보이는 문제)
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 function today0(){
   const d=new Date(); d.setHours(0,0,0,0); return d;
 }
@@ -655,6 +662,7 @@ async function createChallenge(){
 
   markErr(titleEl,false); markErr(startEl,false); markErr(endEl2,false); markErr(totalEl,false);
   if (!titleEl.value.trim()){ err.push('챌린지 명을 입력해 주세요.'); markErr(titleEl,true); }
+  else if (titleEl.value.trim().length < 2){ err.push('챌린지 명은 2자 이상이어야 합니다.'); markErr(titleEl,true); }
   if (!startEl.value){ err.push('시작일을 입력해 주세요.'); markErr(startEl,true); }
   if (!endEl2.value){ err.push('종료일을 입력해 주세요.'); markErr(endEl2,true); }
   if (startDate && startDate < today){ err.push('시작일은 오늘 또는 이후 날짜여야 합니다.'); markErr(startEl,true); }
@@ -674,7 +682,8 @@ async function createChallenge(){
   const max_participants = maxPeopleEl.value ? parseInt(maxPeopleEl.value,10) : null;
   const use_reward = document.getElementById('use_reward').checked;
   const reward = (document.getElementById('reward').value || '').trim();
-  const cover_image_url = (coverUrlEl.value || '').trim() || null;
+  const DEFAULT_BASE = '/static/uploads/challenges/covers/challengersdefaultimage.png';
+  const cover_image_url = ((coverUrlEl.value || '').trim()) || DEFAULT_BASE;
   const same_place_for_all_rounds = document.getElementById('same_place_all').checked;
 
   // 대표 장소(선택)
@@ -882,7 +891,17 @@ document.addEventListener('DOMContentLoaded', () => {
   // 초기: 아무 것도 안 누르면 숫자 없는 png를 기본값으로 쓰고 미리보기 표시
   const DEFAULT_BASE = '/static/uploads/challenges/covers/challengersdefaultimage.png';
   const initialUrl = normalizeCoverUrl(coverUrlEl.value || DEFAULT_BASE);
+  // Fallback chain: challengersdefaultimage.png -> challengersdefaultimage1.png -> defaultprofile.jpeg
+  coverPrevEl.onerror = () => {
+    if (coverPrevEl.dataset.fallbackTried === '1') {
+      coverPrevEl.src = '/static/uploads/challenges/covers/challengersdefaultimage1.png';
+      return;
+    }
+    coverPrevEl.dataset.fallbackTried = '1';
+    coverPrevEl.src = '/static/uploads/challenges/covers/challengersdefaultimage1.png';
+  };
   coverPrevEl.src = initialUrl;
+  coverPrevEl.onerror = () => { try { coverPrevEl.src = '/static/uploads/challenges/covers/challengersdefaultimage1.png'; } catch(_) {} };
   coverPrevEl.style.display = 'block';
   __coverSelection = { type: 'default', file: null, url: initialUrl };
   coverUrlEl.value = initialUrl;

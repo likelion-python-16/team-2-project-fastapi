@@ -68,6 +68,15 @@ class EnhancedChallengeSearch:
         if best_categories:
             top_category = best_categories[0][0]
             matching_keywords = self.tag_matcher.find_matching_keywords(query, top_category, threshold=0.4)
+            # 안전 필터: 실제 Tag 테이블에 존재하는 키워드만 유지
+            if matching_keywords:
+                existing = (
+                    self.db.query(Tag.tag)
+                    .filter(Tag.is_active == True, Tag.tag.in_(matching_keywords))
+                    .all()
+                )
+                existing_set = {t[0] for t in existing}
+                matching_keywords = [kw for kw in matching_keywords if kw in existing_set]
             result['query_analysis']['matching_keywords'] = matching_keywords[:5]
         
         return result
@@ -124,19 +133,37 @@ class EnhancedChallengeSearch:
             
         # 카테고리 이름들 추출
         category_names = [cat for cat, score in categories if score > 0.3]
-        
+
         if not category_names:
             return []
-        
-        # 해당 카테고리의 태그들 찾기
+
+        # 해당 카테고리의 '키워드 태그들'을 우선적으로 수집 (챌린지에는 보통 키워드가 달려있고, 카테고리 라벨은 달려있지 않음)
+        keyword_pool: list[str] = []
+        try:
+            from app.services.store import store
+            for cat in category_names:
+                kws = store.categories.get(cat) or []
+                # 너무 방대하면 절제 (상위 50개 정도만)
+                keyword_pool.extend(kws[:50])
+            # 카테고리 라벨 자체도 보조로 포함 (혹시 라벨로 태깅된 챌린지가 있는 경우)
+            keyword_pool.extend(category_names)
+            # 공백 제거 + 중복 제거
+            keyword_pool = list({(k or '').strip() for k in keyword_pool if (k or '').strip()})
+        except Exception:
+            keyword_pool = category_names[:]
+
+        if not keyword_pool:
+            return []
+
+        # 키워드/라벨에 해당하는 Tag 레코드 수집
         matching_tags = self.db.query(Tag).filter(
-            Tag.tag.in_(category_names),
+            Tag.tag.in_(keyword_pool),
             Tag.is_active == True
         ).all()
-        
+
         if not matching_tags:
             return []
-        
+
         tag_ids = [tag.id for tag in matching_tags]
         
         # 태그와 연결된 챌린지들 찾기
@@ -177,17 +204,22 @@ class EnhancedChallengeSearch:
             Participation.status == 'active'
         ).count()
         
+        # Normalize enums to plain strings for JSON safety
+        status_val = challenge.status.value if hasattr(challenge.status, 'value') else str(challenge.status)
+        mode_val = challenge.mode.value if hasattr(challenge.mode, 'value') else str(challenge.mode)
+        pay_val = challenge.payment_type.value if hasattr(challenge.payment_type, 'value') else str(challenge.payment_type)
+
         return {
             'id': challenge.id,
             'title': challenge.title,
             'description': challenge.description,
-            'status': challenge.status,
-            'mode': challenge.mode,
+            'status': status_val,
+            'mode': mode_val,
             'start_date': challenge.start_date.isoformat() if challenge.start_date else None,
             'end_date': challenge.end_date.isoformat() if challenge.end_date else None,
             'default_place_name': challenge.default_place_name,
             'default_address': challenge.default_address,
-            'payment_type': challenge.payment_type,
+            'payment_type': pay_val,
             'entry_fee': challenge.entry_fee,
             'monthly_fee': challenge.monthly_fee,
             'current_participants': participant_count,

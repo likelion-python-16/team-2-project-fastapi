@@ -7,6 +7,9 @@
   <div class="kt-card max-w-[400px] w-full mt-10">
     <div class="kt-card-content flex flex-col gap-5 p-8">
       <h3 class="text-lg font-medium">관리자 권한 신청 거절</h3>
+      {% if error %}
+      <div class="rounded-lg p-3 border border-red-200 bg-red-50 text-sm text-red-700">{{ error }}</div>
+      {% endif %}
       <div class="rounded-lg p-3 border border-amber-200 bg-amber-50 text-sm">
         아래 신청을 거절하시겠습니까?
       </div>
@@ -17,16 +20,20 @@
         <div class="text-sm"><b>신청일:</b> {{ req.created_at.strftime('%Y-%m-%d %H:%M') if req.created_at else '-' }}</div>
       </div>
 
-      <div class="flex gap-3">
-        <a class="kt-btn kt-btn-light flex-1" href="/admin">취소</a>
-        <form class="flex-1" method="post" action="/admin/reject-request">
-          <input type="hidden" name="request_id" value="{{ req.id }}" />
-          <button class="kt-btn kt-btn-danger w-full" type="submit">거절 확정</button>
-        </form>
-      </div>
+      <form method="post" action="/admin/reject-request">
+        <input type="hidden" name="request_id" value="{{ req.id }}" />
+        <div class="mb-4">
+          <label class="block text-sm font-medium mb-2">거절 사유 (필수)</label>
+          <textarea name="note" class="kt-input w-full" rows="3" placeholder="거절 사유를 입력하세요..." required></textarea>
+        </div>
+        
+        <div class="flex gap-3">
+          <a class="kt-btn kt-btn-light flex-1" href="/admin">취소</a>
+          <button class="kt-btn kt-btn-danger flex-1" type="submit">거절 확정</button>
+        </div>
+      </form>
     </div>
   </div>
   
 </div>
 {% endblock %}
-
