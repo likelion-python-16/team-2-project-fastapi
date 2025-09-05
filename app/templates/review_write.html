@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>리뷰 작성</title>
+  <style>
+    :root{ --brand:#181C32; --text:#1f2937; --muted:#6b7280; --line:#E5E7EB; --primary:#4338CA; --accent:#EEF2FF; }
+    *{box-sizing:border-box}
+    body{margin:0; font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial; color:var(--text); background:#fff}
+    a{color:var(--primary); text-decoration:none}
+    .container{max-width:980px; margin:0 auto; padding:0 16px}
+    .header-bar{border-bottom:1px solid var(--line); background:#fff}
+    .header-inner{display:flex; align-items:center; gap:16px; padding:12px 0}
+    .brand{display:flex; align-items:center; gap:10px; color:var(--brand); font-weight:800; letter-spacing:.2px}
+    .brand .dot{color:#9CA3AF; font-weight:700}
+    .page-title{display:flex; align-items:center; gap:10px; padding:18px 0 14px; font-weight:800; font-size:20px}
+
+    .card{border:1px solid var(--line); border-radius:14px; overflow:hidden; background:#fff; transition:transform .12s, box-shadow .12s}
+    .card:hover{transform:translateY(-2px); box-shadow:0 8px 24px rgba(0,0,0,.06)}
+    .card-body{padding:18px}
+
+    .row{display:grid; gap:16px}
+    .row.cols-2{grid-template-columns:280px 1fr}
+    @media (max-width:860px){ .row.cols-2{grid-template-columns:1fr} }
+
+    /* 아바타 + 이니셜 배지 */
+    .avatar-wrap{display:flex; flex-direction:column; align-items:center; gap:10px}
+    .avatar-box{width:124px; height:124px; position:relative}
+    .avatar{width:124px; height:124px; border-radius:50%; overflow:hidden; border:1px solid var(--line); background:#f1f5f9; object-fit:cover; display:block}
+    .avatar-initial{
+      width:124px; height:124px; border-radius:50%; display:grid; place-items:center;
+      border:1px solid var(--line); font-weight:800; font-size:34px; color:#fff; user-select:none;
+    }
+    .name{font-weight:700; font-size:18px}
+
+    .field{display:flex; flex-direction:column; gap:8px}
+    .label{font-size:13px; color:#0f172a; font-weight:700}
+    .textarea{min-height:120px; resize:vertical; width:100%; border:1px solid var(--line); border-radius:12px; padding:10px 12px; outline:none; font-size:14px; background:#fff}
+
+    .stars{display:inline-flex; gap:6px}
+    .star{cursor:pointer; font-size:20px; color:#D1D5DB; transition:transform .06s}
+    .star.on{color:#F59E0B}
+    .star:hover{transform:scale(1.04)}
+
+    .hint{color:#6b7280; font-size:12px}
+    .actions{display:flex; gap:10px; justify-content:flex-end}
+    .btn{min-width:120px; height:40px; padding:0 14px; border-radius:10px; border:1px solid var(--line); background:#fff; color:#1f2937; font-weight:700; cursor:pointer}
+    .btn.primary{background:#4338CA; border-color:#4338CA; color:#fff}
+  </style>
+</head>
+<body>
+<header class="header-bar">
+  <div class="container">
+    <div class="header-inner">
+      <div class="brand">
+        <span>Metronic</span>
+        <span class="dot">·</span>
+        <a href="{{ url_for('reviews_challenge') }}?challenge_id={{ challenge_id or 1 }}" class="challenge-link">{{ challenge_title or 'Challenge' }}</a>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="container">
+  <div class="page-title">리뷰 작성</div>
+
+  <div class="card"><div class="card-body">
+    <form id="reviewForm" class="row cols-2" onsubmit="return false;">
+      <!-- 좌: 프로필 (서버에서 넘어온 target 사용 + 이니셜 배지 fallback) -->
+      <section class="avatar-wrap">
+        <div class="avatar-box" data-name="{{ target.name }}">
+          {% if target.avatar_url %}
+            <img id="profileAvatar" class="avatar" src="{{ target.avatar_url }}" alt="{{ target.name }} avatar">
+          {% else %}
+            <div class="avatar-initial">{{ target.name[0] }}</div>
+          {% endif %}
+        </div>
+        <div class="name" id="profileName">{{ target.name }}</div>
+      </section>
+
+      <!-- 우: 입력 -->
+      <section class="field">
+        <div class="label">평점</div>
+        <div id="stars" class="stars" aria-label="별점" role="radiogroup">
+          <span class="star" data-v="1" role="radio" aria-checked="false">★</span>
+          <span class="star" data-v="2" role="radio" aria-checked="false">★</span>
+          <span class="star" data-v="3" role="radio" aria-checked="false">★</span>
+          <span class="star" data-v="4" role="radio" aria-checked="false">★</span>
+          <span class="star" data-v="5" role="radio" aria-checked="false">★</span>
+        </div>
+        <div class="hint" id="starHint">0 / 5</div>
+
+        <div class="label" style="margin-top:10px">코멘트</div>
+        <textarea id="comment" class="textarea" placeholder="리뷰를 입력하세요."></textarea>
+
+        <div class="actions" style="margin-top:14px">
+          <button type="submit" class="btn primary" id="btnSubmit">리뷰 등록</button>
+        </div>
+        <div class="hint">※ 같은 챌린지에는 1회만 작성 가능</div>
+
+        <!-- 서버 값 전달용 hidden -->
+        <input type="hidden" id="rating" value="0">
+        <input type="hidden" id="targetIdFromServer" value="{{ target.id or user_id }}">
+        <input type="hidden" id="challengeIdFromServer" value="{{ challenge_id }}">
+      </section>
+    </form>
+  </div></div>
+</main>
+
+<script>
+  /* ===== 아바타: 이미지 실패 시 이니셜 + 색상 ===== */
+  const palette = ["#3b82f6","#10b981","#ef4444","#f59e0b","#8b5cf6","#14b8a6","#0ea5e9","#f97316","#22c55e","#e11d48"];
+  function colorFor(name){ let h=0; for(let i=0;i<name.length;i++) h=(h*31+name.charCodeAt(i))>>>0; return palette[h%palette.length]; }
+  (function initAvatar(){
+    const box = document.querySelector(".avatar-box");
+    if (!box) return;
+    const name = (box.dataset.name || "").trim();
+    const img  = box.querySelector("img.avatar");
+    if (img){
+      img.addEventListener("error", () => {
+        const badge = document.createElement("div");
+        badge.className = "avatar-initial";
+        badge.textContent = name.charAt(0);
+        badge.style.background = colorFor(name);
+        img.replaceWith(badge);
+      });
+    } else {
+      const badge = box.querySelector(".avatar-initial");
+      if (badge) badge.style.background = colorFor(name);
+    }
+  })();
+
+  /* ===== 별점 UI ===== */
+  (function () {
+    const wrap = document.getElementById('stars');
+    const stars = Array.from(wrap.querySelectorAll('.star'));
+    const ratingInput = document.getElementById('rating');
+    const hint = document.getElementById('starHint');
+    let value = 0;
+    const paint = n => {
+      stars.forEach((s, i) => {
+        const on = i < n;
+        s.classList.toggle('on', on);
+        s.setAttribute('aria-checked', String(on && i===n-1));
+      });
+      hint.textContent = n + ' / 5';
+    };
+    stars.forEach((s) => {
+      const v = Number(s.dataset.v);
+      s.addEventListener('mouseenter', () => paint(v));
+      s.addEventListener('click', () => { value = v; ratingInput.value = v; paint(value); });
+      s.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); value = v; ratingInput.value = v; paint(value); }
+        if (e.key === 'ArrowLeft')  { e.preventDefault(); value = Math.max(1, value-1); ratingInput.value = value; paint(value); }
+        if (e.key === 'ArrowRight') { e.preventDefault(); value = Math.min(5, value+1); ratingInput.value = value; paint(value); }
+      });
+      s.tabIndex = 0;
+    });
+    wrap.addEventListener('mouseleave', () => paint(value));
+  })();
+
+  /* ===== 제출 ===== */
+  document.getElementById('reviewForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+
+    const target_id    = Number(document.getElementById('targetIdFromServer').value);
+    const challenge_id = Number(document.getElementById('challengeIdFromServer').value || '1');
+    const rating  = Number(document.getElementById('rating').value || '0');
+    const comment = document.getElementById('comment').value.trim();
+
+    if (!target_id){ alert('대상이 선택되지 않았습니다. 목록에서 다시 진입해 주세요.'); return; }
+    if (rating < 1 || rating > 5){ alert('평점을 선택해 주세요 (1~5점).'); return; }
+
+    const btn = document.getElementById('btnSubmit');
+    btn.disabled = true;
+
+    try{
+      // 욕설/금칙어 사전 체크 (리그오브레전드_필터링리스트_2020.txt)
+      try {
+        const chk = await fetch('/api/v1/moderation/profanity-check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: comment })
+        }).then(r => r.ok ? r.json() : { blocked: false });
+        if (chk && chk.blocked) {
+          alert('욕설 사용시 리뷰쓰기가 불가능합니다.');
+          btn.disabled = false;
+          return;
+        }
+      } catch (_) { /* 네트워크/서버 실패 시만 통과 */ }
+
+      let token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+      
+      console.log('Submitting review:', { target_id, challenge_id, rating, comment });
+      console.log('Token available:', token ? 'YES' : 'NO');
+      
+      // 개발용: 토큰이 없으면 자동 로그인 시도
+      if (!token) {
+        console.log('No token found, attempting auto-login...');
+        try {
+          const loginRes = await fetch('/api/v1/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ login: 'testuser', password: 'Test1234!' })
+          });
+          if (loginRes.ok) {
+            const loginData = await loginRes.json();
+            token = loginData.access_token;
+            localStorage.setItem('access_token', token);
+            console.log('Auto-login successful');
+          } else {
+            console.error('Auto-login failed:', loginRes.status, await loginRes.text());
+            alert('로그인이 필요합니다.');
+            btn.disabled = false;
+            window.location.href = '/login';
+            return;
+          }
+        } catch (e) {
+          console.error('Auto-login error:', e);
+          alert('로그인이 필요합니다.');
+          btn.disabled = false;
+          window.location.href = '/login';
+          return;
+        }
+      }
+      
+      console.log('Sending review request to:', `/api/v1/challenges/${challenge_id}/reviews`);
+      const res = await fetch(`/api/v1/challenges/${challenge_id}/reviews`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': 'Bearer ' + token } : {})
+        },
+        body: JSON.stringify({ target_id, challenge_id, rating, comment })
+      });
+
+      if(!res.ok){
+        let msg = '등록에 실패했습니다.';
+        try{ 
+          const data = await res.json(); 
+          if (data?.detail) {
+            msg = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail);
+          }
+        }catch(e){ 
+          console.error('Error parsing response:', e);
+        }
+        if (res.status === 401) msg = '로그인이 필요합니다.';
+        if (res.status === 409) {
+          msg = '이미 해당 대상에게 리뷰를 작성하셨습니다.\\n리뷰 목록에서 확인하시겠습니까?';
+          if (confirm(msg)) {
+            window.location.href = `/api/reviews?challenge_id=${challenge_id}`;
+            return;
+          } else {
+            btn.disabled = false;
+            return;
+          }
+        }
+        console.error('Review submission failed:', {
+          status: res.status,
+          statusText: res.statusText,
+          message: msg,
+          target_id, challenge_id, rating, comment
+        });
+        alert(msg);
+        btn.disabled = false;
+        return;
+      }
+
+      /* ✅ 프론트 전용 저장: MyReview 페이지에서 즉시 반영되도록 */
+      const STORAGE_KEY = `reviews:override:v1:challenge:${challenge_id}`;
+      const state = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+      const now = new Date();
+      const pad = n => n.toString().padStart(2,'0');
+      const ts  = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+      state[String(target_id)] = { comment, rating, updated_at: ts, _deleted:false };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+
+      btn.textContent = '리뷰 등록 완료';
+      btn.style.backgroundColor = '#10b981';
+      btn.style.borderColor = '#10b981';
+      
+      alert('리뷰가 정상적으로 등록되었습니다. 24시간 내에 수정 가능합니다.');
+      
+      setTimeout(() => {
+        window.location.href = `/api/reviews?challenge_id=${challenge_id}`;
+      }, 1500);
+
+    }catch(err){
+      console.error(err);
+      alert('네트워크 오류가 발생했습니다.');
+      btn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

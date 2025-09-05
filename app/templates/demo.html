@@ -1,0 +1,528 @@
+<!-- app/templates/demo.html -->
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>Demo</title>
+  <style>
+    body{font-family:system-ui,apple-system,Segoe UI,Roboto,Arial;margin:16px}
+    .row{display:flex;gap:16px}
+    .col{flex:1}
+    .panel{border:1px solid #ddd;border-radius:8px;padding:12px;margin-bottom:20px}
+    .list{max-height:260px;overflow:auto;border:1px solid #eee;padding:8px;border-radius:6px}
+    .pill{display:inline-block;background:#f2f2f2;padding:2px 8px;border-radius:999px;margin:2px}
+    button{cursor:pointer}
+    #placeResults{border:1px solid #ddd;padding:8px;margin-top:6px;max-height:220px;overflow-y:auto;border-radius:6px;display:none}
+    #placeResults .item{padding:6px;border-bottom:1px solid #eee;cursor:pointer;border-radius:4px}
+    #placeResults .item:hover{background:#f7f7f7}
+    #placePreview{display:none;margin-top:10px}
+    .muted{color:#666}
+    .inline-controls label{display:inline-block;margin:6px 10px 6px 0}
+    .inline-controls input[type="number"]{width:140px}
+    textarea{width:100%;max-width:520px}
+    .tag-grid{display:flex;flex-wrap:wrap;gap:8px;max-width:620px}
+    .tag-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid #ddd;border-radius:999px;padding:4px 10px;font-size:13px;background:#fafafa}
+  </style>
+</head>
+<body>
+
+<h2>Register</h2>
+<div class="panel">
+  <input id="regUsername" placeholder="username" />
+  <input id="regEmail" placeholder="email" type="email" />
+  <input id="regPw" placeholder="password" type="password" />
+  <input id="regName" placeholder="name" />
+  <input id="regPhone" placeholder="phone (선택)" />
+  <button onclick="register()">Register</button>
+  <span id="regStatus"></span>
+</div>
+
+<h2>Login</h2>
+<div class="panel">
+  <input id="loginId" placeholder="username or email" />
+  <input id="loginPw" placeholder="password" type="password" />
+  <button onclick="login()">Login</button>
+  <span id="loginStatus"></span>
+</div>
+
+<h2>Create Challenge</h2>
+<div class="panel">
+  <div class="row">
+    <div class="col">
+      <label>Title <input id="title"></label><br>
+      <label>Start <input id="start" type="date"></label>
+      <label>End <input id="end" type="date"></label><br>
+      <label>Total rounds <input id="total" type="number" min="1" value="5"></label><br>
+      <label>Mode
+        <select id="mode">
+          <option value="online">online</option>
+          <option value="offline">offline</option>
+          <option value="hybrid" selected>hybrid</option>
+        </select>
+      </label><br>
+      <label><input type="checkbox" id="samePlace"> 모든 회차 동일 장소</label><br>
+      <label>Default Zoom <input id="zoom" placeholder="https://..."></label><br>
+
+      <!-- 🆕 결제/참가 & 리워드 -->
+      <div class="panel" style="margin:12px 0">
+        <h3 style="margin:0 0 8px">결제/참가 & 리워드</h3>
+        <div class="inline-controls">
+          <label>회비(원)
+            <input id="fee" type="number" min="0" value="0">
+          </label>
+          <label>참가비(원)
+            <input id="participationFee" type="number" min="0" value="0">
+          </label>
+          <label>최소 참가자 수
+            <input id="minParticipants" type="number" min="1" placeholder="예: 5">
+          </label>
+          <label>최대 참가자 수
+            <input id="maxParticipants" type="number" min="1" placeholder="예: 20">
+          </label>
+        </div>
+        <div class="inline-controls" style="margin-top:6px">
+          <label><input type="checkbox" id="useReward"> 리워드 사용</label>
+        </div>
+        <div style="margin-top:6px">
+          <label>리워드 내용</label><br>
+          <textarea id="reward" rows="3" placeholder="예: 완주 시 상품권 지급"></textarea>
+        </div>
+        <div class="muted" style="font-size:12px;margin-top:6px">
+          * 회비와 참가비는 동시에 양수일 수 없습니다 (XOR). 둘 다 입력 시 참가비를 우선으로 적용합니다.
+        </div>
+      </div>
+
+      <!-- 🆕 태그 선택 -->
+      <div class="panel" style="margin:10px 0">
+        <h3 style="margin:0 0 8px">태그 선택</h3>
+        <div id="tagsBox" class="tag-grid"></div>
+        <div class="muted" style="font-size:12px;margin-top:6px">
+          * 카테고리를 선택하세요 (자기계발, 반려동물, 운동/스포츠 등).
+        </div>
+      </div>
+
+      <!-- 장소 검색 -->
+      <div class="panel" style="margin:10px 0">
+        <h3 style="margin:0 0 8px">장소</h3>
+
+        <!-- 키워드 검색 -->
+        <div class="row" style="align-items:center">
+          <label class="col" style="display:flex; gap:8px; align-items:center">
+            장소 검색
+            <input id="placeQuery" placeholder="예: 경복궁 / 정자동 카페" style="flex:1">
+            <button type="button" onclick="searchPlace()">검색</button>
+            <button type="button" onclick="confirmSelectedPlace()">확인</button>
+          </label>
+        </div>
+
+        <!-- 검색 결과 -->
+        <div id="placeResults"></div>
+
+        <!-- 생각 안날 때: 지도 검색 -->
+        <div style="margin-top:8px">
+          지명이나 장소명이 생각이 안 나는 경우:
+          <button type="button" onclick="openMapPicker()">지도 검색</button>
+          <span class="muted" style="font-size:12px"> (지도에서 선택 후 확인하면 자동 채워져요)</span>
+        </div>
+
+        <!-- 선택 미리보기 -->
+        <div id="placePreview" class="panel">
+          <div style="display:flex; gap:10px; align-items:flex-start">
+            <img id="pv_img" alt="map preview" style="width:220px;height:140px;object-fit:cover;border-radius:6px;border:1px solid #eee">
+            <div>
+              <div><b id="pv_title"></b></div>
+              <div id="pv_road" class="muted" style="font-size:12px"></div>
+              <div id="pv_addr" class="muted" style="font-size:12px"></div>
+              <div class="muted" style="font-size:12px;margin-top:4px">위도 <span id="pv_lat">-</span> / 경도 <span id="pv_lng">-</span></div>
+              <div style="margin-top:6px">
+                <a id="pv_link" href="#" target="_blank" rel="noopener">네이버 장소 링크</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 실제 폼 값 -->
+      <label>장소명 <input id="place"></label><br>
+      <label>도로명주소 <input id="road"></label><br>
+      <label>주소(지번) <input id="addr"></label><br>
+      <label>네이버지도 링크 <input id="mapurl" placeholder="네이버 지도 place url"></label><br>
+      <input id="lat" type="hidden">
+      <input id="lng" type="hidden"><br>
+
+      <button onclick="createChallenge()">Create</button>
+      <span id="createStatus"></span>
+    </div>
+
+    <div class="col panel">
+      <h3>Participants (10 per view)</h3>
+      <div id="participants" class="list"></div>
+    </div>
+  </div>
+</div>
+
+<h2>Created Challenge</h2>
+<div class="panel">
+  <pre id="challengeInfo" style="white-space:pre-wrap"></pre>
+  <h3>Rounds</h3>
+  <div id="rounds"></div>
+  <div>
+    <button onclick="prevPage()">Prev</button>
+    <span id="pageInfo"></span>
+    <button onclick="nextPage()">Next</button>
+  </div>
+  <hr>
+  <h3>회차 참석예정자 / 위임</h3>
+  <label>Round ID <input id="selRoundId" type="number"></label>
+  <button onclick="loadPlanned()">Load planned</button>
+  <div id="planned" class="list"></div>
+  <label>위임할 user_id <input id="delegateUserId" type="number"></label>
+  <button onclick="delegateRound()">위임</button>
+</div>
+
+<script>
+let token=null, challengeId=null, rounds=[], page=1, per=5;
+
+// ---------- 공통 ----------
+function authHeader(){ return token? {'Authorization':'Bearer '+token}:{ } }
+
+// ========== ① 네이버 맵 링크 항상 ,dh 보장 ==========
+function makeNaverMapUrl(lat, lng, title){
+  const lvl = 15;
+  if(lat != null && lng != null) return `https://map.naver.com/v5/?c=${lng},${lat},${lvl},0,0,0,dh`;
+  const key = encodeURIComponent((title||'').trim());
+  return `https://map.naver.com/v5/search/${key}`;
+}
+
+// ========== ② Static Map onerror 처리 ==========
+const pvImg = document.getElementById('pv_img');
+pvImg.onerror = () => {
+  pvImg.removeAttribute('src');
+};
+
+// ========== ③ 날짜 포맷 ==========
+function fmt(dtStr){
+  if(!dtStr) return '';
+  const d = new Date(dtStr);
+  if(isNaN(d)) return dtStr;
+  return d.toLocaleString('ko-KR', {hour12:false});
+}
+
+// ---------- 회원가입/로그인 ----------
+async function register(){
+  const payload = {
+    username: document.getElementById('regUsername').value?.trim(),
+    email: document.getElementById('regEmail').value?.trim(),
+    password: document.getElementById('regPw').value,
+    name: document.getElementById('regName').value || undefined,
+    phone: document.getElementById('regPhone').value || undefined,
+  };
+  const res = await fetch('/auth/signup', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(payload)
+  });
+  const out = document.getElementById('regStatus');
+  if(!res.ok){
+    out.innerText = 'fail: ' + (await res.text());
+    return;
+  }
+  const data = await res.json();
+  token = data.access_token; // auto-login
+  out.innerText = 'ok (auto-login)';
+  document.getElementById('loginStatus').innerText = 'ok';
+}
+
+async function login(){
+  const res = await fetch('/auth/login',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      login:document.getElementById('loginId').value,
+      password:document.getElementById('loginPw').value
+    })
+  });
+  if(!res.ok){
+    document.getElementById('loginStatus').innerText='fail';
+    return;
+  }
+  const data=await res.json();
+  token=data.access_token;
+  document.getElementById('loginStatus').innerText='ok';
+}
+
+// ---------- 태그 로딩/선택 ----------
+async function loadDefaultTags(){
+  try{
+    const res = await fetch('/tags/defaults');
+    if(!res.ok) return;
+    const data = await res.json(); // { labels: [...] }
+    const labels = data.labels || [];
+    const box = document.getElementById('tagsBox');
+    box.innerHTML = labels.map((t, idx) => `
+      <label class="tag-chip">
+        <input type="checkbox" name="tags" value="${t}"> ${t}
+      </label>
+    `).join('');
+  }catch(e){}
+}
+
+// ---------- 장소 검색 (네이버 Local) ----------
+let _placeItems = [];
+let _selectedIndex = -1;
+let _searchTimer;
+
+async function searchPlace(){
+  clearTimeout(_searchTimer);
+  _searchTimer = setTimeout(_doSearchPlace, 250);
+}
+
+async function _doSearchPlace(){
+  const q = document.getElementById('placeQuery').value.trim();
+  const box = document.getElementById('placeResults');
+  _placeItems=[]; _selectedIndex=-1;
+  document.getElementById('placePreview').style.display='none';
+  if(!q){ box.style.display='none'; box.innerHTML=''; return; }
+
+  const res = await fetch(`/naver/local?q=${encodeURIComponent(q)}&display=10&start=1`);
+  if(!res.ok){ alert('검색 실패'); return; }
+  const data = await res.json();
+  _placeItems = data.items || [];
+  if(!_placeItems.length){ box.style.display='none'; box.innerHTML=''; return; }
+
+  box.style.display='block';
+  box.innerHTML = _placeItems.map((it, i) => {
+    const title = (it.name||'').replace(/<[^>]+>/g,'');
+    const road = it.roadAddress || '';
+    const addr = it.address || '';
+    return `<div class="item" onclick="selectPlace(${i})">
+      <div style="font-weight:600">${title}</div>
+      <div style="font-size:12px;color:#555">${road || addr}</div>
+    </div>`;
+  }).join('');
+}
+
+async function selectPlace(i){
+  _selectedIndex = i;
+  const it = _placeItems[i];
+  const title = (it.name||'').replace(/<[^>]+>/g,'');
+  const road  = it.roadAddress || '';
+  const addr  = it.address || '';
+
+  let lat=null, lng=null;
+  try{
+    const q = road || addr || title;
+    if(q){
+      const g = await fetch(`/places/geocode?query=${encodeURIComponent(q)}`);
+      if(g.ok){
+        const j = await g.json();
+        lat = j.lat ?? null;
+        lng = j.lng ?? null;
+      }
+    }
+  }catch(e){}
+
+  const link  = makeNaverMapUrl(lat, lng, title);
+
+  const box = document.getElementById('placeResults');
+  box.style.display='none';
+  box.innerHTML='';
+
+  document.getElementById('pv_title').innerText = title;
+  document.getElementById('pv_road').innerText  = road ? `도로명주소: ${road}` : '';
+  document.getElementById('pv_addr').innerText  = addr ? `지번: ${addr}` : '';
+  document.getElementById('pv_lat').innerText   = lat ?? '-';
+  document.getElementById('pv_lng').innerText   = lng ?? '-';
+  document.getElementById('pv_link').href = link;
+
+  if(lat!=null && lng!=null){
+    document.getElementById('pv_img').src = `/places/staticmap?lat=${lat}&lng=${lng}&w=360&h=220&scale=2&level=16`;
+  }else{
+    document.getElementById('pv_img').removeAttribute('src');
+  }
+  document.getElementById('placePreview').style.display='block';
+
+  window.__lastPicked = { title, road, addr, link, lat, lng };
+}
+
+function confirmSelectedPlace(){
+  const picked = window.__lastPicked;
+  if(!picked){ alert('먼저 결과에서 항목을 선택하세요'); return; }
+
+  document.getElementById('place').value  = picked.title || '';
+  document.getElementById('road').value   = picked.road  || '';
+  document.getElementById('addr').value   = picked.addr  || '';
+  document.getElementById('mapurl').value = picked.link  || '';
+  document.getElementById('lat').value    = picked.lat != null ? picked.lat : '';
+  document.getElementById('lng').value    = picked.lng != null ? picked.lng : '';
+
+  alert('장소 정보가 입력되었습니다.');
+}
+
+// 지도 선택 대안: 템플릿 라우트로 오픈
+function openMapPicker(){
+  window.open('/map', 'mapPicker', 'width=1200,height=800');
+}
+
+window.addEventListener('message', (e)=>{
+  const msg = e.data || {};
+  if(msg.type === 'placePicked'){
+    document.getElementById('place').value  = msg.title || '';
+    document.getElementById('road').value   = msg.road  || '';
+    document.getElementById('addr').value   = msg.addr  || '';
+
+    const safeLink = makeNaverMapUrl(msg.lat, msg.lng, msg.title);
+    document.getElementById('mapurl').value = safeLink;
+
+    document.getElementById('lat').value    = msg.lat ?? '';
+    document.getElementById('lng').value    = msg.lng ?? '';
+
+    document.getElementById('pv_title').innerText = msg.title || '';
+    document.getElementById('pv_road').innerText  = msg.road ? `도로명주소: ${msg.road}` : '';
+    document.getElementById('pv_addr').innerText  = msg.addr ? `지번: ${msg.addr}` : '';
+    document.getElementById('pv_lat').innerText   = msg.lat ?? '-';
+    document.getElementById('pv_lng').innerText   = msg.lng ?? '-';
+    document.getElementById('pv_link').href = safeLink;
+
+    if(msg.lat!=null && msg.lng!=null){
+      document.getElementById('pv_img').src = `/places/staticmap?lat=${msg.lat}&lng=${msg.lng}&w=360&h=220&scale=2&level=16`;
+    }
+    document.getElementById('placePreview').style.display='block';
+  }
+});
+
+// ---------- 기존 기능들 ----------
+function openMap(){ openMapPicker(); }
+
+async function createChallenge(){
+  const numOrNull = (v) => {
+    const n = Number(v);
+    return isNaN(n) ? null : n;
+  };
+
+  let zoomVal = (document.getElementById('zoom').value || '').trim();
+  if (zoomVal && !/^https?:\/\//i.test(zoomVal)) {
+    alert('Default Zoom 링크는 http(s):// 로 시작해야 합니다.');
+    return;
+  }
+
+  let fee = numOrNull(document.getElementById('fee').value) ?? 0;
+  let participation_fee = numOrNull(document.getElementById('participationFee').value) ?? 0;
+  if (fee > 0 && participation_fee > 0) {
+    fee = 0; // 참가비 우선
+  }
+
+  // 선택된 태그 수집
+  const tagEls = Array.from(document.querySelectorAll('input[name="tags"]:checked'));
+  const tags = tagEls.map(el => el.value);
+
+  const payload={
+    title:document.getElementById('title').value,
+    start_date:document.getElementById('start').value||null,
+    end_date:document.getElementById('end').value||null,
+    total_rounds:parseInt(document.getElementById('total').value||'0'),
+    mode:document.getElementById('mode').value,
+    same_place_for_all_rounds:document.getElementById('samePlace').checked,
+    default_zoom_link: zoomVal || null,
+
+    // 장소 관련
+    default_place_name:document.getElementById('place').value||null,
+    default_road_address:document.getElementById('road').value||null,
+    default_address:document.getElementById('addr').value||null,
+    default_map_url:document.getElementById('mapurl').value||null,
+    default_latitude: (document.getElementById('lat').value || null) ? Number(document.getElementById('lat').value) : null,
+    default_longitude:(document.getElementById('lng').value || null) ? Number(document.getElementById('lng').value) : null,
+
+    // 결제/참가 & 리워드
+    fee,
+    participation_fee,
+    min_participants: numOrNull(document.getElementById('minParticipants').value),
+    max_participants: numOrNull(document.getElementById('maxParticipants').value),
+    use_reward: document.getElementById('useReward').checked,
+    reward: document.getElementById('reward').value || null,
+
+    // 태그
+    tags
+  };
+
+  const res = await fetch('/challenges/',{
+    method:'POST',
+    headers:{'Content-Type':'application/json',...authHeader() },
+    body:JSON.stringify(payload)
+  });
+  const txt = document.getElementById('createStatus');
+  if(!res.ok){
+    txt.innerText='create failed: ' + (await res.text());
+    return;
+  }
+  const ch=await res.json(); challengeId=ch.id; txt.innerText='created #'+challengeId;
+  document.getElementById('challengeInfo').innerText = JSON.stringify(ch,null,2);
+  await loadRounds();
+  await loadParticipants();
+}
+
+async function loadRounds(){
+  if(!challengeId) return;
+  const res=await fetch(`/challenges/${challengeId}/rounds`);
+  rounds=await res.json(); page=1; renderRounds();
+}
+function renderRounds(){
+  const start=(page-1)*per, end=Math.min(rounds.length, start+per);
+  const slice=rounds.slice(start,end);
+  document.getElementById('rounds').innerHTML = slice.map(r=>`
+    <div class="pill">#${r.round} ${r.mode} ${fmt(r.processing_at)||''} 
+      <button onclick="editRound(${r.id})">수정</button>
+      <button onclick="delRound(${r.id})">삭제</button>
+    </div>`).join('');
+  document.getElementById('pageInfo').innerText = `${page}/${Math.max(1,Math.ceil(rounds.length/per))}`;
+}
+function prevPage(){ if(page>1){page--; renderRounds();} }
+function nextPage(){ if(page<Math.ceil(rounds.length/per)){page++; renderRounds();} }
+
+async function editRound(rid){
+  const res=await fetch(`/challenges/${challengeId}/rounds/${rid}`,{
+    method:'PUT',
+    headers:{'Content-Type':'application/json',...authHeader()},
+    body:JSON.stringify({description:'updated by demo'})
+  });
+  if(res.ok) await loadRounds();
+}
+async function delRound(rid){
+  const res=await fetch(`/challenges/${challengeId}/rounds/${rid}`,{
+    method:'DELETE',headers:{...authHeader()}
+  });
+  if(res.ok) await loadRounds();
+}
+
+async function loadParticipants(){
+  const res=await fetch(`/challenges/${challengeId}`);
+  const ch=await res.json();
+  const rid = rounds[0]?.id || 0;
+  const res2=await fetch(`/challenges/${challengeId}/rounds/${rid}/attendees?planned_only=false`);
+  const list=(res2.ok)? await res2.json():[];
+  document.getElementById('participants').innerHTML = list.map(u=>`<div>${u.username||('user#'+u.user_id)}</div>`).join('');
+}
+
+async function loadPlanned(){
+  const rid=parseInt(document.getElementById('selRoundId').value||'0');
+  if(!rid) return;
+  const res=await fetch(`/challenges/${challengeId}/rounds/${rid}/attendees?planned_only=true`);
+  const list=await res.json();
+  document.getElementById('planned').innerHTML = list.map(u=>`<div>${u.username||u.name} (id:${u.user_id})</div>`).join('');
+}
+
+async function delegateRound(){
+  const rid=parseInt(document.getElementById('selRoundId').value||'0');
+  const uid=parseInt(document.getElementById('delegateUserId').value||'0');
+  if(!rid||!uid) return;
+  const res=await fetch(`/challenges/${challengeId}/rounds/${rid}/delegate-manager`,{
+    method:'POST', headers:{'Content-Type':'application/json',...authHeader()},
+    body:JSON.stringify({user_id:uid})
+  });
+  alert(res.ok? 'ok':'fail');
+}
+
+document.addEventListener('DOMContentLoaded', loadDefaultTags);
+</script>
+</body>
+</html>

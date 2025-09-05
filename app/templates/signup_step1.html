@@ -1,0 +1,246 @@
+{% extends "final.html" %}
+{% block title %}회원가입 - Team Project{% endblock %}
+{% block content %}
+<div id="pageBg" class="flex items-center justify-center grow bg-center bg-no-repeat page-bg">
+  <div class="kt-card max-w-[420px] w-full">
+    <form class="kt-card-content flex flex-col gap-5 p-10" id="signupForm" method="post" novalidate>
+      <div class="text-center mb-2.5">
+        <h3 class="text-lg font-medium text-mono mb-2.5">🚀 Team Project 회원가입</h3>
+        <div class="text-sm text-muted-foreground mb-4">
+          <span class="inline-flex items-center gap-2"><span class="w-6 h-6 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-xs font-bold">1</span>기본 정보</span>
+          <span class="mx-2">→</span>
+          <span class="inline-flex items-center gap-2 text-muted-foreground/50"><span class="w-6 h-6 bg-muted text-muted-foreground rounded-full flex items-center justify-center text-xs">2</span>개인 정보</span>
+          <span class="mx-2">→</span>
+          <span class="inline-flex items-center gap-2 text-muted-foreground/50"><span class="w-6 h-6 bg-muted text-muted-foreground rounded-full flex items-center justify-center text-xs">3</span>프로필 설정</span>
+        </div>
+      </div>
+
+      <div id="alertContainer" class="hidden"></div>
+
+      <!-- 이름 -->
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label">이름 *</label>
+        <input class="kt-input" id="name" name="name" placeholder="김철수" type="text" required />
+      </div>
+
+      <!-- 사용자명 -->
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label">사용자명 *</label>
+        <input class="kt-input" id="username" name="username" placeholder="johndoe123" type="text" required />
+        <span class="text-[11px] text-muted-foreground">영문으로 시작하는 3–50자 (영문/숫자/_)</span>
+        <div id="dup-username" class="text-xs mt-1 hidden"></div>
+      </div>
+
+      <!-- 이메일 -->
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label">이메일 *</label>
+        <input class="kt-input" id="email" name="email" placeholder="email@example.com" type="email" required />
+        <div id="dup-email" class="text-xs mt-1 hidden"></div>
+      </div>
+
+      <!-- 전화번호 -->
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label">전화번호 *</label>
+        <input class="kt-input" id="phone" name="phone" placeholder="070-1234-5678 또는 010-1234-5678" type="tel" required />
+        <span class="text-[11px] text-muted-foreground">허용: 070, 010, 011, 016, 017, 018, 019 (자동 정규화)</span>
+        <div id="dup-phone" class="text-xs mt-1 hidden"></div>
+      </div>
+
+      <!-- 주민등록번호 -->
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label">주민등록번호 *</label>
+        <input class="kt-input" id="identification_number" name="identification_number" placeholder="123456-1234567" type="text" maxlength="14" required />
+        <div class="text-[11px] text-muted-foreground"><i class="ki-filled ki-lock me-1"></i>입력 시 암호화 및 지문처리되어 안전하게 저장됩니다.</div>
+        <div id="dup-idn" class="text-xs mt-1 hidden"></div>
+      </div>
+
+      <!-- 비밀번호 -->
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label">비밀번호 *</label>
+        <div class="kt-input" data-kt-toggle-password="true">
+          <input id="password" name="password" placeholder="비밀번호" type="password" required />
+          <button class="kt-btn kt-btn-sm kt-btn-ghost kt-btn-icon" type="button" data-kt-toggle-password-trigger="true">
+            <span class="kt-toggle-password-active:hidden"><i class="ki-filled ki-eye text-muted-foreground"></i></span>
+            <span class="hidden kt-toggle-password-active:block"><i class="ki-filled ki-eye-slash text-muted-foreground"></i></span>
+          </button>
+        </div>
+        <div class="mt-2 p-3 bg-muted/20 rounded-lg border border-border">
+          <span class="text-xs text-muted-foreground font-medium">비밀번호 요구사항:</span>
+          <div class="grid grid-cols-1 gap-1 mt-2">
+            <div class="requirement text-xs text-muted-foreground" id="req-length"><span class="icon me-2">✗</span>8자 이상</div>
+            <div class="requirement text-xs text-muted-foreground" id="req-upper"><span class="icon me-2">✗</span>대문자 포함</div>
+            <div class="requirement text-xs text-muted-foreground" id="req-lower"><span class="icon me-2">✗</span>소문자 포함</div>
+            <div class="requirement text-xs text-muted-foreground" id="req-digit"><span class="icon me-2">✗</span>숫자 포함</div>
+            <div class="requirement text-xs text-muted-foreground" id="req-special"><span class="icon me-2">✗</span>특수문자 포함</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 비밀번호 확인 -->
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label">비밀번호 확인 *</label>
+        <input class="kt-input" id="confirmPassword" name="confirmPassword" type="password" required />
+        <div id="passwordMatchMessage" class="text-xs mt-1"></div>
+      </div>
+
+      <!-- 약관 -->
+      <label class="kt-label">
+        <input class="kt-checkbox kt-checkbox-sm" id="agreeTerms" name="agreeTerms" type="checkbox" required />
+        <span class="kt-checkbox-label"><a href="#" class="link" onclick="showTerms()">이용약관</a> 및 <a href="#" class="link" onclick="showPrivacy()">개인정보처리방침</a>에 동의합니다</span>
+      </label>
+
+      <button class="kt-btn kt-btn-primary flex justify-center" id="submitBtn" type="submit">다음 단계</button>
+      <div class="text-center text-xs text-muted-foreground mt-2">💡 계정 생성 후 추가 정보를 입력하여 프로필을 완성하세요!</div>
+    </form>
+  </div>
+</div>
+
+<script>
+var KEY='signupDraft';
+function getDraft(){try{return JSON.parse(localStorage.getItem(KEY)||'{}')}catch(e){return {}}}
+function saveDraft(d){localStorage.setItem(KEY, JSON.stringify(d||{}))}
+
+function showAlert(msg,type){
+  var el=document.getElementById('alertContainer');
+  var css=type==='error'?'kt-alert-danger':'kt-alert-success';
+  el.innerHTML='<div class="kt-alert '+css+' p-3 rounded-lg flex items-center gap-2"><i class="ki-filled '+(type==='error'?'ki-information-2':'ki-check')+'"></i><span class="text-sm">'+msg+'</span></div>';
+  el.classList.remove('hidden');
+  setTimeout(function(){el.classList.add('hidden')},5000);
+}
+
+function validatePassword(pw){
+  var req={
+    length: pw.length>=8,
+    upper: /[A-Z]/.test(pw),
+    lower: /[a-z]/.test(pw),
+    digit: /\d/.test(pw),
+    special: /[!@#$%^&*(),.?":{}|<>]/.test(pw)
+  };
+  var keys=['length','upper','lower','digit','special'];
+  for(var i=0;i<keys.length;i++){
+    var k=keys[i], e=document.getElementById('req-'+k), ic=e.querySelector('.icon');
+    if(req[k]){ic.textContent='✓'; e.classList.add('text-green-600'); e.classList.remove('text-muted-foreground');}
+    else{ic.textContent='✗'; e.classList.remove('text-green-600'); e.classList.add('text-muted-foreground');}
+  }
+  return req.length && req.upper && req.lower && req.digit && req.special;
+}
+function checkPasswordMatch(){
+  var p=document.getElementById('password').value;
+  var c=document.getElementById('confirmPassword').value;
+  var m=document.getElementById('passwordMatchMessage');
+  if(!c){m.textContent=''; m.className='text-xs mt-1'; return false;}
+  if(p===c){m.textContent='✓ 비밀번호가 일치합니다'; m.className='text-xs mt-1 text-green-600'; return true;}
+  m.textContent='✗ 비밀번호가 일치하지 않습니다'; m.className='text-xs mt-1 text-red-500'; return false;
+}
+
+function normalizePhoneForSave(raw){
+  if(!raw) return null;
+  var d=String(raw).replace(/\D/g,'');
+  var p3=d.slice(0,3);
+  if(!/^(070|010|011|016|017|018|019)$/.test(p3)) return null;
+  if(p3==='070' || p3==='010'){
+    if(d.length!==11) return null;
+    return p3+'-'+d.slice(3,7)+'-'+d.slice(7,11);
+  }else{
+    if(d.length===10) return p3+'-'+d.slice(3,6)+'-'+d.slice(6,10);
+    if(d.length===11) return p3+'-'+d.slice(3,7)+'-'+d.slice(7,11);
+    return null;
+  }
+}
+function formatPhoneOnInput(v){
+  var d=String(v||'').replace(/\D/g,'');
+  if(d.length<3) return d;
+  var p3=d.slice(0,3);
+  if(/^(070|010)$/.test(p3)){
+    if(d.length<=3) return p3;
+    if(d.length<=7) return p3+'-'+d.slice(3);
+    if(d.length<=11) return p3+'-'+d.slice(3,7)+'-'+d.slice(7);
+    return p3+'-'+d.slice(3,7)+'-'+d.slice(7,11);
+  }
+  if(/^(011|016|017|018|019)$/.test(p3)){
+    if(d.length<=3) return p3;
+    if(d.length===10) return p3+'-'+d.slice(3,6)+'-'+d.slice(6,10);
+    if(d.length<=6) return p3+'-'+d.slice(3);
+    if(d.length<=10) return p3+'-'+d.slice(3,6)+'-'+d.slice(6);
+    if(d.length<=7) return p3+'-'+d.slice(3);
+    if(d.length<=11) return p3+'-'+d.slice(3,7)+'-'+d.slice(7);
+    return p3+'-'+d.slice(3,7)+'-'+d.slice(7,11);
+  }
+  return v;
+}
+function formatIdentification(v){
+  var n=String(v||'').replace(/\D/g,'');
+  if(n.length<=6) return n;
+  if(n.length<=13) return n.replace(/(\d{6})(\d{1,7})/,'$1-$2');
+  n=n.slice(0,13);
+  return n.replace(/(\d{6})(\d{7})/,'$1-$2');
+}
+
+async function getDup(params){
+  var url=new URL('/api/v1/auth/check-duplicates', window.location.origin);
+  Object.keys(params).forEach(function(k){ if(params[k]) url.searchParams.set(k, params[k]); });
+  var res=await fetch(url.toString(), {method:'GET'});
+  try{ return await res.json(); }catch(e){ return {taken:{}}; }
+}
+async function askDup(field, value){
+  if(!value) return;
+  var idMap={username:'dup-username', email:'dup-email', phone:'dup-phone', identification_number:'dup-idn'};
+  var labelMap={username:'사용자명', email:'이메일', phone:'전화번호', identification_number:'주민등록번호'};
+  var params={}; params[field]=value;
+  var j=await getDup(params);
+  var taken=(j && j.taken && j.taken[field]===true) ? true : false;
+  var el=document.getElementById(idMap[field]); if(!el) return;
+  if(taken){ el.textContent='⚠ 이미 사용 중인 '+labelMap[field]+'입니다.'; el.classList.remove('hidden'); el.classList.add('text-red-500'); }
+  else{ el.textContent='✔ 사용 가능한 '+labelMap[field]+'입니다.'; el.classList.remove('hidden'); el.classList.remove('text-red-500'); el.classList.add('text-green-600'); }
+}
+
+document.addEventListener('DOMContentLoaded', function(){
+  document.getElementById('password').addEventListener('input', function(){ validatePassword(this.value); checkPasswordMatch(); });
+  document.getElementById('confirmPassword').addEventListener('input', checkPasswordMatch);
+
+  var phone=document.getElementById('phone');
+  phone.addEventListener('input', function(){ this.value=formatPhoneOnInput(this.value); });
+
+  var idn=document.getElementById('identification_number');
+  idn.addEventListener('input', function(){ this.value=formatIdentification(this.value); });
+
+  document.getElementById('username').addEventListener('blur', function(e){ askDup('username', e.target.value.trim().toLowerCase()); });
+  document.getElementById('email').addEventListener('blur', function(e){ askDup('email', e.target.value.trim()); });
+  phone.addEventListener('blur', function(e){ var n=normalizePhoneForSave(e.target.value); if(n){ e.target.value=n; askDup('phone', n); }});
+  idn.addEventListener('blur', function(e){ askDup('identification_number', e.target.value.replace(/\D/g,'')); });
+
+  document.getElementById('signupForm').addEventListener('submit', function(e){
+    e.preventDefault();
+    var pw=document.getElementById('password').value;
+    if(!validatePassword(pw)){ showAlert('비밀번호 요구사항을 만족해 주세요.','error'); return; }
+    if(!checkPasswordMatch()){ showAlert('비밀번호가 일치하지 않습니다.','error'); return; }
+    var nphone=normalizePhoneForSave(phone.value);
+    if(!nphone){ showAlert('전화번호 형식을 확인해 주세요.','error'); return; }
+
+    var draft={
+      name: document.getElementById('name').value.trim(),
+      username: document.getElementById('username').value.trim().toLowerCase(),
+      email: document.getElementById('email').value.trim(),
+      phone: nphone,
+      identification_number: document.getElementById('identification_number').value.trim(),
+      password: pw
+    };
+    saveDraft(draft);
+    window.location.href='/signup/step2';
+  });
+});
+function showTerms(){alert('이용약관 내용이 여기에 표시됩니다.')}
+function showPrivacy(){alert('개인정보처리방침 내용이 여기에 표시됩니다.')}
+</script>
+
+<!-- 배경 이미지는 JS로 적용 (CSS Lint 오류 방지) -->
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var el = document.getElementById('pageBg');
+  if (!el) return;
+  el.style.backgroundImage = 'url("{{ url_for("static", path="assets/final/media/images/2600x1200/bg-10.png") }}")';
+  el.style.backgroundPosition = 'center';
+  el.style.backgroundRepeat = 'no-repeat';
+});
+</script>
+{% endblock %}
