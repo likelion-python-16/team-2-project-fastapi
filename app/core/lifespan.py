@@ -35,32 +35,21 @@ async def lifespan(_: FastAPI):
         
         db = SessionLocal()
         try:
-            existing_count = db.query(Tag).count()
-            if existing_count < 100:
-                logger.info(f"현재 태그 수: {existing_count}개, 태그 시드 실행 중...")
-                
-                for name in store.centroid_labels:
-                    name = (name or "").strip()
-                    if not name:
-                        continue
-                    exists = db.query(Tag).filter(Tag.tag == name).first()
-                    if not exists:
-                        db.add(Tag(tag=name, is_active=True))
-                
-                for _, keywords in store.categories.items():
-                    for keyword in keywords[:20]:
-                        keyword = (keyword or "").strip()
-                        if not keyword:
-                            continue
-                        exists = db.query(Tag).filter(Tag.tag == keyword).first()
-                        if not exists:
-                            db.add(Tag(tag=keyword, is_active=True))
-                
+            # 이미 존재하는 태그 집합
+            existing_tags = {row[0] for row in db.query(Tag.tag).all()}
+
+            # 카테고리 라벨(예: 17개)만 대상으로 누락된 것만 추가
+            labels = [(name or "").strip() for name in store.centroid_labels]
+            labels = [name for name in labels if name]
+            missing = [name for name in labels if name not in existing_tags]
+
+            if missing:
+                for name in missing:
+                    db.add(Tag(tag=name, is_active=True))
                 db.commit()
-                new_count = db.query(Tag).count()
-                logger.info(f"태그 시드 완료. 총 태그 수: {new_count}개")
+                logger.info(f"카테고리 라벨 시드 완료. 추가된 라벨 수: {len(missing)}개")
             else:
-                logger.info(f"태그가 이미 충분히 존재합니다: {existing_count}개")
+                logger.info("추가할 카테고리 라벨이 없습니다")
         except Exception as e:
             logger.error(f"태그 시드 실행 중 오류: {e}")
             db.rollback()
@@ -72,6 +61,8 @@ async def lifespan(_: FastAPI):
     # 백그라운드 태스크 시작
     import asyncio
     task = asyncio.create_task(start_version_refresher())
+    
+    # DM 컨테이너 챌린지 로직 제거 (challenge_id NULL 허용으로 대체)
     
     try:
         yield

@@ -20,8 +20,10 @@ class ChallengeCard(BaseModel):
     title: str
     start_date: Optional[str] = None
     end_date: Optional[str] = None
+    created_at: Optional[str] = None
     status: str
     mode: Optional[str] = None
+    creator_id: Optional[int] = None
     payment_type: str
     entry_fee: int = 0
     monthly_fee: int = 0
@@ -51,14 +53,17 @@ def _to_card(ch: Challenge) -> ChallengeCard:
         title=ch.title,
         start_date=ch.start_date.isoformat() if ch.start_date else None,
         end_date=ch.end_date.isoformat() if ch.end_date else None,
+        created_at=ch.created_at.isoformat() if getattr(ch, 'created_at', None) else None,
         status=ch.status,
         mode=getattr(ch, 'mode', None),
+        creator_id=getattr(ch, 'creator_id', None),
         payment_type=payment_type,
         entry_fee=entry_fee_val,
         monthly_fee=monthly_fee_val,
         current_participants=getattr(ch, 'current_participants', 0) or 0,
         max_participants=getattr(ch, 'max_participants', None),
-        cover_image=getattr(ch, 'cover_image', None),
+        # 모델 필드는 cover_image_url 이므로 이를 맵핑
+        cover_image=getattr(ch, 'cover_image_url', None),
     )
 
 @router.post("/follow/{target_user_id}")

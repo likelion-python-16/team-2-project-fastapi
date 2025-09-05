@@ -31,6 +31,7 @@
     .user-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:16px; margin:16px 0}
     .user-card{border:1px solid var(--line); border-radius:14px; padding:16px; background:#fff; transition:transform .12s ease, box-shadow .12s ease}
     .user-card:hover{transform:translateY(-2px); box-shadow:0 8px 24px rgba(0,0,0,.06)}
+    .user-card.clickable{cursor:pointer}
     
     .user-header{display:flex; align-items:center; gap:12px; margin-bottom:12px}
     .user-avatar{width:48px; height:48px; border-radius:50%; background:#f3f4f6; border:1px solid var(--line); display:flex; align-items:center; justify-content:center; font-weight:700; color:#475569}
@@ -115,7 +116,9 @@
     }
 
     function getAccessToken() {
-      return localStorage.getItem('access_token') || null;
+      try {
+        return localStorage.getItem('access_token') || sessionStorage.getItem('access_token') || null;
+      } catch (_) { return null; }
     }
 
     function authHeader() {
@@ -157,16 +160,16 @@
     async function loadUsers() {
       try {
         const skip = (S.currentPage - 1) * S.pageSize;
-        const params = new URLSearchParams({
-          skip: skip,
-          limit: S.pageSize
-        });
-
+        let users;
         if (S.searchQuery) {
-          params.set('search', S.searchQuery);
+          // 서버의 검색 엔드포인트 사용
+          const q = encodeURIComponent(S.searchQuery);
+          const res = await fetchJSON(`/api/v1/users/search?q=${q}`);
+          users = (res && res.users) ? res.users : [];
+        } else {
+          const params = new URLSearchParams({ skip: skip, limit: S.pageSize });
+          users = await fetchJSON(`/api/v1/users?${params}`);
         }
-
-        const users = await fetchJSON(`/api/v1/users?${params}`);
         
         // 현재 사용자가 로그인한 경우 자기 자신 제외
         if (getAccessToken() && !S.currentUserId) {
@@ -237,14 +240,15 @@
       const isFollowing = S.followingUsers.has(user.id);
       const avatar = user.username ? user.username.slice(0, 2).toUpperCase() : 'U';
       const isCurrentUser = S.currentUserId && user.id === S.currentUserId;
+      const profileUrl = `/users/${user.id}`;
       
       return `
-        <div class="user-card">
+        <div class="user-card clickable" data-user-id="${user.id}">
           <div class="user-header">
-            <div class="user-avatar">${avatar}</div>
+            <a class="user-avatar" href="${profileUrl}" title="프로필 보기">${avatar}</a>
             <div class="user-info">
               <div class="user-name">
-                ${escapeHtml(user.username || user.name || '이름없음')}
+                <a href="${profileUrl}" style="color:inherit;">${escapeHtml(user.username || user.name || '이름없음')}</a>
                 ${isCurrentUser ? '<span style="color:#6b7280;font-size:12px;margin-left:6px;">(나)</span>' : ''}
               </div>
               <div class="user-meta">
@@ -331,6 +335,17 @@
       document.getElementById('search-btn').addEventListener('click', performSearch);
       document.getElementById('search-input').addEventListener('keypress', (e) => {
         if (e.key === 'Enter') performSearch();
+      });
+
+      // 카드 전체 클릭 시 프로필로 이동 (버튼 클릭은 제외)
+      const listEl = document.getElementById('user-list');
+      listEl.addEventListener('click', (e) => {
+        const isButton = e.target.closest('button');
+        if (isButton) return;
+        const card = e.target.closest('.user-card');
+        if (!card) return;
+        const uid = card.getAttribute('data-user-id');
+        if (uid) window.location.href = `/users/${uid}`;
       });
 
       // 데이터 로드

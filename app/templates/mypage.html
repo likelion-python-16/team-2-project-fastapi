@@ -58,6 +58,11 @@
             <span class="item" title="팔로잉">➕ <span id="hero_following">0</span> 팔로잉</span>
           </div>
           <div class="intro" id="hero_intro">“소개글이 없습니다.”</div>
+          <div class="row" id="chat_action_bar" style="margin-top:10px; display:none; gap:8px; justify-content:center;">
+            <button class="btn" id="btn_chat_with_user" title="채팅하기">💬 채팅하기</button>
+            <button class="btn" id="btn_follow_user" title="팔로우">팔로우</button>
+            <button class="btn" id="btn_unfollow_user" title="언팔로우" style="display:none;background:var(--badge-ok);color:#fff;border-color:var(--badge-ok)">언팔로우</button>
+          </div>
         </section>
 
         <!-- My Profile (2열 레이아웃) -->
@@ -213,6 +218,6 @@
   <!-- 토스트 -->
   <div class="toast-zone" id="toasts"></div>
 
-  <script type="module" src="/static/js/mypage.bundle.js?v=2" defer></script>
+  <script type="module" src="/static/js/mypage.bundle.js?v=3" defer></script>
 </body>
 </html>

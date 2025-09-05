@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     project_version: str = "1.0.0"
     project_description: str = "팀프로젝트 FastAPI 백엔드"
     id_fingerprint_secret: str = os.getenv("ID_FINGERPRINT_SECRET", "default-fingerprint-secret-change-in-prod")
+    # 로깅
+    log_level: str = os.getenv("LOG_LEVEL", "INFO")
 
 
     # NAVER Cloud Platform - Maps
