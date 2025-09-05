@@ -44,6 +44,8 @@
     .follow-btn.following{background:var(--ok); color:#fff; border-color:var(--ok)}
     .follow-btn:hover{background:var(--primary); color:#fff; border-color:var(--primary)}
     .follow-btn.following:hover{background:var(--danger); border-color:var(--danger)}
+    .chat-btn{height:32px; padding:0 12px; border-radius:8px; border:1px solid #f59e0b; background:#fbbf24; color:#fff; font-weight:600; cursor:pointer; font-size:13px; transition:all .12s ease}
+    .chat-btn:hover{background:#f59e0b; border-color:#d97706}
 
     .search-bar{margin:16px 0; display:flex; gap:12px; align-items:center}
     .search-input{flex:1; height:40px; border:1px solid var(--line); border-radius:10px; padding:0 14px; font-size:14px; outline:none}
@@ -266,6 +268,13 @@
               >
                 ${isFollowing ? '언팔로우' : '팔로우'}
               </button>
+              <button 
+                class="chat-btn" 
+                onclick="startChat(${user.id})"
+                ${!getAccessToken() ? 'disabled' : ''}
+              >
+                💬 채팅
+              </button>
             </div>
           ` : ''}
         </div>
@@ -319,6 +328,34 @@
           btnEl.textContent = '팔로우';
         }
         alert('팔로우 처리 중 오류가 발생했습니다: ' + error.message);
+      }
+    }
+
+    // 채팅 시작
+    async function startChat(userId) {
+      if (!getAccessToken()) {
+        alert('로그인이 필요합니다.');
+        return;
+      }
+
+      // 자기 자신과 채팅하려는 경우 방지
+      if (S.currentUserId && userId === S.currentUserId) {
+        alert('자기 자신과 채팅할 수 없습니다.');
+        return;
+      }
+
+      try {
+        // 채팅방 생성/가져오기
+        const result = await fetchJSON(`/api/v1/chat/rooms/with/${userId}`, { method: 'POST' });
+        
+        if (result.room_id) {
+          // 채팅방으로 이동
+          window.location.href = `/chat/rooms/${result.room_id}`;
+        } else {
+          alert('채팅방 생성에 실패했습니다.');
+        }
+      } catch (error) {
+        alert('채팅 시작 중 오류가 발생했습니다: ' + error.message);
       }
     }
 

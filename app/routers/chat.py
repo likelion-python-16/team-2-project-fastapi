@@ -22,27 +22,37 @@ def _get_or_create_dm_room(db: Session, user_a: int, user_b: int) -> ChatRoom:
     if user_a == user_b:
         raise HTTPException(400, "자기 자신과의 채팅은 생성할 수 없습니다")
 
-    # 방 찾기: challenge_id 가 NULL (DM 용) 이고 두 명이 모두 참가자인 방
-    sub_a = select(ChatParticipant.room_id).where(ChatParticipant.user_id == user_a)
-    sub_b = select(ChatParticipant.room_id).where(ChatParticipant.user_id == user_b)
+    try:
+        # 방 찾기: challenge_id 가 NULL (DM 용) 이고 두 명이 모두 참가자인 방
+        sub_a = select(ChatParticipant.room_id).where(ChatParticipant.user_id == user_a)
+        sub_b = select(ChatParticipant.room_id).where(ChatParticipant.user_id == user_b)
 
-    room = db.execute(
-        select(ChatRoom).where(ChatRoom.id.in_(sub_a)).where(ChatRoom.id.in_(sub_b))
-    ).scalars().first()
+        room = db.execute(
+            select(ChatRoom).where(
+                ChatRoom.id.in_(sub_a),
+                ChatRoom.id.in_(sub_b),
+                ChatRoom.challenge_id.is_(None)  # DM 방 조건 추가
+            )
+        ).scalars().first()
 
-    if room:
+        if room:
+            return room
+
+        # 새 방 생성 (DM): 챌린지 미연동 방
+        room = ChatRoom(creator_id=user_a, challenge_id=None)
+        db.add(room)
+        db.flush()
+
+        for uid in (user_a, user_b):
+            db.add(ChatParticipant(room_id=room.id, user_id=uid))
+        db.commit()
+        db.refresh(room)
         return room
-
-    # 새 방 생성 (DM): 챌린지 미연동 방
-    room = ChatRoom(creator_id=user_a, challenge_id=None)
-    db.add(room)
-    db.flush()
-
-    for uid in (user_a, user_b):
-        db.add(ChatParticipant(room_id=room.id, user_id=uid))
-    db.commit()
-    db.refresh(room)
-    return room
+        
+    except Exception as e:
+        db.rollback()
+        logger.error(f"채팅방 생성/조회 오류: {str(e)}")
+        raise e
 
 
 def _ensure_member(db: Session, room_id: int, user_id: int) -> None:
@@ -58,13 +68,24 @@ def _ensure_member(db: Session, room_id: int, user_id: int) -> None:
 # ---------------------------
 @router.post("/rooms/with/{target_user_id}")
 async def create_or_get_dm_room(target_user_id: int, db: Session = Depends(get_db), me: User = Depends(get_current_user)):
-    if target_user_id == me.id:
-        raise HTTPException(400, "자기 자신과의 채팅은 불가합니다")
-    target = db.get(User, target_user_id)
-    if not target or not target.is_active:
-        raise HTTPException(404, "대상 사용자를 찾을 수 없습니다")
-    room = _get_or_create_dm_room(db, me.id, target_user_id)
-    return {"room_id": room.id}
+    try:
+        if target_user_id == me.id:
+            raise HTTPException(400, "자기 자신과의 채팅은 불가합니다")
+        
+        target = db.get(User, target_user_id)
+        if not target:
+            raise HTTPException(404, "대상 사용자를 찾을 수 없습니다")
+        if not target.is_active:
+            raise HTTPException(404, "대상 사용자가 비활성 상태입니다")
+        
+        room = _get_or_create_dm_room(db, me.id, target_user_id)
+        return {"room_id": room.id}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"채팅방 생성 오류: {str(e)}")
+        raise HTTPException(500, f"채팅방 생성 중 오류가 발생했습니다: {str(e)}")
 
 
 @router.get("/rooms")
@@ -212,14 +233,25 @@ async def room_meta(room_id: int, db: Session = Depends(get_db), me: User = Depe
 class ConnectionManager:
     def __init__(self) -> None:
         self.rooms: Dict[int, Set[WebSocket]] = {}
+        self.global_connections: Dict[int, WebSocket] = {}  # user_id -> websocket
 
     async def connect(self, room_id: int, websocket: WebSocket):
         await websocket.accept()
         self.rooms.setdefault(room_id, set()).add(websocket)
 
+    async def connect_global(self, user_id: int, websocket: WebSocket):
+        await websocket.accept()
+        self.global_connections[user_id] = websocket
+
     def disconnect(self, room_id: int, websocket: WebSocket):
         try:
             self.rooms.get(room_id, set()).discard(websocket)
+        except Exception:
+            pass
+
+    def disconnect_global(self, user_id: int):
+        try:
+            self.global_connections.pop(user_id, None)
         except Exception:
             pass
 
@@ -232,34 +264,103 @@ class ConnectionManager:
                 # drop dead connections
                 self.disconnect(room_id, ws)
 
+    async def send_to_user(self, user_id: int, message: dict):
+        ws = self.global_connections.get(user_id)
+        if ws:
+            try:
+                await ws.send_json(message)
+            except Exception:
+                # drop dead connections
+                self.disconnect_global(user_id)
+
 
 manager = ConnectionManager()
+
+
+@router.websocket("/ws/global")
+async def global_chat_ws(websocket: WebSocket, db: Session = Depends(get_db)):
+    # 글로벌 채팅 알림용 WebSocket
+    token = websocket.query_params.get("token")
+    logger.info(f"글로벌 WebSocket 연결 시도: token={'있음' if token else '없음'}")
+    
+    if not token:
+        logger.warning("글로벌 WebSocket: 토큰이 없음")
+        await websocket.close(code=4401)
+        return
+        
+    data = verify_token(token)
+    if not data:
+        logger.warning("글로벌 WebSocket: 토큰 검증 실패")
+        await websocket.close(code=4401)
+        return
+        
+    user_id = data.get("user_id") or data.get("sub")
+    logger.info(f"글로벌 WebSocket: 토큰에서 추출한 user_id={user_id}")
+    
+    if isinstance(user_id, str):
+        u = db.execute(select(User).where(User.username == user_id)).scalars().first()
+        user_id = u.id if u else None
+        
+    if not isinstance(user_id, int):
+        logger.warning(f"글로벌 WebSocket: user_id가 정수가 아님: {user_id}")
+        await websocket.close(code=4401)
+        return
+
+    await manager.connect_global(int(user_id), websocket)
+    logger.info(f"글로벌 WebSocket 연결 완료: user_id={user_id}")
+    
+    try:
+        while True:
+            # 클라이언트에서 ping을 보내면 pong으로 응답 (연결 유지)
+            payload = await websocket.receive_json()
+            kind = payload.get("type")
+            if kind == "ping":
+                await websocket.send_json({"type": "pong", "ts": datetime.now(timezone.utc).isoformat()})
+    except WebSocketDisconnect:
+        manager.disconnect_global(int(user_id))
+        logger.info(f"글로벌 WebSocket 연결 해제: user_id={user_id}")
+    except Exception:
+        logger.exception("글로벌 WebSocket 오류; 연결 해제")
+        manager.disconnect_global(int(user_id))
 
 
 @router.websocket("/ws/{room_id}")
 async def chat_ws(websocket: WebSocket, room_id: int, db: Session = Depends(get_db)):
     # 간단 인증: query param "token"
     token = websocket.query_params.get("token")
+    logger.info(f"WebSocket 연결 시도: room_id={room_id}, token={'있음' if token else '없음'}")
+    
     if not token:
+        logger.warning("WebSocket: 토큰이 없음")
         await websocket.close(code=4401)
         return
+        
     data = verify_token(token)
     if not data:
+        logger.warning("WebSocket: 토큰 검증 실패")
         await websocket.close(code=4401)
         return
+        
     user_id = data.get("user_id") or data.get("sub")
+    logger.info(f"WebSocket: 토큰에서 추출한 user_id={user_id}, type={type(user_id)}")
+    
     if isinstance(user_id, str):
         # sub 가 username일 수도 있으나, 토큰에 user_id 도 포함해두었으므로 우선 사용
         u = db.execute(select(User).where(User.username == user_id)).scalars().first()
         user_id = u.id if u else None
+        logger.info(f"WebSocket: 문자열에서 변환된 user_id={user_id}")
+        
     if not isinstance(user_id, int):
+        logger.warning(f"WebSocket: user_id가 정수가 아님: {user_id}, type={type(user_id)}")
         await websocket.close(code=4401)
         return
 
     # 멤버 검증
     try:
         _ensure_member(db, room_id, int(user_id))
-    except HTTPException:
+        logger.info(f"WebSocket: 멤버 검증 성공 - user_id={user_id}, room_id={room_id}")
+    except HTTPException as e:
+        logger.warning(f"WebSocket: 멤버 검증 실패 - user_id={user_id}, room_id={room_id}, error={str(e)}")
         await websocket.close(code=4403)
         return
 
@@ -321,6 +422,39 @@ async def chat_ws(websocket: WebSocket, room_id: int, db: Session = Depends(get_
                 "created_at": msg.created_at.isoformat(),
                 "client_id": client_id,
             })
+            
+            # 글로벌 알림 (채팅방에 있지 않은 참여자들에게)
+            try:
+                recips = db.execute(
+                    select(ChatParticipant.user_id).where(
+                        and_(ChatParticipant.room_id == room_id, ChatParticipant.user_id != int(user_id))
+                    )
+                ).scalars().all()
+                
+                for uid in recips:
+                    # 해당 사용자의 미읽음 메시지 수 계산
+                    unread_count = db.execute(
+                        select(func.count(ChatMessage.id)).where(
+                            and_(
+                                ChatMessage.room_id == room_id,
+                                ChatMessage.sender_id != uid,
+                                ChatMessage.is_read == False
+                            )
+                        )
+                    ).scalar() or 0
+                    
+                    # 글로벌 WebSocket으로 알림 전송
+                    await manager.send_to_user(uid, {
+                        "type": "new_message",
+                        "room_id": room_id,
+                        "unread_count": int(unread_count),
+                        "sender_id": user_id,
+                        "content": msg.content[:100],
+                        "created_at": msg.created_at.isoformat()
+                    })
+                    
+            except Exception as e:
+                logger.error(f"글로벌 알림 전송 실패: {e}")
     except WebSocketDisconnect:
         manager.disconnect(room_id, websocket)
     except Exception:
