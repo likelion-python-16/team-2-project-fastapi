@@ -518,3 +518,13 @@ def admin_demote_admin_form(
         target.is_superadmin = False
     db.commit()
     return RedirectResponse(url="/admin?success=demoted", status_code=303)
+
+
+@router.get("/admin/points", response_class=HTMLResponse)
+def admin_points_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user = Depends(require_admin),
+):
+    """관리자 포인트 관리 페이지"""
+    return templates.TemplateResponse("admin_points.html", {"request": request, "current_user": current_user})

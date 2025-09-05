@@ -29,7 +29,7 @@ from .utils.logging import logger
 from .routers import (
     users, health, system, challenges, auth, homepage, follow,
     naver_maps, map, files, tags_categories, places, naver_local, pages, tags,
-    users_mypage, users_mypage_chat, users_mypage_more
+    users_mypage, users_mypage_chat, users_mypage_more, point_management
 )
 from .routers import auth_social
 from .routers import round_pictures, participations, payments, payment_reminders
@@ -281,6 +281,7 @@ app.include_router(users_mypage.page_router)
 # Admin routes
 app.include_router(admin_auth.router)
 app.include_router(admin_pages.router)
+app.include_router(point_management.router, prefix="/api/v1")
 
 # ---------------------------
 # Seed default tags moved to lifespan.py

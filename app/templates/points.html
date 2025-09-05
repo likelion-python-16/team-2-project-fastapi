@@ -1,0 +1,573 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>💰 포인트 관리</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="/static/assets/final/css/styles.css" rel="stylesheet">
+  <style>
+    :root{--card-bg:#fff;--muted:#777;--br:#eee;--primary:#2563eb;--success:#0a7;--warning:#ffc107;--danger:#dc2626}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Noto Sans KR,Apple SD Gothic Neo,Helvetica,Arial,sans-serif;margin:16px}
+    .panel{border:1px solid var(--br);border-radius:12px;padding:16px;margin:12px 0;background:#fff}
+    .muted{color:var(--muted);font-size:12px}
+    .w-100{width:100%}
+    .btn{padding:8px 12px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;transition:all 0.2s}
+    .btn:hover{background:#f7f7f7}
+    .btn-primary{background:var(--primary);color:white;border-color:var(--primary)}
+    .btn-primary:hover{background:#1d4ed8}
+    .btn-success{background:var(--success);color:white;border-color:var(--success)}
+    .btn-success:hover{background:#059669}
+    .btn-danger{background:var(--danger);color:white;border-color:var(--danger)}
+    .btn-danger:hover{background:#b91c1c}
+    table{width:100%;border-collapse:collapse;margin-top:12px}
+    th,td{border-top:1px solid var(--br);padding:10px;vertical-align:top;font-size:13px}
+    th{background:#f9fafb;text-align:left;font-weight:600}
+    .ok{color:var(--success)}.err{color:var(--danger)}.warning{color:#856404}
+    .row-flex{display:flex;gap:8px;align-items:center}
+    .tiny{font-size:11px}
+    
+    /* 통계 카드 스타일 - 기존 디자인과 일치 */
+    .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px}
+    .stat-card{background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px;text-align:center}
+    .stat-label{font-size:12px;color:#6b7280;margin-bottom:6px}
+    .stat-value{font-weight:bold;font-size:24px;color:#111827}
+    
+    /* 포인트 강조 */
+    .points-highlight{color:var(--primary);font-weight:700}
+    .points-available{color:var(--success);font-weight:700}
+    .points-minimum{color:var(--muted);font-size:18px}
+    
+    /* 폼 스타일 */
+    .form-group{margin-bottom:12px}
+    .form-label{display:block;margin-bottom:4px;font-weight:600;font-size:13px}
+    .form-control{width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box}
+    .form-control:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 2px rgba(37,99,235,0.1)}
+    .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .form-help{font-size:11px;color:var(--muted);margin-top:4px}
+    
+    /* 상태 배지 */
+    .status-badge{display:inline-block;border:1px solid #ddd;border-radius:999px;padding:3px 8px;font-size:11px;font-weight:500}
+    .status-pending{background:#fff3cd;color:#856404;border-color:#ffeaa7}
+    .status-reviewing{background:#cce5f0;color:#004085;border-color:#b3d7f0}
+    .status-approved{background:#d4edda;color:#155724;border-color:#c3e6cb}
+    .status-completed{background:#d1ecf1;color:#0c5460;border-color:#bee5eb}
+    .status-rejected{background:#f8d7da;color:#721c24;border-color:#f5c6cb}
+    .status-cancelled{background:#e2e3e5;color:#383d41;border-color:#d6d8db}
+    
+    /* 모달 스타일 - 기존 디자인과 일치 */
+    .modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:none;z-index:1000;align-items:center;justify-content:center}
+    .modal-content{background:white;border-radius:12px;padding:20px;max-width:500px;width:90%;box-shadow:0 10px 25px rgba(0,0,0,0.1)}
+    .modal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+    .modal-title{font-size:16px;font-weight:600;color:#111}
+    .close{font-size:20px;cursor:pointer;color:#aaa}
+    .close:hover{color:#000}
+    
+    /* 액션 버튼들 */
+    .action-buttons{display:flex;gap:6px}
+    .action-buttons .btn{padding:4px 8px;font-size:11px}
+    
+    /* 경고 메시지 */
+    .alert-warning{background:#fff3cd;border:1px solid #ffeaa7;color:#856404;padding:12px;border-radius:6px;margin:12px 0}
+    
+    /* 반응형 */
+    @media (max-width:640px){
+      .form-row{grid-template-columns:1fr}
+      .stats-row{grid-template-columns:repeat(2,1fr)}
+      .stats-row .stat-card:last-child{grid-column:1/-1}
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>💰 포인트 관리</h2>
+    
+    <!-- 포인트 현황 -->
+    <div class="panel">
+      <h3>🎯 포인트 현황</h3>
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-label">보유 포인트</div>
+          <div class="stat-value points-highlight" id="totalPoints">
+            {{ "{:,}".format(current_user.total_points if current_user and current_user.total_points else 0) }}P
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">환급 가능</div>
+          <div class="stat-value points-available">
+            {% if current_user and current_user.total_points and current_user.total_points >= 10000 %}
+              {{ "{:,}".format(current_user.total_points) }}P
+            {% else %}
+              0P
+            {% endif %}
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">최소 환급</div>
+          <div class="stat-value points-minimum">10,000P</div>
+        </div>
+      </div>
+      
+      <div class="muted" style="margin-top:12px;">
+        💡 챌린지를 완주하여 포인트를 모으고, 10,000포인트 이상부터 현금으로 환급받을 수 있습니다.
+      </div>
+    </div>
+
+    <!-- 환급 신청 -->
+    <div class="panel">
+      <h3>💸 포인트 환급 신청</h3>
+      <div class="muted" style="margin-bottom:16px;">
+        • 최소 10,000포인트부터 환급 가능<br>
+        • 수수료 1% 차감 후 입금<br>
+        • 관리자 승인 후 1-3일 내 처리
+      </div>
+      
+      {% if current_user and current_user.total_points and current_user.total_points >= 10000 %}
+      <form id="withdrawalForm" onsubmit="return submitWithdrawal(event)">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">환급할 포인트</label>
+            <input type="number" class="form-control" id="pointAmount" min="10000" max="{{ current_user.total_points if current_user else 0 }}" required placeholder="10000">
+            <div class="form-help">최소 10,000P ~ 최대 {{ "{:,}".format(current_user.total_points if current_user else 0) }}P</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">환급 방법</label>
+            <select class="form-control" id="withdrawalMethod" onchange="toggleBankInfo()" required>
+              <option value="">선택해주세요</option>
+              <option value="bank_transfer">🏦 계좌이체</option>
+              <option value="toss_pay">💙 토스페이</option>
+              <option value="kakao_pay">💛 카카오페이</option>
+            </select>
+          </div>
+        </div>
+        
+        <div id="bankInfo" style="display: none;" class="panel" style="background:#f8f9fa; margin-top:12px;">
+          <h4>🏦 계좌 정보</h4>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">은행명</label>
+              <input type="text" class="form-control" id="bankName" placeholder="예: 국민은행">
+            </div>
+            <div class="form-group">
+              <label class="form-label">예금주명</label>
+              <input type="text" class="form-control" id="accountHolder" placeholder="실명 입력">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">계좌번호</label>
+            <input type="text" class="form-control" id="accountNumber" placeholder="- 없이 숫자만 입력">
+          </div>
+        </div>
+        
+        <div class="form-group" style="margin-top:20px;">
+          <button type="submit" class="btn btn-primary" style="padding:12px 24px;">
+            💰 환급 신청하기
+          </button>
+          <div class="form-help" style="margin-top:8px;">
+            신청 후 관리자 승인을 거쳐 처리됩니다.
+          </div>
+        </div>
+      </form>
+      {% else %}
+      <div class="alert-warning">
+        <strong>⚠️ 포인트 부족</strong><br>
+        환급 신청을 위해서는 최소 10,000포인트가 필요합니다.<br>
+        챌린지를 완주하여 포인트를 모아보세요! 🏆
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- 환급 신청 내역 -->
+    <div class="panel">
+      <div class="row-flex" style="margin-bottom:12px;">
+        <h3>📋 환급 신청 내역</h3>
+        <button class="btn tiny" onclick="loadWithdrawals()" style="margin-left:auto;">새로고침</button>
+      </div>
+      <div id="withdrawalList">
+        <div class="muted" style="text-align:center; padding:20px;">
+          📄 환급 신청 내역을 불러오는 중...
+        </div>
+      </div>
+    </div>
+
+    <!-- 포인트 적립 내역 -->
+    <div class="panel">
+      <div class="row-flex" style="margin-bottom:12px;">
+        <h3>🏆 챌린지 보상 내역</h3>
+        <button class="btn tiny" onclick="loadRewardHistory()" style="margin-left:auto;">새로고침</button>
+      </div>
+      <div id="rewardHistory">
+        <div class="muted" style="text-align:center; padding:20px;">
+          🎁 보상 내역을 불러오는 중...
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 환급 신청 상세 모달 -->
+  <div id="withdrawalModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">환급 신청 상세</h3>
+        <span class="close" onclick="closeModal()">&times;</span>
+      </div>
+      <div id="withdrawalDetail">
+        <!-- 상세 내용이 여기에 로드됩니다 -->
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 환급 방법 선택 시 계좌 정보 표시/숨김
+    function toggleBankInfo() {
+      const method = document.getElementById('withdrawalMethod').value;
+      const bankInfo = document.getElementById('bankInfo');
+      
+      if (method === 'bank_transfer') {
+        bankInfo.style.display = 'block';
+        document.getElementById('bankName').required = true;
+        document.getElementById('accountNumber').required = true;
+        document.getElementById('accountHolder').required = true;
+      } else {
+        bankInfo.style.display = 'none';
+        document.getElementById('bankName').required = false;
+        document.getElementById('accountNumber').required = false;
+        document.getElementById('accountHolder').required = false;
+      }
+    }
+
+    // 환급 신청 제출
+    async function submitWithdrawal(event) {
+      event.preventDefault();
+      
+      const pointAmount = parseInt(document.getElementById('pointAmount').value);
+      const method = document.getElementById('withdrawalMethod').value;
+      const bankName = document.getElementById('bankName').value;
+      const accountNumber = document.getElementById('accountNumber').value;
+      const accountHolder = document.getElementById('accountHolder').value;
+      
+      const data = {
+        point_amount: pointAmount,
+        method: method
+      };
+      
+      if (method === 'bank_transfer') {
+        data.bank_name = bankName;
+        data.account_number = accountNumber;
+        data.account_holder = accountHolder;
+      }
+      
+      try {
+        const response = await fetch('/points/withdraw', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + localStorage.getItem('access_token')
+          },
+          body: JSON.stringify(data)
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+          alert(result.message);
+          document.getElementById('withdrawalForm').reset();
+          toggleBankInfo();
+          loadWithdrawals();
+          // 포인트 현황 업데이트
+          location.reload();
+        } else {
+          alert(result.detail || '환급 신청에 실패했습니다.');
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        alert('환급 신청 중 오류가 발생했습니다.');
+      }
+    }
+
+    // 환급 신청 내역 로드
+    async function loadWithdrawals() {
+      try {
+        const response = await fetch('/points/withdrawals', {
+          headers: {
+            'Authorization': 'Bearer ' + localStorage.getItem('access_token')
+          }
+        });
+        
+        const withdrawals = await response.json();
+        const container = document.getElementById('withdrawalList');
+        
+        if (withdrawals.length === 0) {
+          container.innerHTML = `
+            <div class="muted" style="text-align:center; padding:40px;">
+              📭 아직 환급 신청 내역이 없습니다.<br>
+              <small>10,000포인트 이상 모으면 환급 신청이 가능해요!</small>
+            </div>
+          `;
+          return;
+        }
+        
+        let html = `
+          <table>
+            <thead>
+              <tr>
+                <th>신청일</th>
+                <th>포인트</th>
+                <th>환급금액</th>
+                <th>방법</th>
+                <th>상태</th>
+                <th>액션</th>
+              </tr>
+            </thead>
+            <tbody>
+        `;
+        
+        withdrawals.forEach(w => {
+          const statusClass = `status-${w.status}`;
+          const statusText = getStatusText(w.status);
+          const canCancel = w.can_cancel ? 
+            `<button class="btn btn-danger tiny" onclick="cancelWithdrawal(${w.id})" title="신청 취소">취소</button>` : '';
+          
+          html += `
+            <tr>
+              <td>
+                <div>${new Date(w.requested_at).toLocaleDateString('ko-KR')}</div>
+                <div class="muted tiny">${new Date(w.requested_at).toLocaleTimeString('ko-KR')}</div>
+              </td>
+              <td>
+                <strong>${w.point_amount.toLocaleString()}P</strong>
+                ${w.fee_amount > 0 ? `<div class="muted tiny">수수료: ${w.fee_amount.toLocaleString()}원</div>` : ''}
+              </td>
+              <td>
+                <strong class="points-available">${w.withdrawal_amount.toLocaleString()}원</strong>
+              </td>
+              <td>${getMethodText(w.method)}</td>
+              <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+              <td class="action-buttons">
+                <button class="btn tiny" onclick="showWithdrawalDetail(${w.id})" title="상세 보기">상세</button>
+                ${canCancel}
+              </td>
+            </tr>
+          `;
+        });
+        
+        html += '</tbody></table>';
+        container.innerHTML = html;
+      } catch (error) {
+        console.error('Error loading withdrawals:', error);
+        document.getElementById('withdrawalList').innerHTML = '<p class="err">환급 신청 내역을 불러오는데 실패했습니다.</p>';
+      }
+    }
+
+    // 보상 내역 로드
+    async function loadRewardHistory() {
+      try {
+        const response = await fetch('/points/rewards/history', {
+          headers: {
+            'Authorization': 'Bearer ' + localStorage.getItem('access_token')
+          }
+        });
+        
+        const rewards = await response.json();
+        const container = document.getElementById('rewardHistory');
+        
+        if (rewards.length === 0) {
+          container.innerHTML = `
+            <div class="muted" style="text-align:center; padding:40px;">
+              🎁 아직 챌린지 보상 내역이 없습니다.<br>
+              <small>챌린지를 완주하면 포인트 보상을 받을 수 있어요!</small>
+            </div>
+          `;
+          return;
+        }
+        
+        let html = `
+          <table>
+            <thead>
+              <tr>
+                <th>날짜</th>
+                <th>챌린지</th>
+                <th>설명</th>
+                <th>포인트</th>
+              </tr>
+            </thead>
+            <tbody>
+        `;
+        
+        rewards.forEach(r => {
+          html += `
+            <tr>
+              <td>
+                <div>${new Date(r.received_at).toLocaleDateString('ko-KR')}</div>
+                <div class="muted tiny">${new Date(r.received_at).toLocaleTimeString('ko-KR')}</div>
+              </td>
+              <td>
+                <strong>${r.challenge_title}</strong>
+              </td>
+              <td class="muted">${r.description}</td>
+              <td>
+                <strong class="points-available">+${r.point_amount.toLocaleString()}P</strong>
+              </td>
+            </tr>
+          `;
+        });
+        
+        html += '</tbody></table>';
+        container.innerHTML = html;
+      } catch (error) {
+        console.error('Error loading reward history:', error);
+        document.getElementById('rewardHistory').innerHTML = '<p class="err">보상 내역을 불러오는데 실패했습니다.</p>';
+      }
+    }
+
+    // 환급 신청 취소
+    async function cancelWithdrawal(withdrawalId) {
+      if (!confirm('환급 신청을 취소하시겠습니까? 포인트가 복구됩니다.')) {
+        return;
+      }
+      
+      try {
+        const response = await fetch(`/points/withdrawals/${withdrawalId}/cancel`, {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + localStorage.getItem('access_token')
+          }
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+          alert(result.message);
+          loadWithdrawals();
+          location.reload(); // 포인트 현황 업데이트
+        } else {
+          alert(result.detail || '취소에 실패했습니다.');
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        alert('취소 중 오류가 발생했습니다.');
+      }
+    }
+
+    // 환급 신청 상세 보기
+    async function showWithdrawalDetail(withdrawalId) {
+      try {
+        const response = await fetch(`/points/withdrawals/${withdrawalId}`, {
+          headers: {
+            'Authorization': 'Bearer ' + localStorage.getItem('access_token')
+          }
+        });
+        
+        const detail = await response.json();
+        
+        if (response.ok) {
+          displayWithdrawalDetail(detail);
+          document.getElementById('withdrawalModal').style.display = 'block';
+        } else {
+          alert('상세 정보를 불러올 수 없습니다.');
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        alert('상세 정보를 불러오는 중 오류가 발생했습니다.');
+      }
+    }
+
+    // 환급 신청 상세 정보 표시
+    function displayWithdrawalDetail(detail) {
+      const container = document.getElementById('withdrawalDetail');
+      
+      let html = `
+        <div class="form-group">
+          <strong>신청 ID:</strong> ${detail.id}<br>
+          <strong>신청일:</strong> ${new Date(detail.requested_at).toLocaleDateString('ko-KR')}<br>
+          <strong>포인트:</strong> ${detail.point_amount.toLocaleString()}P<br>
+          <strong>수수료:</strong> ${detail.fee_amount.toLocaleString()}원<br>
+          <strong>환급 금액:</strong> ${detail.withdrawal_amount.toLocaleString()}원<br>
+          <strong>환급 방법:</strong> ${getMethodText(detail.method)}<br>
+          <strong>상태:</strong> <span class="status-badge status-${detail.status}">${getStatusText(detail.status)}</span>
+        </div>
+      `;
+      
+      if (detail.method === 'bank_transfer') {
+        html += `
+          <div class="form-group">
+            <strong>은행명:</strong> ${detail.bank_name || 'N/A'}<br>
+            <strong>계좌번호:</strong> ${detail.account_number || 'N/A'}<br>
+            <strong>예금주:</strong> ${detail.account_holder || 'N/A'}
+          </div>
+        `;
+      }
+      
+      if (detail.reviewed_at) {
+        html += `<div class="form-group"><strong>검토일:</strong> ${new Date(detail.reviewed_at).toLocaleDateString('ko-KR')}</div>`;
+      }
+      
+      if (detail.completed_at) {
+        html += `<div class="form-group"><strong>완료일:</strong> ${new Date(detail.completed_at).toLocaleDateString('ko-KR')}</div>`;
+      }
+      
+      if (detail.rejection_reason) {
+        html += `<div class="form-group"><strong>거부 사유:</strong> ${detail.rejection_reason}</div>`;
+      }
+      
+      if (detail.admin_memo) {
+        html += `<div class="form-group"><strong>관리자 메모:</strong> ${detail.admin_memo}</div>`;
+      }
+      
+      if (detail.transaction_id) {
+        html += `<div class="form-group"><strong>거래 ID:</strong> ${detail.transaction_id}</div>`;
+      }
+      
+      if (detail.can_cancel) {
+        html += `
+          <div class="form-group" style="margin-top: 20px;">
+            <button class="btn btn-danger" onclick="cancelWithdrawal(${detail.id}); closeModal();">신청 취소</button>
+          </div>
+        `;
+      }
+      
+      container.innerHTML = html;
+    }
+
+    // 모달 닫기
+    function closeModal() {
+      document.getElementById('withdrawalModal').style.display = 'none';
+    }
+
+    // 유틸리티 함수들
+    function getStatusText(status) {
+      const statusMap = {
+        pending: '⏳ 대기중',
+        reviewing: '👀 검토중',
+        approved: '✅ 승인됨',
+        completed: '💰 완료',
+        rejected: '❌ 거부됨',
+        cancelled: '🚫 취소됨'
+      };
+      return statusMap[status] || status;
+    }
+
+    function getMethodText(method) {
+      const methodMap = {
+        bank_transfer: '🏦 계좌이체',
+        toss_pay: '💙 토스페이',
+        kakao_pay: '💛 카카오페이'
+      };
+      return methodMap[method] || method;
+    }
+
+    // 페이지 로드 시 데이터 로드
+    document.addEventListener('DOMContentLoaded', function() {
+      loadWithdrawals();
+      loadRewardHistory();
+    });
+
+    // 모달 외부 클릭 시 닫기
+    window.onclick = function(event) {
+      const modal = document.getElementById('withdrawalModal');
+      if (event.target === modal) {
+        closeModal();
+      }
+    };
+  </script>
+</body>
+</html>

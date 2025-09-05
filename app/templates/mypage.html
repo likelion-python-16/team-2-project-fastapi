@@ -8,6 +8,50 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/css/mypage.css?v=7" />
+  <style>
+    .clickable-points {
+      cursor: pointer !important;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+    .clickable-points:hover {
+      background-color: #e3f2fd !important;
+      border-color: #2196f3 !important;
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(33, 150, 243, 0.2);
+    }
+    .clickable-points .arrow {
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      margin-left: 4px;
+      font-weight: bold;
+      color: #2196f3;
+    }
+    .clickable-points:hover .arrow {
+      opacity: 1;
+    }
+    .admin-point-link {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white !important;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      transition: all 0.2s ease;
+      margin-left: 8px;
+    }
+    .admin-point-link:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+      text-decoration: none;
+      color: white !important;
+    }
+  </style>
 
 </head>
 <body data-view-user-id="{{ view_user_id if view_user_id is not none else '' }}">
@@ -19,6 +63,11 @@
     </div>
     <div class="header-actions">
       <a href="/home" class="btn btn-outline" title="홈으로 이동">🏠 홈</a>
+      <div id="admin-point-button" style="display: none;">
+        <a href="/admin/points" class="admin-point-link" title="포인트 관리 (관리자)">
+          🔧 포인트 관리
+        </a>
+      </div>
     </div>
   </header>
 
@@ -34,6 +83,7 @@
         <div class="group">
           <div class="group-title">Data</div>
           <div class="item" data-jump="#my_sec_notifications">📢 알림</div>
+          <div class="item" onclick="goToPoints()" style="cursor: pointer;" title="포인트 관리 페이지로 이동">💰 포인트 관리</div>
           <div class="item" data-jump="#my_sec_follow">팔로워/팔로잉</div>
           <div class="item" data-jump="#my_sec_challenges">참여 챌린지</div>
           <div class="item" data-jump="#my_sec_tags">관심 태그</div>
@@ -114,7 +164,10 @@
                 <div id="my_intro" class="intro-box"></div>
                 <div class="stats-col" style="display:grid; gap:8px; width:max-content; align-content:flex-start">
                   <div class="pill stat-pill">매너점수 <strong id="my_manner">-</strong></div>
-                  <div class="pill stat-pill">보유포인트 <strong id="my_points">-</strong></div>
+                  <div class="pill stat-pill clickable-points" onclick="goToPoints()" title="포인트 관리 페이지로 이동">
+                    💰 보유포인트 <strong id="my_points">-</strong>
+                    <span class="arrow">→</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -215,6 +268,37 @@
   <!-- 토스트 -->
   <div class="toast-zone" id="toasts"></div>
 
+  <script>
+    // 포인트 페이지로 이동
+    function goToPoints() {
+      window.location.href = '/points';
+    }
+
+    // 관리자 권한 확인 및 버튼 표시
+    function checkAdminAccess() {
+      // 쿠키에서 access_token 가져오기
+      const token = document.cookie.split('; ').find(row => row.startsWith('access_token='));
+      if (token) {
+        try {
+          const tokenValue = token.split('=')[1];
+          const payload = JSON.parse(atob(tokenValue.split('.')[1]));
+          
+          // 관리자 모드인지 확인
+          if (payload.admin_mode) {
+            document.getElementById('admin-point-button').style.display = 'block';
+          }
+        } catch (e) {
+          console.log('Token parsing failed:', e);
+        }
+      }
+    }
+
+    // 페이지 로드 시 관리자 버튼 확인
+    document.addEventListener('DOMContentLoaded', function() {
+      checkAdminAccess();
+    });
+  </script>
+  
   <script type="module" src="/static/js/mypage.bundle.js?v=2" defer></script>
 </body>
 </html>

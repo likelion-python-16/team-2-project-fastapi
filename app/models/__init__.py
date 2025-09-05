@@ -19,6 +19,7 @@ from .notification import Notification, NotificationEvent
 from .following import Following
 from .invitation import Invitation, InvitationStatus
 from .pointhistory import PointHistory, PointHistoryType
+from .point_withdrawal import PointWithdrawal, WithdrawalStatus, WithdrawalMethod
 from .review import Review, ReviewHelpful, ReviewStatus
 from .challenge_embedding import ChallengeEmbedding
 from .report import Report, ReportProof, PenaltyHistory, ReportStatus, PenaltySource
@@ -48,6 +49,7 @@ __all__ = [
     "Payment",
     "Refund", 
     "PointHistory",
+    "PointWithdrawal",
     
     # Social Features
     "Tag",
@@ -79,6 +81,8 @@ __all__ = [
     "PaymentStatus",
     "PaymentTransactionType",
     "PointHistoryType", 
+    "WithdrawalStatus",
+    "WithdrawalMethod",
     "NotificationEvent",
     "InvitationStatus",
     "ReviewStatus",

@@ -10,6 +10,8 @@ class PointHistoryType(str, enum.Enum):
     gain = "gain"
     use = "use"
     refund = "refund"
+    challenge_reward = "challenge_reward"     # 챌린지 완주 보상
+    withdrawal = "withdrawal"                 # 포인트 환급
 
 class PointHistory(Base, TimestampMixin):
     __tablename__ = "point_histories"

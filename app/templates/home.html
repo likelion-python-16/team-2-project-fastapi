@@ -228,7 +228,44 @@
           location.href = '/login';
         }
       });
+
+      // 프로필 드롭다운에 포인트 관리 링크 추가
+      addPointsLinkToDropdown();
     });
+
+    function addPointsLinkToDropdown() {
+      // 프로필 메뉴가 동적으로 생성되므로 MutationObserver 사용
+      const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+          if (mutation.type === 'childList') {
+            const profileMenu = document.getElementById('profile-menu');
+            if (profileMenu && profileMenu.children.length > 0) {
+              // 이미 포인트 링크가 추가되었는지 확인
+              if (!profileMenu.querySelector('.points-link')) {
+                // 첫 번째 링크 다음에 포인트 관리 링크 추가
+                const firstItem = profileMenu.querySelector('.dropdown-item');
+                if (firstItem) {
+                  const pointsLink = document.createElement('a');
+                  pointsLink.href = '/points';
+                  pointsLink.className = 'dropdown-item points-link';
+                  pointsLink.style.fontWeight = '600';
+                  pointsLink.style.color = '#2563eb';
+                  pointsLink.innerHTML = '💰 포인트 관리';
+                  
+                  firstItem.parentNode.insertBefore(pointsLink, firstItem.nextSibling);
+                }
+              }
+            }
+          }
+        });
+      });
+
+      // 프로필 메뉴 관찰 시작
+      const profileMenu = document.getElementById('profile-menu');
+      if (profileMenu) {
+        observer.observe(profileMenu, { childList: true, subtree: true });
+      }
+    }
   </script>
 
   <script src="{{ url_for('static', path='js/home.js') }}"></script>
