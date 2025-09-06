@@ -90,8 +90,8 @@ class Settings(BaseSettings):
     email_token_expire_minutes: int = int(os.getenv("EMAIL_TOKEN_EXPIRE_MINUTES", "30"))
 
     # 링크 베이스
-    api_base_url: str = os.getenv("API_BASE_URL", "http://localhost:8001/api/v1")
-    front_base_url: str = os.getenv("FRONT_BASE_URL", "http://localhost:8000")
+    api_base_url: str = os.getenv("API_BASE_URL", "http://localhost/api/v1")
+    front_base_url: str = os.getenv("FRONT_BASE_URL", "http://localhost")
     session_secret: str = os.getenv("SESSION_SECRET", "dev-session-secret")
     # Email verification policy (general signup)
     require_email_verification: bool = os.getenv("REQUIRE_EMAIL_VERIFICATION", "false").lower() in ("1","true","yes")

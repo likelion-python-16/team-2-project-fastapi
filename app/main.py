@@ -11,7 +11,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 # Moved to lifespan.py:
 # from app.core.database import SessionLocal
@@ -31,6 +31,9 @@ from .routers import (
     naver_maps, map, files, tags_categories, places, naver_local, pages, tags,
     users_mypage, users_mypage_chat, users_mypage_more, point_management
 )
+
+# 메트릭 미들웨어
+from .core.metrics import MetricsMiddleware, get_metrics
 from .routers import auth_social
 from .routers import round_pictures, participations, payments, payment_reminders
 from app.routers.challengecreating import router as challengecreating_router
@@ -55,6 +58,9 @@ app = FastAPI(
 
 # 세션 미들웨어 (소셜 로그인용)
 app.add_middleware(SessionMiddleware, secret_key=settings.session_secret)
+
+# 메트릭 미들웨어 추가
+app.add_middleware(MetricsMiddleware)
 
 # CORS
 app.add_middleware(
@@ -259,6 +265,11 @@ async def api_info():
         },
         "timestamp": datetime.now().isoformat()
     }
+
+@app.get("/metrics", response_class=PlainTextResponse, tags=["Monitoring"])
+async def metrics():
+    """Prometheus 메트릭 엔드포인트"""
+    return get_metrics()
 
 # ---------------------------
 # Router include (중복 제거, 한 번씩만)

@@ -1,44 +1,71 @@
-name: Deploy to EC2
+name: FastTeam CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, develop, donghee ]
   pull_request:
     branches: [ main ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+    name: 테스트 및 코드 품질 검사
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: test_password
+          MYSQL_DATABASE: test_db
+          MYSQL_USER: test_user
+          MYSQL_PASSWORD: test_password
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python
+    - name: 코드 체크아웃
+      uses: actions/checkout@v4
+
+    - name: Python 3.11 설정
       uses: actions/setup-python@v4
       with:
         python-version: '3.11'
-    
-    - name: Install dependencies
+
+    - name: 의존성 캐시
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: 의존성 설치
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-    
-    - name: Run tests
-      run: |
-        # 테스트 코드가 있을 때 실행
-        # pytest
-        echo "Tests passed"
 
-  deploy:
+    - name: 코드 품질 검사
+      run: |
+        pip install flake8
+        flake8 app --max-line-length=120 --ignore=E501,W503
+
+  deploy-staging:
+    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/donghee'
     needs: test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
-    
+    name: 개발/스테이징 배포
+
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Deploy to EC2
-      uses: appleboy/ssh-action@v1.0.0
+    - name: 코드 체크아웃
+      uses: actions/checkout@v4
+
+    - name: 스테이징 서버 배포
+      uses: appleboy/ssh-action@v1.0.3
       with:
         host: ${{ secrets.EC2_HOST }}
         username: ${{ secrets.EC2_USER }}
@@ -48,26 +75,51 @@ jobs:
         command_timeout: 15m
         script: |
           cd /home/ec2-user/myapp/team-project
-
-          # 현재 배포되는 브랜치에 따라 pull
+          
+          # 브랜치별 배포
           if [ "${{ github.ref }}" == "refs/heads/develop" ]; then
-            echo "🔧 Deploying develop branch..."
+            echo "🔧 개발 브랜치 배포 중..."
             git pull origin develop
-          else
-            echo "🚀 Deploying main branch..."
-            git pull origin main
+          elif [ "${{ github.ref }}" == "refs/heads/donghee" ]; then
+            echo "🔧 donghee 브랜치 배포 중..."
+            git pull origin donghee
           fi
-
-
-
-          docker-compose down
-          docker-compose up -d --build
-  
-          sleep 45
-          docker-compose ps
-  
-          echo "✅ Deployment completed!"
-          echo "🌐 Check: http://54.180.237.228:8000/"
           
-
+          # 개발 환경으로 배포
+          ./deploy.sh dev --rebuild
           
+          echo "✅ 스테이징 배포 완료!"
+          echo "🌐 확인: http://54.180.237.228:8001/"
+
+  deploy-production:
+    if: github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    name: 프로덕션 배포
+    environment: production
+
+    steps:
+    - name: 코드 체크아웃
+      uses: actions/checkout@v4
+
+    - name: 프로덕션 서버 배포
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.PROD_HOST }}
+        username: ${{ secrets.PROD_USER }}
+        key: ${{ secrets.PROD_SSH_KEY }}
+        port: 22
+        timeout: 30s
+        command_timeout: 20m
+        script: |
+          cd /home/deploy/fastteam
+          
+          echo "🚀 프로덕션 배포 중..."
+          git pull origin main
+          
+          # 프로덕션 환경으로 배포
+          ./deploy.sh prod
+          
+          echo "✅ 프로덕션 배포 완료!"
+          echo "🌐 확인: https://your-domain.com"
+          echo "📊 모니터링: https://monitoring.your-domain.com"

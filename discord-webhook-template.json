@@ -1,0 +1,26 @@
+{
+  "content": "🚨 **[{{ .Status | toUpper }}] {{ .GroupLabels.alertname }}**",
+  "embeds": [
+    {
+      "title": "{{ .GroupLabels.alertname }}",
+      "description": "{{ range .Alerts }}**Summary:** {{ .Annotations.summary }}\n**Description:** {{ .Annotations.description }}\n{{ end }}",
+      "color": {{ if eq .Status "firing" }}16711680{{ else }}65280{{ end }},
+      "fields": [
+        {
+          "name": "🏷️ Labels",
+          "value": "{{ range .GroupLabels }}**{{ . }}:** {{ . }}\n{{ end }}",
+          "inline": true
+        },
+        {
+          "name": "🕐 Time", 
+          "value": "{{ .Alerts | len }} alert(s)",
+          "inline": true
+        }
+      ],
+      "footer": {
+        "text": "FastTeam Monitoring"
+      },
+      "timestamp": "{{ .Alerts.Firing | first | .StartsAt }}"
+    }
+  ]
+}

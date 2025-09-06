@@ -1,0 +1,194 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "FastTeam 완전 모니터링 대시보드",
+    "tags": ["fastteam", "production"],
+    "style": "dark",
+    "timezone": "Asia/Seoul",
+    "editable": true,
+    "graphTooltip": 0,
+    "panels": [
+      {
+        "id": 1,
+        "title": "🚀 API 응답시간 (95th Percentile)",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(fastapi_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "95th percentile",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.50, rate(fastapi_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "50th percentile", 
+            "refId": "B"
+          }
+        ],
+        "yAxes": [{"label": "Response Time (seconds)"}],
+        "alert": {
+          "conditions": [
+            {
+              "query": {"params": ["A", "5m", "now"]},
+              "reducer": {"params": [], "type": "avg"},
+              "evaluator": {"params": [1.0], "type": "gt"}
+            }
+          ],
+          "executionErrorState": "alerting",
+          "for": "5m",
+          "frequency": "10s",
+          "handler": 1,
+          "name": "높은 응답시간 경고",
+          "message": "API 응답시간이 1초를 초과했습니다!",
+          "noDataState": "no_data"
+        }
+      },
+      {
+        "id": 2,
+        "title": "📊 요청 처리량 (RPS)",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+        "targets": [
+          {
+            "expr": "sum(rate(fastapi_requests_total[5m])) by (method, endpoint)",
+            "legendFormat": "{{method}} {{endpoint}}",
+            "refId": "A"
+          }
+        ],
+        "yAxes": [{"label": "Requests/sec"}]
+      },
+      {
+        "id": 3,
+        "title": "🎯 HTTP 상태 코드 분포",
+        "type": "stat",
+        "gridPos": {"h": 6, "w": 8, "x": 0, "y": 8},
+        "targets": [
+          {
+            "expr": "sum(rate(fastapi_requests_total{status_code=~\"2..\"}[5m]))",
+            "legendFormat": "2xx 성공"
+          },
+          {
+            "expr": "sum(rate(fastapi_requests_total{status_code=~\"4..\"}[5m]))",
+            "legendFormat": "4xx 클라이언트 오류"
+          },
+          {
+            "expr": "sum(rate(fastapi_requests_total{status_code=~\"5..\"}[5m]))",
+            "legendFormat": "5xx 서버 오류"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 0.1},
+                {"color": "red", "value": 1.0}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "💻 시스템 메모리 사용량",
+        "type": "graph",
+        "gridPos": {"h": 6, "w": 8, "x": 8, "y": 8},
+        "targets": [
+          {
+            "expr": "process_resident_memory_bytes / 1024 / 1024",
+            "legendFormat": "메모리 사용량 (MB)"
+          }
+        ],
+        "yAxes": [{"label": "Memory (MB)"}]
+      },
+      {
+        "id": 5,
+        "title": "⚡ 활성 연결 수",
+        "type": "singlestat",
+        "gridPos": {"h": 6, "w": 8, "x": 16, "y": 8},
+        "targets": [
+          {
+            "expr": "fastapi_active_connections",
+            "legendFormat": "Active Connections"
+          }
+        ],
+        "valueFontSize": "80%",
+        "valueName": "current"
+      },
+      {
+        "id": 6,
+        "title": "🔥 에러 발생 추이",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 14},
+        "targets": [
+          {
+            "expr": "increase(fastapi_errors_total[5m])",
+            "legendFormat": "{{error_type}} 에러"
+          }
+        ],
+        "yAxes": [{"label": "Error Count"}],
+        "alert": {
+          "conditions": [
+            {
+              "query": {"params": ["A", "5m", "now"]},
+              "reducer": {"params": [], "type": "sum"},
+              "evaluator": {"params": [5], "type": "gt"}
+            }
+          ],
+          "executionErrorState": "alerting",
+          "for": "1m",
+          "frequency": "10s",
+          "handler": 1,
+          "name": "에러 급증 경고",
+          "message": "5분간 5개 이상의 에러가 발생했습니다!"
+        }
+      },
+      {
+        "id": 7,
+        "title": "🐍 Python GC 성능",
+        "type": "graph",
+        "gridPos": {"h": 6, "w": 12, "x": 0, "y": 22},
+        "targets": [
+          {
+            "expr": "rate(python_gc_collections_total[5m])",
+            "legendFormat": "Gen {{generation}} GC/sec"
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "💾 프로세스 정보",
+        "type": "table",
+        "gridPos": {"h": 6, "w": 12, "x": 12, "y": 22},
+        "targets": [
+          {
+            "expr": "process_cpu_seconds_total",
+            "legendFormat": "CPU 사용 시간 (초)",
+            "format": "table"
+          },
+          {
+            "expr": "process_open_fds", 
+            "legendFormat": "열린 파일 디스크립터",
+            "format": "table"
+          }
+        ]
+      }
+    ],
+    "time": {"from": "now-1h", "to": "now"},
+    "refresh": "5s",
+    "annotations": {
+      "list": [
+        {
+          "builtIn": 1,
+          "datasource": "-- Grafana --",
+          "enable": true,
+          "hide": true,
+          "iconColor": "rgba(0, 211, 255, 1)",
+          "name": "Annotations & Alerts",
+          "type": "dashboard"
+        }
+      ]
+    }
+  }
+}
