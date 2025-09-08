@@ -48,8 +48,13 @@ case $ENVIRONMENT in
         ENV_FILE=".env.production"
         log_info "프로덕션 환경으로 배포합니다."
         ;;
+    "aws"|"ec2")
+        COMPOSE_FILE="docker-compose.prod.yml"
+        ENV_FILE=".env.production"
+        log_info "AWS EC2 환경으로 배포합니다."
+        ;;
     *)
-        log_error "잘못된 환경입니다. 'dev' 또는 'prod'를 선택하세요."
+        log_error "잘못된 환경입니다. 'dev', 'prod', 또는 'aws'를 선택하세요."
         ;;
 esac
 

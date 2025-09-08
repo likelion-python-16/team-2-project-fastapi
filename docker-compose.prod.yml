@@ -27,13 +27,58 @@ services:
         - ENV=production
     container_name: fastteam-api
     environment:
+      # 환경 설정
+      - ENVIRONMENT=production
+      - DEBUG=False
+
+      - NAVER_SEARCH_CLIENT_ID=${NAVER_SEARCH_CLIENT_ID}
+      - NAVER_SEARCH_CLIENT_SECRET=${NAVER_SEARCH_CLIENT_SECRET}
+      - NAVER_MAPS_CLIENT_ID=${NAVER_MAPS_CLIENT_ID}
+      - NAVER_MAPS_CLIENT_SECRET=${NAVER_MAPS_CLIENT_SECRET}
+      
+      # MySQL 설정
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
       - MYSQL_USER=${MYSQL_USER}
       - MYSQL_PASSWORD=${MYSQL_PASSWORD}
       - MYSQL_DATABASE=${MYSQL_DATABASE}
-      - DEBUG=False
-      - ENVIRONMENT=production
+      
+      # 보안 관련
+      - JWT_SECRET=${JWT_SECRET}
+      - FERNET_KEY=${FERNET_KEY}
+      - SESSION_SECRET=${SESSION_SECRET:-prod-session-secret}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-prod-refresh-secret}
+      
+      # 소셜 로그인 설정
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_REDIRECT_PATH=${GOOGLE_REDIRECT_PATH:-/api/v1/auth/callback/google}
+      - NAVER_CLIENT_ID=${NAVER_CLIENT_ID}
+      - NAVER_CLIENT_SECRET=${NAVER_CLIENT_SECRET}
+      - NAVER_REDIRECT_PATH=${NAVER_REDIRECT_PATH:-/api/v1/auth/callback/naver}
+      
+      # URL 설정 (프로덕션용)
+      - FRONT_BASE_URL=${FRONT_BASE_URL:-http://localhost}
+      - API_BASE_URL=${API_BASE_URL:-http://localhost/api/v1}
+      - VERIFICATION_LINK_BASE=${VERIFICATION_LINK_BASE:-http://localhost/api/v1}
+      - VERIFY_SUCCESS_URL=${VERIFY_SUCCESS_URL:-http://localhost/verify/success}
+      - VERIFY_FAIL_URL=${VERIFY_FAIL_URL:-http://localhost/verify/fail}
+      
+      # AWS 설정
+      - AWS_REGION=${AWS_REGION}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - S3_BUCKET=${S3_BUCKET}
+      
+      # 토스 결제 설정
+      - TOSS_SECRET_KEY=${TOSS_SECRET_KEY}
+      - TOSS_CLIENT_KEY=${TOSS_CLIENT_KEY}
+      
+      # 초기 관리자 설정
+      - INITIAL_ADMIN_USERNAME=${INITIAL_ADMIN_USERNAME:-admin}
+      - INITIAL_ADMIN_EMAIL=${INITIAL_ADMIN_EMAIL:-admin@fastteam.com}
+      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-admin123!@#}
+      - INITIAL_ADMIN_NAME=${INITIAL_ADMIN_NAME:-FastTeam Admin}
     env_file:
       - .env.production
     depends_on:
