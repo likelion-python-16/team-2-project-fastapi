@@ -129,10 +129,10 @@ start_application() {
     sleep 15
     
     # 헬스체크
-    if [ "$ENVIRONMENT" = "prod" ]; then
-        HEALTH_URL="http://localhost/health"
+    if [ "$ENVIRONMENT" = "prod" ] || [ "$ENVIRONMENT" = "aws" ] || [ "$ENVIRONMENT" = "ec2" ]; then
+        HEALTH_URL="http://13.209.147.11/health"
     else
-        HEALTH_URL="http://localhost:8001/health"
+        HEALTH_URL="http://13.209.147.11:8001/health"
     fi
     
     # 최대 60초 대기
@@ -159,15 +159,15 @@ check_status() {
     echo ""
     log_info "서비스 접속 정보:"
     
-    if [ "$ENVIRONMENT" = "prod" ]; then
-        echo "🌐 웹 애플리케이션: http://localhost"
-        echo "📊 모니터링 대시보드: http://monitoring.localhost"
-        echo "📈 메트릭: http://localhost/metrics"
+    if [ "$ENVIRONMENT" = "prod" ] || [ "$ENVIRONMENT" = "aws" ] || [ "$ENVIRONMENT" = "ec2" ]; then
+        echo "🌐 웹 애플리케이션: http://13.209.147.11"
+        echo "📊 모니터링 대시보드: http://13.209.147.11:3000"
+        echo "📈 메트릭: http://13.209.147.11/metrics"
     else
-        echo "🌐 웹 애플리케이션: http://localhost:8001"
-        echo "📊 phpMyAdmin: http://localhost:8080"
-        echo "📈 메트릭: http://localhost:8001/metrics"
-        echo "📝 API 문서: http://localhost:8001/docs"
+        echo "🌐 웹 애플리케이션: http://13.209.147.11:8001"
+        echo "📊 phpMyAdmin: http://13.209.147.11:8080"
+        echo "📈 메트릭: http://13.209.147.11:8001/metrics"
+        echo "📝 API 문서: http://13.209.147.11:8001/docs"
     fi
 }
 
