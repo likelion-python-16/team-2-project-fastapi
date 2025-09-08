@@ -238,8 +238,21 @@ function wireProfileDropdown() {
   const dd = $('#profile-dd');
   const trigger = $('#profile-trigger');
   const menu = $('#profile-menu');
+  const loginBtn = document.querySelector('#header-login-btn');
 
   const token = getAccessToken();
+  const isLogin = !!token && !!parseJwt(token);
+
+  // 비로그인: 드롭다운을 숨기고 로그인 버튼 노출 (알림 벨은 그대로 유지)
+  if (!isLogin) {
+    if (dd) dd.style.display = 'none';
+    if (loginBtn) loginBtn.style.display = 'inline-flex';
+    return;
+  }
+
+  // 로그인 상태: 로그인 버튼 숨기고 드롭다운 표시
+  if (loginBtn) loginBtn.style.display = 'none';
+  if (dd) dd.style.display = '';
   let name = 'ME';
   if (token) {
     const p = parseJwt(token);
@@ -258,7 +271,6 @@ function wireProfileDropdown() {
       S.me = null;
     }
 
-    const isLogin = !!token && !!parseJwt(token);
     const isAdmin = S.me?.is_admin || S.me?.is_superadmin || false;
     
     menu.innerHTML = `
