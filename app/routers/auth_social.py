@@ -60,7 +60,7 @@ async def login_google(request: Request):
         raise HTTPException(503, 'Google 로그인이 설정되지 않았습니다')
     
     # 콜백 URL 생성
-    redirect_uri = str(request.url_for('callback_google'))
+    redirect_uri = f"{settings.api_base_url}/auth/callback/google"
     
     # 세션 정리
     try:
@@ -175,7 +175,7 @@ async def login_naver(request: Request):
     if not hasattr(oauth, 'naver'):
         raise HTTPException(503, '네이버 로그인이 설정되지 않았습니다')
     
-    redirect_uri = str(request.url_for('callback_naver'))
+    redirect_uri = f"{settings.api_base_url}/auth/callback/naver"
     
     # 세션 정리
     try:
