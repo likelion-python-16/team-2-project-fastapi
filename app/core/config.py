@@ -123,6 +123,13 @@ class Settings(BaseSettings):
     initial_admin_email: str = os.getenv("INITIAL_ADMIN_EMAIL", "")  
     initial_admin_password: str = os.getenv("INITIAL_ADMIN_PASSWORD", "")
     initial_admin_name: str = os.getenv("INITIAL_ADMIN_NAME", "System Admin")
+    
+    # 추가 프로덕션 설정
+    frontend_url: str = os.getenv("FRONTEND_URL", "http://localhost")
+    redis_password: str = os.getenv("REDIS_PASSWORD", "")
+    force_https: bool = os.getenv("FORCE_HTTPS", "false").lower() == "true"
+    db_pool_size: int = int(os.getenv("DB_POOL_SIZE", "5"))
+    db_max_overflow: int = int(os.getenv("DB_MAX_OVERFLOW", "10"))
 
     @property
     def database_url(self) -> str:
@@ -152,9 +159,11 @@ class Settings(BaseSettings):
         if missing_keys:
             raise RuntimeError(f"Missing required environment variables: {', '.join(missing_keys)}")
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
+    model_config = {
+        "env_file": ".env",
+        "case_sensitive": False,
+        "extra": "ignore"  # 추가 필드 무시
+    }
 
 class DevelopmentSettings(Settings):
     environment: Environment = Environment.DEVELOPMENT
