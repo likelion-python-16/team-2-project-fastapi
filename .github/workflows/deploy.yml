@@ -89,7 +89,7 @@ jobs:
           ./deploy.sh dev --rebuild
           
           echo "✅ 스테이징 배포 완료!"
-          echo "🌐 확인: http://54.180.237.228:8001/"
+          echo "🌐 확인: http://13.209.147.11:8001/"
 
   deploy-production:
     if: github.ref == 'refs/heads/main'

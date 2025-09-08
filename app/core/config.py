@@ -67,14 +67,27 @@ class Settings(BaseSettings):
     toss_client_key: str = os.getenv("TOSS_CLIENT_KEY", "")
     toss_secret_key: str = os.getenv("TOSS_SECRET_KEY", "")
 
-    allowed_origins: list[str] = [
-        "http://localhost:3000",
-        "http://localhost:8080",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:8080",
-        "http://54.180.237.228:3000",
-        "http://54.180.237.228:8080",
-    ]
+    # CORS 설정 - 환경변수에서 JSON 배열로 받거나 기본값 사용
+    @property
+    def allowed_origins(self) -> list[str]:
+        origins_env = os.getenv("ALLOWED_ORIGINS")
+        if origins_env:
+            try:
+                import json
+                return json.loads(origins_env)
+            except json.JSONDecodeError:
+                # 콤마로 구분된 문자열로 처리
+                return [origin.strip() for origin in origins_env.split(",")]
+        
+        # 기본값
+        return [
+            "http://localhost:3000",
+            "http://localhost:8080", 
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:8080",
+            "http://13.209.147.11:3000",
+            "http://13.209.147.11:8080",
+        ]
 
     # ---------- 메일/링크 설정 ----------
     mail_from: str = os.getenv("MAIL_FROM", "no-reply@example.com")
