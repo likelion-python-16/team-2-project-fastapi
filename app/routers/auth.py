@@ -1,7 +1,7 @@
 # app/routers/auth.py
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Body, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -13,6 +13,7 @@ from app.models.user import User
 from app.models.email_verification import EmailVerification
 from app.schemas.auth import SignUpIn, LoginIn, TokenOut, RefreshTokenIn
 from app.services.mailer import send_email, build_verification_email, build_password_reset_email
+from app.models.tag import Tag, UserTag
 from app.security import (
     create_access_token,
     create_refresh_token,
@@ -36,8 +37,9 @@ def check_duplicates(
     username: str | None = Query(default=None),
     email: str | None = Query(default=None),
     phone: str | None = Query(default=None),
+    identification_number: str | None = Query(default=None),
 ):
-    taken = {"username": False, "email": False, "phone": False}
+    taken = {"username": False, "email": False, "phone": False, "identification_number": False}
 
     if username:
         taken["username"] = db.query(User.id).filter(User.username == username.lower()).first() is not None
@@ -58,10 +60,21 @@ def check_duplicates(
                 or db.query(User.id).filter(User.phone == norm).first() is not None  # 레거시 호환
             )
 
+    if identification_number:
+        try:
+            ident_norm = normalize_phone(identification_number)
+        except Exception:
+            ident_norm = None
+        if ident_norm:
+            fp = id_fingerprint(ident_norm)
+            taken["identification_number"] = (
+                db.query(User.id).filter(User.identification_fingerprint == fp).first() is not None
+            )
+
     return {"taken": taken}
 
 
-@router.post("/signup", response_model=TokenOut, status_code=status.HTTP_201_CREATED)
+@router.post("/signup", status_code=status.HTTP_201_CREATED)
 def signup(payload: SignUpIn, db: Session = Depends(get_db)):
     """사용자 회원가입"""
 
@@ -139,9 +152,42 @@ def signup(payload: SignUpIn, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(user)
 
+        # 태그 저장: introduction이 JSON이면 interests.keywords를 UserTag에 반영
+        intro_raw = getattr(payload, 'introduction', None)
+        if intro_raw and isinstance(intro_raw, str) and intro_raw.strip().startswith('{'):
+            try:
+                import json
+                parsed = json.loads(intro_raw)
+                if isinstance(parsed, dict):
+                    interests = (parsed.get('interests') or {})
+                    keywords = interests.get('keywords') or []
+                    if isinstance(keywords, list) and keywords:
+                        from app.core.config import settings as _settings
+                        allow_dynamic = bool(getattr(_settings, 'allow_dynamic_tag_create', False))
+                        for kw in keywords:
+                            if not kw or not isinstance(kw, str):
+                                continue
+                            _name = kw.strip()
+                            if not _name:
+                                continue
+                            tag = db.query(Tag).filter(Tag.tag == _name).first()
+                            if not tag:
+                                if not allow_dynamic:
+                                    continue  # 동적 생성 비활성: 존재하는 태그만 연결
+                                tag = Tag(tag=_name, is_active=True)
+                                db.add(tag)
+                                db.flush()
+                            exists = db.query(UserTag).filter(UserTag.user_id == user.id, UserTag.tag_id == tag.id).first()
+                            if not exists:
+                                db.add(UserTag(user_id=user.id, tag_id=tag.id))
+                        db.commit()
+            except Exception:
+                # 태그 파싱 실패는 가입 성공에 영향을 주지 않음
+                pass
+
         logger.info(f"회원가입 성공: user_id={user.id}, username={user.username}")
 
-        # 이메일 인증 메일 발송 (설정이 활성화된 경우)
+        # 이메일 인증 메일 발송 (설정이 활성화된 경우, 비차단)
         if settings.require_email_verification:
             try:
                 from app.services.email import EmailService
@@ -164,15 +210,18 @@ def signup(payload: SignUpIn, db: Session = Depends(get_db)):
         logger.error(f"회원가입 예상치 못한 오류: {str(e)}")
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "서버 오류가 발생했습니다")
 
-    # 5) JWT 토큰 생성
-    try:
-        claims = {"sub": user.username, "user_id": user.id, "tv": user.token_version}
-        access_token = create_access_token(data=claims)
-        refresh_token = create_refresh_token(data=claims)
-        return TokenOut(access_token=access_token, refresh_token=refresh_token, token_type="bearer")
-    except Exception as e:
-        logger.error(f"토큰 생성 오류: {str(e)}")
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "토큰 생성에 실패했습니다")
+    # 5) 이메일 인증 정책에 따른 응답
+    if settings.require_email_verification:
+        return {"message": "가입이 완료되었습니다. 이메일 인증을 완료해 주세요.", "user_id": user.id, "email": user.email}
+    else:
+        try:
+            claims = {"sub": user.username, "user_id": user.id, "tv": user.token_version}
+            access_token = create_access_token(data=claims)
+            refresh_token = create_refresh_token(data=claims)
+            return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
+        except Exception as e:
+            logger.error(f"토큰 생성 오류: {str(e)}")
+            raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "토큰 생성에 실패했습니다")
 
 
 @router.post("/login", response_model=TokenOut)
@@ -213,7 +262,23 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
         refresh_token = create_refresh_token(data=claims)
 
         logger.info(f"로그인 성공: user_id={user.id}, username={user.username}, tv={user.token_version}")
-        return TokenOut(access_token=access_token, refresh_token=refresh_token, token_type="bearer")
+        # 기본 JSON 바디
+        body = TokenOut(access_token=access_token, refresh_token=refresh_token, token_type="bearer").model_dump()
+        # 일반 로그인 시, 기존에 남아있을 수 있는 관리자 모드 쿠키 제거
+        # (관리자 로그인이라도 /auth/login은 admin_mode를 설정하지 않음. 필요 시 /admin/mode/on 사용)
+        resp = JSONResponse(body)
+        try:
+            access_cookie = settings.auth_access_cookie_name or "access_token"
+            refresh_cookie = settings.auth_refresh_cookie_name or "refresh_token"
+            cookie_path = settings.auth_cookie_path or "/"
+            cookie_domain = settings.auth_cookie_domain or None
+            # admin_mode 쿠키와 동일 키 사용 중이므로 항상 삭제해 일관 보안 유지
+            resp.delete_cookie(access_cookie, path=cookie_path, domain=cookie_domain)
+            resp.delete_cookie(refresh_cookie, path=cookie_path, domain=cookie_domain)
+            resp.delete_cookie("session", path="/")
+        except Exception:
+            pass
+        return resp
     except Exception as e:
         db.rollback()
         logger.error(f"로그인 처리/토큰 생성 오류: {str(e)}")
@@ -249,8 +314,21 @@ def refresh_token(payload: RefreshTokenIn, db: Session = Depends(get_db)):
 
 @router.post("/logout")
 def logout():
-    """클라이언트에서 access/refresh 토큰을 폐기하세요."""
-    return {"message": "로그아웃되었습니다"}
+    """로그아웃 처리: 서버가 설정한 HttpOnly 쿠키도 제거합니다.
+
+    프런트에서는 localStorage/sessionStorage의 토큰을 지우고, 이 엔드포인트는
+    remember-me 쿠키(access_token/refresh_token)를 안전하게 삭제합니다.
+    """
+    access_cookie = settings.auth_access_cookie_name or "access_token"
+    refresh_cookie = settings.auth_refresh_cookie_name or "refresh_token"
+    cookie_path = settings.auth_cookie_path or "/"
+    cookie_domain = settings.auth_cookie_domain or None
+    resp = JSONResponse({"message": "로그아웃되었습니다"})
+    resp.delete_cookie(access_cookie, path=cookie_path, domain=cookie_domain)
+    resp.delete_cookie(refresh_cookie, path=cookie_path, domain=cookie_domain)
+    # 호환 키
+    resp.delete_cookie("session", path="/")
+    return resp
 
 
 @router.get("/me")
@@ -328,7 +406,13 @@ def send_verification_email(
 
 
 @router.get("/verify-email/redirect")
-def verify_email_redirect(token: str, db: Session = Depends(get_db)):
+def verify_email_redirect(
+    token: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    flow: str | None = None,
+    return_to: str | None = None,
+):
     """이메일 인증 링크 처리 - 성공/실패 페이지로 리디렉트"""
     
     verification = db.query(EmailVerification).filter(
@@ -354,7 +438,27 @@ def verify_email_redirect(token: str, db: Session = Depends(get_db)):
         user.is_active = True
     
     db.commit()
-    return RedirectResponse(url=settings.verify_success_url)
+
+    # Determine redirect URL
+    dest = settings.verify_success_url
+    try:
+        from urllib.parse import quote_plus
+        if flow == "login":
+            base = (settings.front_base_url or '').strip().rstrip('/')
+            if not base:
+                # derive from request if not configured
+                xf_proto = request.headers.get('x-forwarded-proto')
+                xf_host = request.headers.get('x-forwarded-host')
+                base = (f"{xf_proto}://{xf_host}" if xf_proto and xf_host else str(request.base_url).rstrip('/'))
+            dest = f"{base}/login?verified=1"
+            if return_to:
+                dest += f"&return_to={quote_plus(return_to)}"
+        elif return_to:
+            sep = '&' if ('?' in dest) else '?'
+            dest = f"{dest}{sep}return_to={quote_plus(return_to)}"
+    except Exception:
+        pass
+    return RedirectResponse(url=dest)
 
 
 @router.post("/verify-email")
@@ -470,12 +574,121 @@ def request_password_reset(
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "이메일 전송에 실패했습니다")
 
 
+@router.post("/request-password-reset-by-login")
+def request_password_reset_by_login(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    """아이디 또는 이메일만으로 비밀번호 재설정 메일 발송 (소셜 병합 플로우 등 최소 입력용)
+    Body: { login, flow?, return_to? }
+    """
+    login = (payload.get("login") or "").strip().lower()
+    flow = (payload.get("flow") or None)
+    return_to = (payload.get("return_to") or None)
+    if not login:
+        raise HTTPException(400, "login이 필요합니다")
+
+    user = db.query(User).filter(or_(User.username == login, User.email == login)).first()
+    if not user:
+        raise HTTPException(404, "해당 정보를 가진 계정을 찾을 수 없습니다")
+
+    # 기존 미사용 토큰 삭제
+    db.query(EmailVerification).filter(
+        EmailVerification.user_id == user.id,
+        EmailVerification.used_at.is_(None)
+    ).delete()
+
+    # 새 토큰 생성
+    token = secrets.token_urlsafe(48)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.email_token_expire_minutes)
+    
+    verification = EmailVerification(
+        user_id=user.id,
+        token=token,
+        sent_to=user.email,
+        expires_at=expires_at
+    )
+    db.add(verification)
+    db.commit()
+
+    # 이메일 전송 (flow/return_to 지원)
+    try:
+        html, text = build_password_reset_email(token, user.username, flow=flow, return_to=return_to)
+        send_email(
+            to=user.email,
+            subject="비밀번호 재설정",
+            html=html,
+            text=text
+        )
+        # 마스킹된 이메일도 함께 반환하여 프런트에 안내 표시
+        def _mask_email(addr: str) -> str:
+            if not addr:
+                return ''
+            try:
+                local, dom = addr.split('@', 1)
+            except ValueError:
+                return addr
+            def m(s: str) -> str:
+                if len(s) <= 2:
+                    return s[0] + '*'
+                return s[:2] + '*' * max(1, len(s)-3) + s[-1]
+            parts = dom.split('.')
+            head = parts[0]
+            tail = '.' + '.'.join(parts[1:]) if len(parts) > 1 else ''
+            return f"{m(local)}@{m(head)}{tail}"
+
+        return {
+            "message": "비밀번호 재설정 메일을 보냈습니다.",
+            "sent_to": user.email,
+            "sent_to_masked": _mask_email(user.email),
+        }
+    except Exception as e:
+        logger.error(f"비밀번호 재설정 메일 전송 실패: {str(e)}")
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "이메일 전송에 실패했습니다")
+
+
 @router.get("/password-reset/redirect")
 def password_reset_redirect(token: str):
     """비밀번호 재설정 링크 클릭 시 프론트엔드로 리디렉트"""
     # 프론트엔드 URL에 토큰을 포함하여 리디렉트
     frontend_url = f"{settings.front_base_url}/login?reset_token={token}"
     return RedirectResponse(url=frontend_url, status_code=303)
+
+
+@router.get("/verify-remaining")
+def verify_remaining(login: str, db: Session = Depends(get_db)):
+    """해당 로그인(아이디/이메일)에 대해 사용 가능한 인증/재설정 토큰의 남은 시간을 반환"""
+    user = db.query(User).filter(or_(User.username == login.lower(), User.email == login.lower())).first()
+    if not user:
+        return {"seconds_left": 0}
+    ver = db.query(EmailVerification).filter(
+        EmailVerification.user_id == user.id,
+        EmailVerification.used_at.is_(None)
+    ).order_by(EmailVerification.expires_at.desc()).first()
+    if not ver:
+        return {"seconds_left": 0}
+    now_utc = datetime.now(timezone.utc)
+    exp = to_utc_aware(ver.expires_at)
+    left = int((exp - now_utc).total_seconds())
+    return {"seconds_left": max(0, left)}
+
+
+@router.post("/send-verification-by-login")
+def send_verification_by_login(payload: dict = Body(...), db: Session = Depends(get_db)):
+    """아이디/이메일로 이메일 인증 메일 발송(로그인 화면용)"""
+    login = (payload.get("login") or "").strip().lower()
+    if not login:
+        raise HTTPException(400, "login이 필요합니다")
+    user = db.query(User).filter(or_(User.username == login, User.email == login)).first()
+    if not user:
+        raise HTTPException(404, "해당 정보를 가진 계정을 찾을 수 없습니다")
+    try:
+        from app.services.email import EmailService
+        EmailService.send_verification_email(db, user)
+        return {"message": "인증 이메일이 발송되었습니다"}
+    except Exception as e:
+        logger.error(f"인증 메일 발송 실패: {e}")
+        raise HTTPException(500, "이메일 발송에 실패했습니다")
 
 
 @router.post("/reset-password")
@@ -585,14 +798,29 @@ def check_duplicates(
     return {"taken": taken}
 
 
-@router.get("/identity/last")  
+@router.get("/identity/last")
 def get_last_identity(request: Request):
-    """마지막 소셜 로그인 정보 반환"""
+    """최근 소셜 식별 정보 반환 (세션 키 호환)
+
+    우선 최신 키('pending_social'/'last_social_identity')를 확인하고,
+    없으면 구 버전 키 패턴('_social_*_data')를 조회해 반환합니다.
+    """
     try:
-        for key in request.session.keys():
-            if key.startswith('_social_') and key.endswith('_data'):
+        # 1) 신규 키 우선
+        data = request.session.get("pending_social") or request.session.get("last_social_identity")
+        if data and isinstance(data, dict):
+            return data
+
+        # 2) 구버전 키 호환: _social_*_data
+        for key in list(request.session.keys()):
+            if key.startswith("_social_") and key.endswith("_data"):
                 social_data = request.session.get(key)
                 if social_data and isinstance(social_data, dict):
+                    # 가능한 경우 표준 키로도 저장해 후속 요청에서 일관되게 참조
+                    try:
+                        request.session["last_social_identity"] = social_data
+                    except Exception:
+                        pass
                     return social_data
         return {}
     except Exception:
@@ -636,4 +864,3 @@ def send_email_verification(
     except Exception as e:
         logger.error(f"이메일 인증 발송 실패: {str(e)}")
         raise HTTPException(500, "이메일 발송에 실패했습니다")
-

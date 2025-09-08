@@ -6,6 +6,7 @@
    =========================== */
 
 /* ---- 유틸: JWT 파싱 / 인증 헤더 / fetch 래퍼 ---- */
+const DEFAULT_AVATAR_URL = '/static/pictures/defaultprofile.svg';
 function parseJwt(token) {
   try {
     const base64Url = token.split('.')[1];
@@ -19,7 +20,8 @@ function parseJwt(token) {
   }
 }
 function getAccessToken() {
-  return localStorage.getItem('access_token') || null;
+  // Prefer long-lived token, fall back to sessionStorage
+  return localStorage.getItem('access_token') || sessionStorage.getItem('access_token') || null;
 }
 function authHeader() {
   const t = getAccessToken();
@@ -240,25 +242,26 @@ function wireProfileDropdown() {
   const menu = $('#profile-menu');
   const loginBtn = document.querySelector('#header-login-btn');
 
-  const token = getAccessToken();
-  const isLogin = !!token && !!parseJwt(token);
-
-  // 비로그인: 드롭다운을 숨기고 로그인 버튼 노출 (알림 벨은 그대로 유지)
-  if (!isLogin) {
-    if (dd) dd.style.display = 'none';
-    if (loginBtn) loginBtn.style.display = 'inline-flex';
-    return;
-  }
-
-  // 로그인 상태: 로그인 버튼 숨기고 드롭다운 표시
-  if (loginBtn) loginBtn.style.display = 'none';
-  if (dd) dd.style.display = '';
-  let name = 'ME';
-  if (token) {
-    const p = parseJwt(token);
-    if (p?.username) name = String(p.username).slice(0, 2).toUpperCase();
-  }
-  trigger.textContent = name;
+  // Decide visibility strictly by API (not by presence of token)
+  (async () => {
+    try {
+      S.me = await fetchJSON('/api/v1/users/me');
+      if (loginBtn) loginBtn.style.display = 'none';
+      if (dd) dd.style.display = '';
+      const raw = S.me?.profile_image_url || S.me?.profile_image || S.me?.avatar_url || S.me?.avatar || '';
+      const img = new Image();
+      img.alt = 'avatar';
+      img.referrerPolicy = 'no-referrer';
+      img.style.cssText = 'width:36px;height:36px;border-radius:50%;object-fit:cover;display:block;';
+      img.onerror = () => { img.src = DEFAULT_AVATAR_URL; };
+      img.src = raw || DEFAULT_AVATAR_URL;
+      trigger.innerHTML = '';
+      trigger.appendChild(img);
+    } catch (_) {
+      if (dd) dd.style.display = 'none';
+      if (loginBtn) loginBtn.style.display = 'inline-flex';
+    }
+  })();
 
   trigger.addEventListener('click', async () => {
     dd.classList.toggle('open');
@@ -272,17 +275,17 @@ function wireProfileDropdown() {
     }
 
     const isAdmin = S.me?.is_admin || S.me?.is_superadmin || false;
-    
+    const isLoginNow = !!S.me;
+
     menu.innerHTML = `
       <div class="dropdown-item"><strong>${S.me?.username || 'Guest'}</strong></div>
       <div class="divider"></div>
       ${
-        isLogin
+        isLoginNow
           ? `
             <a class="dropdown-item" href="/mypage">마이페이지</a>
             <a class="dropdown-item" href="/pages/challenges/new">챌린지 생성</a>
             <a class="dropdown-item" href="/account/edit">회원정보 수정</a>
-            ${isAdmin ? '<div class="divider"></div><button class="dropdown-item" onclick="enterAdminMode()" style="color: #dc2626; font-weight: 600; border: none; background: none; width: 100%; text-align: left; cursor: pointer;">🛡️ 관리자 모드</button>' : ''}
             <div class="divider"></div>
             <button class="dropdown-item" id="logout-btn">로그아웃</button>
           `
@@ -293,10 +296,19 @@ function wireProfileDropdown() {
       }
     `;
     const logout = $('#logout-btn');
-    logout?.addEventListener('click', () => {
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      location.href = '/login';
+    logout?.addEventListener('click', async () => {
+      try {
+        // 서버 측 세션/로그 기록 정리 (필요시)
+        await fetch('/api/v1/auth/logout', { method: 'POST', credentials: 'include' });
+      } catch (_) {}
+      try {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        sessionStorage.removeItem('access_token');
+        sessionStorage.removeItem('refresh_token');
+      } catch (_) {}
+      // 요청: 로그아웃 후 홈으로 이동
+      location.href = '/home';
     });
   });
 
@@ -326,7 +338,10 @@ async function bootstrapHome() {
 async function loadRecommended() {
   const token = getAccessToken();
   if (!token) {
-    elHomeRecLoginReq.style.display = 'block';
+    // Guests: hide entire section
+    const sec = elHomeRecList?.closest('.section');
+    if (sec) sec.style.display = 'none';
+    elHomeRecLoginReq.style.display = 'none';
     elHomeRecNotice.style.display = 'none';
     elHomeRecList.innerHTML = '';
     return;
@@ -368,7 +383,10 @@ async function loadRecommended() {
 async function loadFollowing() {
   const token = getAccessToken();
   if (!token) {
-    elHomeFollowLoginReq.style.display = 'block';
+    // Guests: hide whole section
+    const sec = elHomeFollowList?.closest('.section');
+    if (sec) sec.style.display = 'none';
+    elHomeFollowLoginReq.style.display = 'none';
     elHomeFollowList.innerHTML = '';
     return;
   }

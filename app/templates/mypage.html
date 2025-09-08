@@ -63,11 +63,8 @@
     </div>
     <div class="header-actions">
       <a href="/home" class="btn btn-outline" title="홈으로 이동">🏠 홈</a>
-      <div id="admin-point-button" style="display: none;">
-        <a href="/admin/points" class="admin-point-link" title="포인트 관리 (관리자)">
-          🔧 포인트 관리
-        </a>
-      </div>
+      <!-- Admin quick-link hidden in MyPage to keep user site separate -->
+      <!-- (intentionally removed) -->
     </div>
   </header>
 
@@ -273,36 +270,7 @@
   <!-- 토스트 -->
   <div class="toast-zone" id="toasts"></div>
 
-  <script>
-    // 포인트 페이지로 이동
-    function goToPoints() {
-      window.location.href = '/points';
-    }
-
-    // 관리자 권한 확인 및 버튼 표시
-    function checkAdminAccess() {
-      // 쿠키에서 access_token 가져오기
-      const token = document.cookie.split('; ').find(row => row.startsWith('access_token='));
-      if (token) {
-        try {
-          const tokenValue = token.split('=')[1];
-          const payload = JSON.parse(atob(tokenValue.split('.')[1]));
-          
-          // 관리자 모드인지 확인
-          if (payload.admin_mode) {
-            document.getElementById('admin-point-button').style.display = 'block';
-          }
-        } catch (e) {
-          console.log('Token parsing failed:', e);
-        }
-      }
-    }
-
-    // 페이지 로드 시 관리자 버튼 확인
-    document.addEventListener('DOMContentLoaded', function() {
-      checkAdminAccess();
-    });
-  </script>
+  <!-- Admin access button intentionally suppressed for user MyPage -->
   
   <script type="module" src="/static/js/mypage.bundle.js?v=3" defer></script>
 </body>

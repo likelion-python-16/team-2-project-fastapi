@@ -150,6 +150,16 @@ class Participation(Base, TimestampMixin):
         nullable=False,
         comment="자동 결제 활성화 여부"
     )
+
+    # 일부 배포 환경에 존재하는 컬럼 호환: is_active (NOT NULL)
+    # DB에 해당 컬럼이 있고 기본값이 없을 때 INSERT 오류(1364)를 방지하기 위해
+    # ORM에서 명시적으로 기본값 True를 설정한다.
+    is_active = Column(
+        Boolean,
+        default=True,
+        nullable=False,
+        comment="참여 레코드 활성 여부 (호환용)"
+    )
     
     # 참가 시점 메모/동기
     join_motivation = Column(Text, nullable=True, comment="참가 동기/목표")
@@ -325,7 +335,8 @@ class ParticipationManager:
             role=role,
             payment_cycle=payment_cycle,
             join_motivation=join_motivation,
-            status=ParticipationStatus.pending if payment_cycle != PaymentCycle.free else ParticipationStatus.active
+            status=ParticipationStatus.pending if payment_cycle != PaymentCycle.free else ParticipationStatus.active,
+            is_active=True  # 호환 컬럼(DB NOT NULL) 명시 설정
         )
         
         # 무료 참가인 경우 즉시 활성화

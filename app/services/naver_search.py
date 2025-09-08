@@ -44,3 +44,4 @@ async def search_places(query: str, display: int = 5):
                 "longitude": lng,
                 "map_url": map_url,
             })
+        return results

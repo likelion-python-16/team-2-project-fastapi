@@ -73,9 +73,6 @@ async def auto_create_rounds_on_challenge_create(db: Session, challenge: Challen
     map_url = None
     same_all = bool(getattr(challenge, "same_place_for_all_rounds", False))
 
-    # Enum → 문자열
-    ch_mode_str = challenge.mode.value if hasattr(challenge.mode, "value") else str(challenge.mode)
-
     # 오프라인 + 모든 회차 동일 장소 + 기본 장소 정보가 있고 + 위경도가 없다면 → 1회 지오코딩
     if (
         challenge.mode == ChallengeMode.offline
@@ -84,7 +81,10 @@ async def auto_create_rounds_on_challenge_create(db: Session, challenge: Challen
         and road
         and (lat is None or lon is None)
     ):
-        geo = await geocode(road)
+        try:
+            geo = await geocode(road)
+        except Exception:
+            geo = None
         if geo:
             lat = geo.get("lat")
             lon = geo.get("lng")
@@ -94,7 +94,10 @@ async def auto_create_rounds_on_challenge_create(db: Session, challenge: Challen
 
     # 지도 링크 만들기 (좌표가 있으면 마커 보장)
     if challenge.mode == ChallengeMode.offline and same_all and pname and (lat is not None and lon is not None):
-        map_url = build_naver_map_url(pname, lat, lon, None)
+        try:
+            map_url = build_naver_map_url(pname, lat, lon, None)
+        except Exception:
+            map_url = None
 
     for i in range(1, n + 1):
         processing_at = _compute_processing_date(challenge, i)  # ✅ Date 타입

@@ -71,7 +71,7 @@ class ChallengeCreate(BaseModel):
     default_place_name: Optional[str] = None
     default_address: Optional[str] = None  # road_address 통합
     default_road_address: Optional[str] = None  # 호환성
-    default_map_url: Optional[str] = None  # 호환성
+    default_map_url: str | None = None
     default_place_id: Optional[str] = None  # 호환성
     default_latitude: Optional[float] = None
     default_longitude: Optional[float] = None
@@ -163,8 +163,11 @@ class ChallengeCreate(BaseModel):
     @field_validator("max_participants")
     @classmethod
     def validate_max_participants(cls, v: Optional[int]) -> Optional[int]:
-        if v is not None and v < 1:
-            raise ValueError("Maximum participants must be at least 1")
+        if v is not None:
+            if v < 1:
+                raise ValueError("Maximum participants must be at least 1")
+            if v > 100:
+                raise ValueError("Maximum participants cannot exceed 100")
         return v
 
     @model_validator(mode="after")
@@ -289,6 +292,23 @@ class ChallengeUpdate(BaseModel):
             raise ValueError("Monthly fee cannot be negative")
         if v is not None and v > 100000:
             raise ValueError("Monthly fee cannot exceed 100,000 KRW")
+        return v
+
+    @field_validator("min_participants")
+    @classmethod
+    def validate_min_participants_update(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v < 1:
+            raise ValueError("Minimum participants must be at least 1")
+        return v
+
+    @field_validator("max_participants")
+    @classmethod
+    def validate_max_participants_update(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None:
+            if v < 1:
+                raise ValueError("Maximum participants must be at least 1")
+            if v > 100:
+                raise ValueError("Maximum participants cannot exceed 100")
         return v
 
     @field_validator("min_participation_rate")

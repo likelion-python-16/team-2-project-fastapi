@@ -212,7 +212,8 @@ def _matches_token_version(user, payload: dict) -> bool:
     """토큰의 ver(토큰 버전)과 DB의 token_version이 다르면 False"""
     if not hasattr(user, "token_version"):
         return True
-    token_ver = payload.get("ver")
+    # Accept both 'tv' (preferred) and 'ver' (legacy)
+    token_ver = payload.get("tv", payload.get("ver"))
     if token_ver is None:
         return True  # ver 미포함 토큰은 허용(레거시)
     try:

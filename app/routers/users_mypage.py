@@ -16,6 +16,7 @@ from pydantic import BaseModel, field_validator
 # ✅ 프로젝트 일관: core.database / security 사용
 from app.core.database import get_db
 from app.security import get_current_user
+from app.core.deps import get_current_user_dual
 # Simple pagination helper
 def pagination_params(page: int = Query(1, ge=1), limit: int = Query(20, ge=1, le=100)):
     skip = (page - 1) * limit
@@ -44,6 +45,16 @@ def _as_dt(x: Optional[str]) -> Optional[datetime]:
 
 def _user_payload(me: User) -> dict:
     """프런트에서 바로 쓰도록 키 통일."""
+    # Sanitize introduction: if JSON stored by mistake, show only bio
+    intro = getattr(me, "introduction", "") or ""
+    if isinstance(intro, str) and intro.strip().startswith('{'):
+        try:
+            import json
+            parsed = json.loads(intro)
+            if isinstance(parsed, dict):
+                intro = (parsed.get('bio') or '').strip()
+        except Exception:
+            intro = intro
     return {
         "id": me.id,
         "username": me.username,
@@ -53,7 +64,7 @@ def _user_payload(me: User) -> dict:
         "home_region": getattr(me, "region_living", None),
         "active_region": getattr(me, "region_active", None),
         "avatar_url": getattr(me, "profile_image", None),
-        "introduction": getattr(me, "introduction", "") or "",
+        "introduction": intro,
         "manner_score": int(getattr(me, "manner_score", 0) or 0),
         "total_points": int(getattr(me, "total_points", 0) or 0),
         "is_active": bool(getattr(me, "is_active", True)),
@@ -313,7 +324,7 @@ def my_followers(
 @router.get("/me/profile")
 def get_my_profile(
     db: Session = Depends(get_db),
-    me: User = Depends(get_current_user),
+    me: User = Depends(get_current_user_dual),
 ):
     return _user_payload(me)
 
@@ -321,7 +332,7 @@ def get_my_profile(
 @router.get("/me")
 def get_my_profile_legacy(
     db: Session = Depends(get_db),
-    me: User = Depends(get_current_user),
+    me: User = Depends(get_current_user_dual),
 ):
     return _user_payload(me)
 
@@ -349,7 +360,7 @@ class UserProfileUpdateIn(BaseModel):
 def update_my_profile(
     payload: UserProfileUpdateIn,
     db: Session = Depends(get_db),
-    me: User = Depends(get_current_user),
+    me: User = Depends(get_current_user_dual),
 ):
     changed = False
 
@@ -369,7 +380,44 @@ def update_my_profile(
         me.profile_image = payload.avatar_url.strip()
         changed = True
     if payload.introduction is not None:
-        me.introduction = payload.introduction.strip()
+        raw = (payload.introduction or "").strip()
+        # If JSON-like, store only bio text to `introduction`
+        final_intro = raw
+        intro_raw_for_tags = raw
+        if raw and raw.strip().startswith('{'):
+            try:
+                import json
+                from app.models.tag import Tag, UserTag
+                from app.core.config import settings as _settings
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    final_intro = (parsed.get('bio') or '').strip()
+                    interests = parsed.get('interests') or {}
+                    keywords = interests.get('keywords') or []
+                    if isinstance(keywords, list) and keywords:
+                        allow_dynamic = bool(getattr(_settings, 'allow_dynamic_tag_create', False))
+                        for kw in keywords:
+                            if not kw or not isinstance(kw, str):
+                                continue
+                            name = kw.strip()
+                            if not name:
+                                continue
+                            tag = db.query(Tag).filter(Tag.tag == name).first()
+                            if not tag:
+                                if not allow_dynamic:
+                                    continue
+                                tag = Tag(tag=name, is_active=True)
+                                db.add(tag)
+                                db.flush()
+                            exists = db.query(UserTag).filter(UserTag.user_id == me.id, UserTag.tag_id == tag.id).first()
+                            if not exists:
+                                db.add(UserTag(user_id=me.id, tag_id=tag.id))
+                        changed = True
+            except Exception:
+                # Tag linking failure should not block profile update
+                pass
+        # persist only the human-readable bio, never the raw JSON blob
+        me.introduction = final_intro or ""
         changed = True
 
     if changed:
@@ -668,5 +716,3 @@ def change_password(
     db.commit()
     
     return {"message": "비밀번호가 변경되었습니다"}
-
-

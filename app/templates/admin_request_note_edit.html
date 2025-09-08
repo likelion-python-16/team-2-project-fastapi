@@ -1,0 +1,25 @@
+{% extends "final.html" %}
+{% block title %}신청 비고 작성/수정 - Team Project{% endblock %}
+{% block content %}
+<style> body { flex-direction: column; } </style>
+
+<div class="flex items-center justify-center grow">
+  <div class="kt-card max-w-[520px] w-full mt-12">
+    <div class="kt-card-content p-8">
+      <h3 class="text-lg font-medium mb-3">신청 비고 작성/수정</h3>
+      <div class="text-sm text-muted-foreground mb-3">요청 ID: #{{ req.id }} · 현재 상태: {{ req.status }}</div>
+
+      <form method="post" action="/admin/request-note">
+        <input type="hidden" name="request_id" value="{{ req.id }}" />
+        <label class="kt-form-label">비고</label>
+        <textarea class="kt-input w-full" name="note" rows="5" placeholder="비고를 입력하세요...">{{ req.note or '' }}</textarea>
+        <div class="flex gap-2 mt-4">
+          <a href="/admin" class="kt-btn kt-btn-light flex-1">취소</a>
+          <button type="submit" class="kt-btn kt-btn-primary flex-1">저장</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

@@ -4,6 +4,7 @@ from .database import init_db
 # from .config import settings  # unused
 from ..utils.logging import logger
 from app.services.map_version import start_version_refresher
+from .config import settings
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -17,13 +18,16 @@ async def lifespan(_: FastAPI):
     except Exception as e:
         logger.error(f"❌ 데이터베이스 초기화 실패: {e}")
     
-    # 초기 관리자 생성
+    # 초기 관리자 생성 (옵션)
     try:
-        from app.scripts.create_initial_admin import create_initial_admin
-        if create_initial_admin():
-            logger.info("✅ 초기 관리자 설정 완료")
+        if getattr(settings, 'enable_initial_admin_seed', False):
+            from app.scripts.create_initial_admin import create_initial_admin
+            if create_initial_admin():
+                logger.info("✅ 초기 관리자 설정 완료")
+            else:
+                logger.warning("⚠️  초기 관리자 설정을 건너뜀")
         else:
-            logger.warning("⚠️  초기 관리자 설정을 건너뜀")
+            logger.info("ℹ️  초기 관리자 자동 생성 비활성화 (ENABLE_INITIAL_ADMIN_SEED=false)")
     except Exception as e:
         logger.warning(f"⚠️  초기 관리자 생성 중 오류: {e}")
     

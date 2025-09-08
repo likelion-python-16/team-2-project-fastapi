@@ -129,7 +129,7 @@ function showAlert(m,t){
 }
 
 /* ===== 기본 아바타 + 미리보기 ===== */
-const DEFAULT_AVATAR = '/static/pictures/defaultprofile.jpeg';
+const DEFAULT_AVATAR = '/static/pictures/defaultprofile.svg';
 
 function updateProfilePreview(url){
   const img  = document.getElementById('profilePreview');
@@ -284,6 +284,17 @@ document.addEventListener('DOMContentLoaded',()=>{
 
 /* ===== 제출 ===== */
 document.addEventListener('DOMContentLoaded',()=>{
+  // 주민등록번호 형식 검사 (1~8 허용)
+  function isValidRRN13(n13){
+    if(!/^\d{13}$/.test(n13)) return false;
+    const m=parseInt(n13.slice(2,4),10), d=parseInt(n13.slice(4,6),10);
+    if(!/[01]/.test(n13[2])) return false;
+    if(!/[0-3]/.test(n13[4])) return false;
+    if(!(m>=1&&m<=12)) return false;
+    if(!(d>=1&&d<=31)) return false;
+    if(!/[1-8]/.test(n13[6])) return false;
+    return true;
+  }
   loadCategories();
 
   // 이전 단계 버튼
@@ -309,6 +320,13 @@ document.addEventListener('DOMContentLoaded',()=>{
     const baseOk = (d.username && d.email && d.phone && d.identification_number);
     if(!(SOCIAL ? baseOk : (baseOk && d.password))){
       showAlert('이전 단계 정보를 확인해 주세요. (필요시 1단계로 돌아가 입력)', 'error');
+      return;
+    }
+
+    // 주민번호 최종 검증 (초기 단계에서 놓친 경우 방지)
+    const idRaw=String(d.identification_number||'').replace(/\D/g,'');
+    if(!isValidRRN13(idRaw)){
+      showAlert('주민등록번호 형식이 올바르지 않습니다. (YYMMDD-XXXXXXX, 7번째=1–8)', 'error');
       return;
     }
 
@@ -387,8 +405,11 @@ document.addEventListener('DOMContentLoaded',()=>{
           if (Array.isArray(j?.detail)){
             const first = j.detail[0];
             const loc = (first?.loc||[]).join('.');
-            const msg = first?.msg || '유효성 검사 실패';
-            throw new Error(`[${loc}] ${msg}`);
+            let msg = first?.msg || '유효성 검사 실패';
+            if (String(loc).includes('identification_number')){
+              msg = '주민등록번호 형식이 올바르지 않습니다. (YYMMDD-XXXXXXX, 7번째=1–8)';
+            }
+            throw new Error(msg);
           }
           throw new Error(j?.detail?.message || j?.detail || '가입 실패');
         }

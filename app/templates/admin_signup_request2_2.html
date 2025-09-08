@@ -46,9 +46,27 @@
   </div>
 </div>
 <script>
-  document.getElementById('reqStep2Form').addEventListener('submit',(e)=>{ e.preventDefault(); window.location.href='/admin/signup-request2_3'; });
+  document.getElementById('reqStep2Form').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const gender = (document.getElementById('gender').value||'');
+    const living = (document.getElementById('region_living').value||'').trim();
+    const active = (document.getElementById('region_active').value||'').trim();
+    const payload = {
+      home_region: living,
+      active_region: active,
+    };
+    try{
+      const token = localStorage.getItem('access_token')||sessionStorage.getItem('access_token')||'';
+      await fetch('/api/v1/users/me/profile',{
+        method:'PATCH',
+        headers:{'Content-Type':'application/json', ...(token? { Authorization: 'Bearer '+token } : {})},
+        credentials:'include',
+        body: JSON.stringify(payload)
+      });
+    }catch(_){ /* ignore errors to not block UX */ }
+    window.location.href='/admin/signup-request2_3';
+  });
   document.getElementById('btnPrev').addEventListener('click',()=>{ window.location.href='/admin/signup-request2'; });
   document.getElementById('linkSkip').addEventListener('click',(e)=>{ e.preventDefault(); window.location.href='/admin/signup-request2_3'; });
 </script>
 {% endblock %}
-

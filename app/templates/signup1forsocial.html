@@ -1,6 +1,7 @@
 {% extends "final.html" %}
 {% block title %}소셜 회원가입 1단계 - Team Project{% endblock %}
 {% block content %}
+<style> body { flex-direction: column; } </style>
 <div class="flex items-start justify-center grow py-8">
   <div class="kt-card max-w-[420px] w-full">
     <form class="kt-card-content flex flex-col gap-5 p-10" id="socialStep1" method="post" novalidate>
@@ -13,7 +14,10 @@
 
       <div id="socialInfoBox" class="rounded-lg p-3 border border-muted bg-muted/20 text-xs text-muted-foreground">
         <div class="flex items-center gap-3">
-          <img id="prefAvatar" class="w-9 h-9 rounded-full border border-border object-cover" alt="avatar"/>
+          <div class="relative w-12 h-12">
+            <img id="prefAvatar" class="w-12 h-12 rounded-full border border-border object-cover" alt="avatar"/>
+            <div id="prefInitial" class="absolute inset-0 rounded-full hidden flex items-center justify-center text-white text-sm font-semibold" style="background:#EF4444"></div>
+          </div>
           <div class="flex-1">
             <div>소셜에서 확인된 정보</div>
             <div id="socialProvider" class="mt-0.5"></div>
@@ -28,6 +32,13 @@
       <div class="flex flex-col gap-1">
         <label class="kt-form-label">이름 *</label>
         <input class="kt-input" id="name" placeholder="본인 실명" required />
+      </div>
+
+      <!-- 이메일 (소셜 제공값, 수정 불가) -->
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label">이메일 (소셜)</label>
+        <input class="kt-input bg-muted/40" id="email" placeholder="소셜에서 받은 이메일" readonly aria-readonly="true" />
+        <span class="text-[11px] text-muted-foreground">소셜에서 확인된 이메일입니다. 수정할 수 없습니다.</span>
       </div>
 
       <!-- 사용자명(아이디) -->
@@ -48,78 +59,471 @@
       <!-- 주민등록번호 -->
       <div class="flex flex-col gap-1">
         <label class="kt-form-label">주민등록번호 *</label>
-        <input class="kt-input" id="identification_number" placeholder="123456-1234567" required />
-        <span class="text-[11px] text-muted-foreground">실명 확인용</span>
+        <input class="kt-input" id="identification_number" name="identification_number" placeholder="YYMMDD-XXXXXXX" type="text" maxlength="14" required />
+        <div class="text-[11px] text-muted-foreground"><i class="ki-filled ki-lock me-1"></i>안전하게 암호화 저장됩니다.</div>
+        <div id="dup-idn" class="text-xs mt-1 hidden"></div>
       </div>
 
-      <div class="flex items-center gap-3">
-        <button type="button" class="kt-btn kt-btn-outline flex-1" id="btnBack">이전</button>
-        <button type="submit" class="kt-btn kt-btn-primary flex-1" id="btnNext">다음 단계</button>
+      <!-- 비밀번호 생성 -->
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label">비밀번호 *</label>
+        <input class="kt-input" id="password" type="password" placeholder="비밀번호" required />
+        <div class="text-[11px] text-muted-foreground">대소문자/숫자/특수문자 포함 8자 이상 권장</div>
+        <ul class="text-[11px] text-muted-foreground grid grid-cols-2 gap-x-3 mt-1">
+          <li id="req-length"><span class="icon">✗</span> 8자 이상</li>
+          <li id="req-upper"><span class="icon">✗</span> 대문자</li>
+          <li id="req-lower"><span class="icon">✗</span> 소문자</li>
+          <li id="req-digit"><span class="icon">✗</span> 숫자</li>
+          <li id="req-special" class="col-span-2"><span class="icon">✗</span> 특수문자</li>
+        </ul>
+      </div>
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label">비밀번호 확인 *</label>
+        <input class="kt-input" id="password2" type="password" placeholder="비밀번호 확인" required />
+        <div id="pw-match" class="text-xs mt-1"></div>
+      </div>
+
+      <!-- 기존 계정 매칭/연동 안내 -->
+      <div id="existingWrap" class="hidden border rounded-lg p-3">
+        <div class="mb-2 text-sm">아래 계정이 기존의 회원님일 수 있어요:</div>
+        <div id="maskedUser" class="font-medium"></div>
+        <div class="text-xs text-muted-foreground mt-1">맞다면 아이디(또는 이메일)를 입력해 주세요. 다음 화면에서 비밀번호 확인 및 변경 항목을 선택합니다.</div>
+        <div class="flex flex-col gap-1 mt-3">
+          <input class="kt-input" id="linkLogin" placeholder="아이디 또는 이메일" />
+          <div class="kt-input">
+            <input id="linkPassword" type="password" placeholder="비밀번호" />
+            <button class="kt-btn kt-btn-sm kt-btn-ghost kt-btn-icon bg-transparent! -me-1.5" type="button" id="togglePw">
+              <i class="ki-filled ki-eye" id="eye1"></i>
+              <i class="ki-filled ki-eye-slash hidden" id="eye2"></i>
+            </button>
+          </div>
+          <div class="flex gap-2">
+            <button type="button" id="btnLink" class="kt-btn kt-btn-primary grow">이 계정과 연동</button>
+            <button type="button" id="btnForgotPw" class="kt-btn grow">비밀번호 찾기</button>
+          </div>
+          <div id="linkMsg" class="text-xs text-muted-foreground"></div>
+        </div>
+      </div>
+
+      <div class="flex gap-3">
+        <button type="submit" id="btnNext" class="kt-btn kt-btn-primary grow">다음 단계</button>
       </div>
     </form>
   </div>
-</div>
+  </div>
 
 <script>
-// 소셜 정보 로드
-async function loadSocialInfo() {
-  try {
-    const response = await fetch('/api/v1/auth/identity/last');
-    if (!response.ok) throw new Error('소셜 정보를 찾을 수 없습니다');
-    
-    const data = await response.json();
-    
-    // UI 업데이트
-    document.getElementById('socialProvider').textContent = `${data.provider || ''} 로그인`;
-    document.getElementById('socialName').textContent = `이름: ${data.name || ''}`;
-    document.getElementById('socialEmail').textContent = `이메일: ${data.email || ''}`;
-    
-    // 기본값 설정
-    if (data.name) document.getElementById('name').value = data.name;
-    if (data.email) {
-      const username = data.email.split('@')[0];
-      document.getElementById('username').value = username;
-    }
-    
-    if (data.picture) {
-      document.getElementById('prefAvatar').src = data.picture;
-    }
-    
-  } catch (error) {
-    console.error('소셜 정보 로드 실패:', error);
-    window.location.href = '/login';
-  }
+const KEY='signupSocialDraft';
+let conflictPhoneIdent = false;
+let conflictIdentOnly = false;
+let conflictAnyActive = false; // ✅ 기존계정 충돌 상태(인라인 경고 유지)
+let phoneTaken = false;       // ✅ 전화번호 중복 상태
+let idnTaken = false;         // ✅ 주민번호 중복 상태
+function getDraft(){ try{return JSON.parse(localStorage.getItem(KEY)||'{}')}catch(e){return {}} }
+function saveDraft(d){ localStorage.setItem(KEY, JSON.stringify(d||{})); }
+function showAlert(msg,type){
+  var el=document.getElementById('alertContainer');
+  var css=type==='error'?'kt-alert-danger':'kt-alert-success';
+  el.innerHTML='<div class="kt-alert '+css+' p-3 rounded-lg flex items-center gap-2"><i class="ki-filled '+(type==='error'?'ki-information-2':'ki-check')+'"></i><span class="text-sm">'+msg+'</span></div>';
+  el.classList.remove('hidden');
 }
 
-// 폼 제출
-document.getElementById('socialStep1').addEventListener('submit', function(e) {
-  e.preventDefault();
-  
-  const formData = {
-    name: document.getElementById('name').value.trim(),
-    username: document.getElementById('username').value.trim(),
-    phone: document.getElementById('phone').value.trim(),
-    identification_number: document.getElementById('identification_number').value.trim()
-  };
-  
-  // 유효성 검사
-  if (!formData.name || !formData.username || !formData.phone || !formData.identification_number) {
-    alert('모든 필드를 입력해주세요');
-    return;
+  function setInlineMsg(id, msg, ok){
+    var el=document.getElementById(id);
+    if(!el) return;
+    if(!msg){ el.textContent=''; el.className='text-xs mt-1 hidden'; return; }
+    el.textContent = msg;
+    el.classList.remove('hidden');
+    el.classList.toggle('text-red-500', !ok);
+    el.classList.toggle('text-green-600', !!ok);
   }
-  
-  // 세션 스토리지에 저장
-  sessionStorage.setItem('socialStep1Data', JSON.stringify(formData));
-  
-  // 2단계로 이동
-  window.location.href = '/social/step2';
-});
 
-document.getElementById('btnBack').addEventListener('click', () => {
-  window.location.href = '/login';
-});
+function formatPhone(v){
+  const d=String(v||'').replace(/\D/g,'').slice(0,11);
+  if(d.length<=3) return d;
+  if(d.length<=7) return d.slice(0,3)+'-'+d.slice(3);
+  return d.slice(0,3)+'-'+d.slice(3,7)+'-'+d.slice(7);
+}
+function normalizePhone(v){ return String(v||'').replace(/\D/g,''); }
 
-// 페이지 로드시 소셜 정보 로드
-document.addEventListener('DOMContentLoaded', loadSocialInfo);
+function formatIdentification(v){ let n=String(v||'').replace(/\D/g,'').slice(0,13); if(n.length<=6) return n; return n.replace(/(\d{6})(\d{1,7})/,'$1-$2'); }
+function isValidRRN13(n13){
+  if(!/^\d{13}$/.test(n13)) return false;
+  const m=parseInt(n13.slice(2,4),10), d=parseInt(n13.slice(4,6),10);
+  if(!/[01]/.test(n13[2])) return false; // 월 십의 자리 0/1
+  if(!/[0-3]/.test(n13[4])) return false; // 일 십의 자리 0-3
+  if(!(m>=1&&m<=12)) return false;
+  if(!(d>=1&&d<=31)) return false;
+  if(!/[1-8]/.test(n13[6])) return false; // 7번째 1-8
+  return true;
+}
+
+// ===== 안전 마스킹/힌트 유틸 =====
+function maskUsername(u){
+  u = String(u||'');
+  if(!u) return '';
+  if(u.length <= 2) return u[0] + '*';
+  const head = u.slice(0,2);
+  const tail = u.slice(-1);
+  return head + '*'.repeat(Math.max(1, u.length-3)) + tail;
+}
+function maskEmail(e){
+  e = String(e||'');
+  const at = e.indexOf('@');
+  if(at<=0) return '';
+  const local = e.slice(0,at);
+  const dom = e.slice(at+1);
+  const ml = local.length;
+  const md = dom.length;
+  const localMasked = (ml<=2) ? (local[0] + '*') : (local.slice(0,2) + '*'.repeat(Math.max(1, ml-3)) + local.slice(-1));
+  // domain: keep first label partially
+  const parts = dom.split('.');
+  if(parts.length===1){
+    const d = parts[0];
+    const dMasked = (d.length<=2) ? (d[0]+'*') : (d.slice(0,2) + '*'.repeat(Math.max(1, d.length-3)) + d.slice(-1));
+    return localMasked + '@' + dMasked;
+  }
+  const first = parts[0];
+  const rest = parts.slice(1).join('.');
+  const fMasked = (first.length<=2) ? (first[0]+'*') : (first.slice(0,2) + '*'.repeat(Math.max(1, first.length-3)) + first.slice(-1));
+  return localMasked + '@' + fMasked + (rest?('.'+rest):'');
+}
+
+document.addEventListener('DOMContentLoaded', async ()=>{
+  const nameEl=document.getElementById('socialName');
+  const emailEl=document.getElementById('socialEmail');
+  let identity=null;
+  try{ const r=await fetch('/api/v1/auth/identity/last', { credentials:'include' }); if(r.ok) identity=await r.json(); }catch(_){ }
+  const meToken=(localStorage.getItem('access_token')||sessionStorage.getItem('access_token')||'');
+  if(!identity){
+    try{ const rr=await fetch('/api/v1/users/me',{headers:{Authorization:'Bearer '+meToken}}); if(rr.ok){ const mj=await rr.json(); identity={name:mj.name,email:mj.email}; } }catch(_){ }
+  }
+  // 폴백 데이터: social_prefill, draft, 쿼리스트링
+  let pf=null; try{ const raw=localStorage.getItem('social_prefill'); if(raw) pf=JSON.parse(raw); }catch(_){ pf=null; }
+  const draft = getDraft();
+  const qs = new URLSearchParams(location.search);
+  identity = Object.assign({},
+    identity||{},
+    (pf? { name: pf.name||undefined, email: pf.email||undefined, provider: pf.provider||undefined } : {}),
+    { name: (draft?.name||identity?.name||qs.get('name')||'') || undefined,
+      email: (draft?.email||identity?.email||qs.get('email')||'') || undefined,
+      provider: (identity?.provider||pf?.provider||qs.get('provider')||'') || undefined }
+  );
+  // Fill summary (없으면 박스 숨김)
+  const infoBox = document.getElementById('socialInfoBox');
+  const hasAnyInfo = !!(identity && (identity.name || identity.email || identity.provider || identity.picture || identity.profile_image));
+  // 박스는 최대한 유지하고, 내용만 조건부 채움
+  document.getElementById('socialProvider').textContent = (identity?.provider ? String(identity.provider).toUpperCase() : 'SOCIAL') + ' 계정';
+  nameEl.textContent = identity?.name ? ('이름: ' + identity.name) : '';
+  emailEl.textContent = identity?.email ? ('이메일: ' + identity.email) : '';
+  const pic = identity?.picture || identity?.profile_image || '';
+  const imgEl = document.getElementById('prefAvatar');
+  const iniEl = document.getElementById('prefInitial');
+  function showInitial(){
+    const base = (identity?.name || (identity?.email||'').split('@')[0] || '?').trim();
+    const arr = Array.from(base);
+    const last2 = arr.length ? arr.slice(Math.max(0, arr.length-2)).join('') : '?';
+    iniEl.textContent = last2;
+    iniEl.classList.remove('hidden');
+    imgEl.style.display='none';
+  }
+  function tryGooglePicture(url){
+    let tries = 0;
+    function nextTry(){
+      if (tries>2){ showInitial(); return; }
+      tries++;
+      try{
+        const u = new URL(imgEl.src);
+        if (u.hostname.endsWith('googleusercontent.com')){
+          u.pathname = u.pathname.replace(/=s\d+-c/, '=s'+(96*(tries+1))+'-c');
+          if (!u.searchParams.has('sz')) u.searchParams.set('sz', String(96*(tries+1)));
+          imgEl.src = u.toString();
+          return;
+        }
+      }catch(_){ }
+      showInitial();
+    }
+    imgEl.onerror = nextTry;
+    imgEl.onload = ()=>{ iniEl.classList.add('hidden'); };
+    imgEl.src = url;
+  }
+  if (pic){ tryGooglePicture(pic); } else { showInitial(); }
+  // 추천 아이디(고정): 소셜 이메일 local-part 기준으로 1회 표시
+  const baseU = identity?.email ? identity.email.split('@')[0] : '';
+  if (baseU) document.getElementById('socialSuggest').textContent = '추천 아이디: ' + baseU;
+  if (!hasAnyInfo) {
+    // 완전히 비어있어도 박스를 유지해 안내가 사라지지 않도록 함
+    infoBox.classList.remove('hidden');
+  }
+
+  // 이름 입력 초기값(수정 가능) — draft 우선, 없으면 소셜
+  const nameInput = document.getElementById('name');
+  nameInput.value = (draft?.name || '').trim() || (identity?.name || '');
+  // 이름은 소셜 가입에서도 항상 변경 가능 (연동 여부와 무관)
+  nameInput.removeAttribute('readonly');
+  nameInput.classList.remove('bg-muted/40');
+  nameInput.title = '';
+
+  // 이메일 입력(표시 전용, 수정 불가)
+  const emailInput = document.getElementById('email');
+  if (emailInput) {
+    emailInput.value = identity?.email || (draft?.email || '');
+    emailInput.readOnly = true;
+    emailInput.setAttribute('aria-readonly','true');
+    emailInput.classList.add('bg-muted/40');
+    emailInput.title = '소셜에서 확인된 이메일입니다. 수정할 수 없습니다.';
+  }
+
+  const phone=document.getElementById('phone');
+  const idn=document.getElementById('identification_number');
+  const usernameEl=document.getElementById('username');
+  const pw=document.getElementById('password');
+  const pw2=document.getElementById('password2');
+  phone.addEventListener('input',()=>{ phone.value = formatPhone(phone.value); });
+  idn.addEventListener('input',()=>{ idn.value = formatIdentification(idn.value); });
+
+  // 하단 경고(빨간 글씨) - 형식 오류 즉시 안내 (충돌/중복 활성화 시에는 지우지 않음)
+  phone.addEventListener('blur', ()=>{
+    const ph = normalizePhone(phone.value);
+    if(!(ph.length===11 && ph.startsWith('010'))){
+      setInlineMsg('dup-phone','전화번호 형식이 올바르지 않습니다. (예: 010-1234-5678)', false);
+    } else if (!conflictAnyActive && !phoneTaken) {
+      setInlineMsg('dup-phone','', true);
+    }
+  });
+  idn.addEventListener('blur', ()=>{
+    const idRaw = String(idn.value||'').replace(/\D/g,'');
+    if(!(idRaw.length===13 && isValidRRN13(idRaw))){
+      setInlineMsg('dup-idn','주민등록번호 형식이 올바르지 않습니다.', false);
+    } else if (!conflictAnyActive && !idnTaken) {
+      setInlineMsg('dup-idn','', true);
+    }
+  });
+
+  // (연동 방식 변경: 비밀번호는 다음 화면에서 입력)
+
+  // 매칭 요청 안정화(디바운스 + 최신응답만 반영)
+  let _matchTimer = null;
+  let _matchSeq = 0;
+  async function _doMatchExisting(seq){
+    const nm = (nameInput.value||'').trim();
+    const ph = normalizePhone(phone.value);
+    const idRaw = String(idn.value||'').replace(/\D/g,'');
+    if(!(ph.length===11 || idRaw.length===13)) { return; }
+    try{
+      const body = { name: nm, phone: ph, identification: idRaw };
+      const r = await fetch('/api/v1/auth/match-existing-social', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      if(!r.ok) return;
+      const j = await r.json();
+      if (seq !== _matchSeq) return; // 오래된 응답 무시
+      conflictPhoneIdent = !!j.by_phone_ident;
+      conflictIdentOnly = !!j.by_ident_only;
+      const wrap = document.getElementById('existingWrap');
+      const conflictAny = !!(j.by_name_phone || j.by_name_ident || j.by_phone_ident || j.by_ident_only);
+      conflictAnyActive = conflictAny; // ✅ 전역 상태 저장(인라인 경고 유지 판단용)
+      if (conflictAny) {
+        wrap.classList.remove('hidden');
+        // 서버가 안 주는 경우를 대비한 안전한 힌트/마스킹 폴백
+        // 서버 제공값만 사용(소셜/로컬 추정값으로 보완하지 않음)
+        const emailMasked = j.email_masked || j.email_hint || '';
+        const usernameMasked = j.username_masked || '';
+        const maskedUserEl = document.getElementById('maskedUser');
+        maskedUserEl.innerHTML = `${usernameMasked? ('아이디: '+usernameMasked) : ''}${emailMasked ? `${usernameMasked? '<br/>' : ''}이메일: ${emailMasked}` : ''}`;
+        document.getElementById('linkMsg').textContent = '해당 계정과 연동하려면 아래에 아이디(또는 이메일)와 비밀번호를 입력하세요.';
+        // 하단 인라인 경고는 중복 노출하지 않음(상단 배너만 표시)
+      } else {
+        wrap.classList.add('hidden');
+        // 충돌 없음일 때만 인라인 경고를 지움
+        setInlineMsg('dup-phone','', true);
+        setInlineMsg('dup-idn','', true);
+      }
+      const alert = document.getElementById('alertContainer');
+      const btnNext = document.getElementById('btnNext');
+      if (conflictAny) {
+        alert.innerHTML = `
+          <div class="kt-alert kt-alert-danger p-3 rounded-lg">
+            <div class="kt-alert-content">
+              <div class="kt-alert-description" style="white-space:normal;word-break:keep-all;">
+                입력하신 <b>기본 정보</b> 중 하나 이상이 기존 계정과 일치합니다. 신규 가입 대신 <b>연동</b>을 진행해 주세요.
+              </div>
+            </div>
+          </div>`;
+        alert.classList.remove('hidden');
+        if (btnNext) btnNext.classList.add('hidden');
+      } else {
+        // 충돌이 없으면 안내 숨기고 버튼 복원
+        if (btnNext) btnNext.classList.remove('hidden');
+        alert.classList.add('hidden');
+      }
+    } catch(_) { }
+  }
+  function tryMatchExisting(){
+    _matchSeq++;
+    const my = _matchSeq;
+    if (_matchTimer) clearTimeout(_matchTimer);
+    _matchTimer = setTimeout(()=>{ _doMatchExisting(my); }, 300);
+  }
+
+  // blur + input 변경 시 디바운스 호출
+  ['blur','input'].forEach(evt=>{
+    phone.addEventListener(evt, tryMatchExisting);
+    idn.addEventListener(evt, tryMatchExisting);
+    nameInput.addEventListener(evt, tryMatchExisting);
+  });
+
+  // 개별 중복 체크(전화/주민) – 입력 중 디바운스
+  let _phTimer=null, _idTimer=null, _phLast='', _idLast='';
+  async function checkPhoneDup(){
+    const d = normalizePhone(phone.value);
+    if(!(d.length===11 && d.startsWith('010'))) return;
+    _phLast = d;
+    try{
+      const r = await fetch('/api/v1/auth/check-duplicates?phone='+encodeURIComponent(d));
+      const j = await r.json().catch(()=>({}));
+      if(_phLast !== d) return;
+      phoneTaken = !!(j && j.taken && j.taken.phone===true);
+      // 전화번호 중복 여부는 노출하지 않음(진행만 차단). 형식 오류만 아래 blur 핸들러에서 안내.
+      if (!conflictAnyActive) setInlineMsg('dup-phone','', true);
+    }catch(_){ }
+  }
+  async function checkIdnDup(){
+    const d = String(idn.value||'').replace(/\D/g,'');
+    if(!(d.length===13 && isValidRRN13(d))) return;
+    _idLast = d;
+    try{
+      const r = await fetch('/api/v1/auth/check-duplicates?identification_number='+encodeURIComponent(d));
+      const j = await r.json().catch(()=>({}));
+      if(_idLast !== d) return;
+      idnTaken = !!(j && j.taken && j.taken.identification_number===true);
+      // 주민등록번호 중복 여부는 노출하지 않음(진행만 차단)
+      if (!conflictAnyActive) setInlineMsg('dup-idn','', true);
+    }catch(_){ }
+  }
+  phone.addEventListener('input', ()=>{ if(_phTimer) clearTimeout(_phTimer); _phTimer=setTimeout(checkPhoneDup, 250); });
+  idn.addEventListener('input', ()=>{ if(_idTimer) clearTimeout(_idTimer); _idTimer=setTimeout(checkIdnDup, 250); });
+
+  // 중복 정의된 checkPhoneDup 제거 (위 개별 중복 체크 로직만 사용)
+
+  // 사용자명 자동 프리필 제거
+  // - 기존 값(draft)이 있을 때만 복원
+  // - 소셜 이메일/이름 기반 자동 생성 및 임의(user####) 생성은 제거
+  function sanitizeUsername(v){ return String(v||'').replace(/[^A-Za-z0-9_]/g,''); }
+  (function prefillUsername(){
+    if (draft?.username) {
+      usernameEl.value = sanitizeUsername(draft.username.toLowerCase());
+      return;
+    }
+    // no-op: keep empty and let the user input explicitly
+  })();
+  // 상단 추천 아이디는 소셜 정보 기준(고정)
+
+  // 사용자명 중복/형식 체크
+  function isValidUsername(v){ return /^[A-Za-z][A-Za-z0-9_]{2,49}$/.test(v||''); }
+  async function checkDupUsername(){
+    const u=(usernameEl.value||'').trim().toLowerCase();
+    const el=document.getElementById('dup-username');
+    if(!isValidUsername(u)){ el.textContent='형식: 영문 시작, 3–50자 (영문/숫자/_)'; el.classList.remove('text-green-600'); el.classList.add('text-red-500'); return false; }
+    try{
+      const r=await fetch('/api/v1/auth/check-duplicates?username='+encodeURIComponent(u));
+      const j=await r.json();
+      const taken = j?.taken?.username===true;
+      if(taken){ el.textContent='이미 사용 중인 아이디입니다.'; el.classList.remove('text-green-600'); el.classList.add('text-red-500'); return false; }
+      el.textContent='사용 가능한 아이디입니다.'; el.classList.remove('text-red-500'); el.classList.add('text-green-600'); return true;
+    }catch(_){ el.textContent='중복 확인 실패'; el.classList.remove('text-green-600'); el.classList.add('text-red-500'); return false; }
+  }
+  usernameEl.addEventListener('blur', checkDupUsername);
+
+  // 비밀번호 유효성/일치 표시
+  function validatePassword(p){
+    const req={ length:p.length>=8, upper:/[A-Z]/.test(p), lower:/[a-z]/.test(p), digit:/\d/.test(p), special:/[!@#$%^&*(),.?":{}|<>]/.test(p) };
+    ['length','upper','lower','digit','special'].forEach(k=>{ const li=document.getElementById('req-'+k), ic=li.querySelector('.icon'); if(req[k]){ ic.textContent='✓'; li.classList.add('text-green-600'); li.classList.remove('text-muted-foreground'); } else { ic.textContent='✗'; li.classList.remove('text-green-600'); li.classList.add('text-muted-foreground'); } });
+    return req.length && req.upper && req.lower && req.digit && req.special;
+  }
+  function checkMatch(){
+    if(!pw2.value){ setInlineMsg('pw-match','', true); return false; }
+    if(pw.value===pw2.value){ setInlineMsg('pw-match','✓ 비밀번호가 일치합니다', true); return true; }
+    setInlineMsg('pw-match','✗ 비밀번호가 일치하지 않습니다', false); return false;
+  }
+  pw.addEventListener('input', ()=>{ validatePassword(pw.value); checkMatch(); });
+  pw2.addEventListener('input', checkMatch);
+
+  // 연동 준비: 대상 계정 선택 후 연동 확인 페이지로 이동
+  document.getElementById('btnLink').addEventListener('click', async ()=>{
+    const login=(document.getElementById('linkLogin').value||'').trim();
+    const password=(document.getElementById('linkPassword').value||'');
+    if(!login||!password){ document.getElementById('linkMsg').textContent='아이디/이메일과 비밀번호를 입력해 주세요.'; return; }
+    document.getElementById('btnLink').disabled=true; document.getElementById('linkMsg').textContent='연동 준비 중...';
+    try{
+      const r = await fetch('/api/v1/auth/social/prepare-merge', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ login })});
+      const j = await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(j?.detail || j?.message || '연동 준비 실패');
+      // 찌꺼기 초기화: 소셜 프리필/드래프트 등 로컬 상태 제거 후 이동
+      try{
+        localStorage.removeItem('social_prefill');
+        localStorage.removeItem('signupSocialDraft');
+        localStorage.removeItem('signupDraft');
+        sessionStorage.removeItem('signupSocialDraft');
+        sessionStorage.removeItem('signupDraft');
+      }catch(_){ }
+      window.location.href = j?.url || '/social/merge';
+    }catch(e){ document.getElementById('linkMsg').textContent = String(e.message||e); }
+    finally{ document.getElementById('btnLink').disabled=false; }
+  });
+
+  // 비밀번호 찾기: 로그인 페이지로 이동해 찾기 모달을 바로 띄움
+  document.getElementById('btnForgotPw').addEventListener('click', ()=>{
+    const login=(document.getElementById('linkLogin').value||'').trim();
+    const url=new URL('/login', window.location.origin);
+    url.searchParams.set('find','pw');
+    url.searchParams.set('flow','social');
+    if(login) url.searchParams.set('u', login);
+  // 비밀번호 찾기 → 재설정 완료 후 돌아올 경로를 병합 페이지로 지정
+  try{ localStorage.setItem('pw_flow','social'); localStorage.setItem('pw_return_to','/social/merge'); }catch(_){ }
+    window.location.href = url.toString();
+  });
+
+  // 비번 보기 토글
+  document.getElementById('togglePw').addEventListener('click',()=>{
+    const ipt=document.getElementById('linkPassword'); const e1=document.getElementById('eye1'); const e2=document.getElementById('eye2');
+    const isPwd = ipt.type==='password'; ipt.type = isPwd?'text':'password'; e1.classList.toggle('hidden',!isPwd); e2.classList.toggle('hidden',isPwd);
+  });
+
+  document.getElementById('socialStep1').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const ph=normalizePhone(phone.value); const idRaw=String(idn.value||'').replace(/\D/g,'');
+    if(ph.length!==11||!ph.startsWith('010')){ showAlert('전화번호를 정확히 입력해 주세요.','error'); return; }
+    if(idRaw.length!==13 || !isValidRRN13(idRaw)){ showAlert('주민등록번호 형식이 올바르지 않습니다. (13자리, 7번째=1–8, 생년월일 유효)','error'); return; }
+    if(!nameInput.value.trim()){ showAlert('이름을 입력해 주세요.','error'); return; }
+    // 최종 중복 검사: 서버 스키마 기준 (username/phone/idn)
+    try {
+      const q = new URLSearchParams();
+      const uname=(usernameEl.value||'').trim().toLowerCase();
+      if (uname) q.set('username', uname);
+      if (ph) q.set('phone', ph);
+      if (idRaw) q.set('identification_number', idRaw);
+      const r = await fetch('/api/v1/auth/check-duplicates?'+q.toString());
+      const j = await r.json().catch(()=>({}));
+      const t = (j && j.taken) || {};
+      let hasDup = false;
+      function markDup(id, msg){ const el=document.getElementById(id); if(!el) return; el.textContent=msg; el.classList.remove('hidden'); el.classList.add('text-red-500'); hasDup = true; }
+      if (t.username) markDup('dup-username','⚠ 이미 사용 중인 아이디입니다.');
+      if (t.phone) markDup('dup-phone','⚠ 이미 사용 중인 전화번호입니다.');
+      if (t.identification_number) markDup('dup-idn','⚠ 이미 사용 중인 주민등록번호입니다.');
+      if (hasDup){ showAlert('이미 사용 중인 항목이 있습니다. 표시된 항목을 수정해 주세요.','error'); return; }
+    } catch(_) { /* 네트워크 오류 시 아래 추가 검사로 진행 */ }
+    // 최신 충돌 상태 재확인 — 디바운스가 아닌 실제 호출을 기다림
+    await _doMatchExisting(++_matchSeq);
+    // 최신 상태 서버 확인 후 하나라도 일치하면 진행 차단
+    try{
+      const r = await fetch('/api/v1/auth/match-existing-social', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ name:(nameInput.value||'').trim(), phone:normalizePhone(phone.value), identification:String(idn.value||'').replace(/\D/g,'') })});
+      if (r.ok){ const j = await r.json(); if (j.by_name_phone || j.by_name_ident || j.by_phone_ident || j.by_ident_only){ showAlert('입력하신 기본 정보 중 하나 이상이 기존 계정과 일치합니다. 연동을 진행해 주세요.','error'); return; } }
+    }catch(_){ /* ignore */ }
+    const uname=(usernameEl.value||'').trim().toLowerCase();
+    if(!await checkDupUsername()){ showAlert('아이디를 확인해 주세요.','error'); return; }
+    if(!validatePassword(pw.value) || !checkMatch()){ showAlert('비밀번호를 확인해 주세요.','error'); return; }
+    saveDraft({ username: uname, password: pw.value, phone: '010-'+ph.slice(3,7)+'-'+ph.slice(7), identification_number: idRaw, name: nameInput.value.trim(), email: (identity?.email||emailInput?.value||'') });
+    window.location.href = '/signup/social/step2';
+  });
+});
 </script>
 {% endblock %}

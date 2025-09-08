@@ -22,14 +22,71 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 
 def _issue_cookie_token(user: User, admin_mode: bool, minutes: int | None = None) -> str:
-    payload = {"sub": str(user.id), "admin_mode": bool(admin_mode)}
+    payload = {
+        "sub": str(user.id),
+        "admin_mode": bool(admin_mode),
+        "tv": int(getattr(user, "token_version", 0) or 0),
+    }
     expire_min = minutes if minutes is not None else settings.jwt_access_token_expire_minutes
     return create_access_token(payload, expires_delta=timedelta(minutes=expire_min))
 
 
 @router.get("/choice", response_class=HTMLResponse)
-def admin_login_choice_page(request: Request):
-    return templates.TemplateResponse("admin_login_choice.html", {"request": request})
+def admin_login_choice_page(
+    request: Request,
+    status: str = None,
+    user_id: int = None,
+    db: Session = Depends(get_db),
+):
+    """관리자 로그인 선택 페이지.
+
+    status=check 이고 user_id가 있으면 최근 관리자 신청 상태를 표시.
+    """
+    context = {"request": request}
+    if status == "check" and user_id:
+        from app.models.admin_request import AdminRequest
+        from app.models.user import User as _U
+        try:
+            user = db.query(_U).filter(_U.id == user_id).first()
+            if user:
+                admin_request = (
+                    db.query(AdminRequest)
+                    .filter(AdminRequest.user_id == user_id)
+                    .order_by(AdminRequest.created_at.desc())
+                    .first()
+                )
+                if admin_request:
+                    if admin_request.status == "pending":
+                        context.update({
+                            "status_message": "관리자 신청이 검토 중입니다",
+                            "status_type": "pending",
+                            "message_detail": "신청해주신 관리자 권한이 현재 검토 중입니다. 승인까지 조금만 기다려 주세요.",
+                        })
+                    elif admin_request.status == "rejected":
+                        context.update({
+                            "status_message": "관리자 신청이 거절되었습니다",
+                            "status_type": "rejected",
+                            "message_detail": "신청하신 관리자 권한이 거절되었습니다. 자세한 사항은 관리자에게 문의해주세요.",
+                        })
+                    elif admin_request.status == "approved":
+                        context.update({
+                            "status_message": "관리자 권한이 승인되었습니다",
+                            "status_type": "approved",
+                            "message_detail": "관리자 권한이 승인되었습니다. 다시 로그인해주세요.",
+                        })
+                else:
+                    context.update({
+                        "status_message": "관리자가 아니신가요?",
+                        "status_type": "no_request",
+                        "message_detail": "관리자 권한 신청을 통해 관리자로 등록하실 수 있습니다.",
+                    })
+        except Exception:
+            context.update({
+                "status_message": "관리자가 아니신가요?",
+                "status_type": "error",
+                "message_detail": "관리자 권한 확인 중 오류가 발생했습니다.",
+            })
+    return templates.TemplateResponse("admin_login_choice.html", context)
 
 
 @router.get("/login", response_class=HTMLResponse)
@@ -41,7 +98,14 @@ def admin_login_page(request: Request, db: Session = Depends(get_db)):
         if current_user:
             # 이미 로그인되어 있으면 자동 로그아웃 (관리자든 일반 유저든)
             response = RedirectResponse(url="/admin/login", status_code=303)
-            response.delete_cookie("access_token", path="/")
+            try:
+                response.delete_cookie(
+                    key=(settings.auth_access_cookie_name or "access_token"),
+                    path=(settings.auth_cookie_path or "/"),
+                    domain=(settings.auth_cookie_domain or None),
+                )
+            except Exception:
+                response.delete_cookie("access_token", path="/")
             return response
     except Exception:
         pass
@@ -120,12 +184,8 @@ def admin_login(
             status_code=200,
         )
     if not user.is_admin:
-        # 관리자가 아닌 계정은 페이지에서 안내
-        return templates.TemplateResponse(
-            "admin_login.html",
-            {"request": request, "error": "관리자 계정이 아닙니다. 일반 로그인 또는 권한 신청을 이용해 주세요.", "admin_signup_enabled": admin_signup_enabled},
-            status_code=200,
-        )
+        # 관리자가 아닌 계정은 신청 상태 안내 페이지로 이동
+        return RedirectResponse(url=f"/admin/choice?status=check&user_id={user.id}", status_code=303)
 
     # 관리자 로그인은 아이디/비밀번호만으로 가능하도록 변경
     # 추가 정보 검증은 생략
@@ -135,13 +195,14 @@ def admin_login(
     secure_flag = not settings.debug  # dev=False, prod=True
     resp = RedirectResponse(url="/admin", status_code=303)
     resp.set_cookie(
-        key="access_token",
+        key=(settings.auth_access_cookie_name or "access_token"),
         value=token,
-        httponly=True,
-        secure=secure_flag,
-        samesite="lax",
+        httponly=settings.auth_cookie_http_only,
+        secure=(settings.auth_cookie_secure if settings.auth_cookie_secure is not None else secure_flag),
+        samesite=(settings.auth_cookie_samesite or "lax"),
         max_age=settings.jwt_access_token_expire_minutes * 60,
-        path="/",
+        path=(settings.auth_cookie_path or "/"),
+        domain=(settings.auth_cookie_domain or None),
     )
     return resp
 
@@ -267,13 +328,14 @@ def admin_signup(
     next_url = "/admin/signup2" if allow_steps else "/admin"
     resp = RedirectResponse(url=next_url, status_code=303)
     resp.set_cookie(
-        key="access_token",
+        key=(settings.auth_access_cookie_name or "access_token"),
         value=token,
-        httponly=True,
-        secure=secure_flag,
-        samesite="lax",
+        httponly=settings.auth_cookie_http_only,
+        secure=(settings.auth_cookie_secure if settings.auth_cookie_secure is not None else secure_flag),
+        samesite=(settings.auth_cookie_samesite or "lax"),
         max_age=settings.jwt_access_token_expire_minutes * 60,
-        path="/",
+        path=(settings.auth_cookie_path or "/"),
+        domain=(settings.auth_cookie_domain or None),
     )
     if allow_steps:
         # 서버 가드 우회를 위한 한시 쿠키
@@ -281,10 +343,11 @@ def admin_signup(
             key="allow_signup_steps",
             value="1",
             httponly=True,
-            secure=secure_flag,
-            samesite="lax",
-            max_age=60*30,
-            path="/",
+            secure=(settings.auth_cookie_secure if settings.auth_cookie_secure is not None else secure_flag),
+            samesite=(settings.auth_cookie_samesite or "lax"),
+            max_age=60 * 30,
+            path=(settings.auth_cookie_path or "/"),
+            domain=(settings.auth_cookie_domain or None),
         )
     return resp
 
@@ -308,7 +371,16 @@ def admin_mode_on(
     token = _issue_cookie_token(me, admin_mode=True, minutes=min(settings.jwt_access_token_expire_minutes, 30))
     secure_flag = not settings.debug
     resp = RedirectResponse(url="/admin", status_code=303)
-    resp.set_cookie("access_token", token, httponly=True, secure=secure_flag, samesite="lax", max_age=60*30, path="/")
+    resp.set_cookie(
+        key=(settings.auth_access_cookie_name or "access_token"),
+        value=token,
+        httponly=settings.auth_cookie_http_only,
+        secure=(settings.auth_cookie_secure if settings.auth_cookie_secure is not None else secure_flag),
+        samesite=(settings.auth_cookie_samesite or "lax"),
+        max_age=60 * 30,
+        path=(settings.auth_cookie_path or "/"),
+        domain=(settings.auth_cookie_domain or None),
+    )
     return resp
 
 
@@ -318,16 +390,23 @@ def admin_mode_off(
     response: Response,
     db: Session = Depends(get_db),
 ):
-    me = get_current_user_from_cookie(request, db)
-    if not me:
-        # 비로그인이라면 토큰 제거만
-        resp = RedirectResponse(url="/home", status_code=303)
-        resp.delete_cookie("access_token", path="/")
-        return resp
-    token = _issue_cookie_token(me, admin_mode=False)
-    secure_flag = not settings.debug
+    # 요구사항: 관리자 모드 종료 시 일반 로그인도 유지하지 않고 완전 로그아웃 상태로 홈 이동
     resp = RedirectResponse(url="/home", status_code=303)
-    resp.set_cookie("access_token", token, httponly=True, secure=secure_flag, samesite="lax", max_age=settings.jwt_access_token_expire_minutes*60, path="/")
+    try:
+        resp.delete_cookie(
+            key=(settings.auth_access_cookie_name or "access_token"),
+            path=(settings.auth_cookie_path or "/"),
+            domain=(settings.auth_cookie_domain or None),
+        )
+        resp.delete_cookie(
+            key=(settings.auth_refresh_cookie_name or "refresh_token"),
+            path=(settings.auth_cookie_path or "/"),
+            domain=(settings.auth_cookie_domain or None),
+        )
+        resp.delete_cookie("session", path="/")
+    except Exception:
+        # 최소한 access_token 제거 시도
+        resp.delete_cookie("access_token", path="/")
     return resp
 
 
@@ -359,33 +438,23 @@ def admin_request(db: Session = Depends(get_db), request: Request = None):
 
 
 @router.post("/logout")
-def admin_logout():
-    # Turn off admin_mode but keep user session by reissuing cookie if possible
-    try:
-        token = request.cookies.get("access_token")
-        from app.security import verify_token
-        payload = verify_token(token) if token else None
-        uid = int(payload.get("sub")) if payload and payload.get("sub") else None
-    except Exception:
-        uid = None
-
+def admin_logout(request: Request):
+    """관리자 로그아웃: 인증 쿠키 제거 후 홈으로 이동."""
     resp = RedirectResponse(url="/home", status_code=303)
-    secure_flag = not settings.debug
-    if uid:
-        # issue user-mode token (admin_mode=False)
-        token2 = create_access_token({"sub": str(uid), "admin_mode": False})
-        resp.set_cookie(
-            key="access_token",
-            value=token2,
-            httponly=True,
-            secure=secure_flag,
-            samesite="lax",
-            max_age=settings.jwt_access_token_expire_minutes * 60,
-            path="/",
-        )
-    else:
-        # fallback: delete cookie
-        resp.delete_cookie(key="access_token", path="/")
+    cookie_key = settings.auth_access_cookie_name or "access_token"
+    refresh_key = settings.auth_refresh_cookie_name or "refresh_token"
+    for name in (cookie_key, "session", refresh_key):
+        try:
+            resp.delete_cookie(
+                key=name,
+                path=(settings.auth_cookie_path or "/"),
+                domain=(settings.auth_cookie_domain or None),
+            )
+        except Exception:
+            try:
+                resp.delete_cookie(key=name, path="/")
+            except Exception:
+                pass
     return resp
 
 
@@ -492,7 +561,6 @@ def admin_signup_request(
     password_confirm: str = Form(...),
     phone: str | None = Form(None),
     ident: str | None = Form(None),
-    also_user: int = Form(0),
     db: Session = Depends(get_db),
 ):
     from app.models.user import User
@@ -512,23 +580,23 @@ def admin_signup_request(
     if exists:
         return templates.TemplateResponse("admin_signup_request2.html", {"request": request, "error": "이미 존재하는 아이디 또는 이메일입니다"}, status_code=200)
 
-    # 전화/주민번호 중복 검사 (입력 시)
+    # 전화/주민번호 필수 및 중복 검사
     try:
-        if phone:
-            p_norm = normalize_phone(phone)
-            if p_norm and len(p_norm) == 11 and p_norm.startswith('010'):
-                p_fp = id_fingerprint(p_norm)
-                if db.query(User.id).filter((User.phone_fingerprint == p_fp) | (User.phone == phone)).first() is not None:
-                    return templates.TemplateResponse("admin_signup_request2.html", {"request": request, "error": "이미 등록된 전화번호입니다"}, status_code=200)
+        p_norm = normalize_phone(phone or "")
+        if not (p_norm and len(p_norm) == 11 and p_norm.startswith('010')):
+            return templates.TemplateResponse("admin_signup_request2.html", {"request": request, "error": "전화번호는 010으로 시작하는 11자리여야 합니다"}, status_code=200)
+        p_fp = id_fingerprint(p_norm)
+        if db.query(User.id).filter((User.phone_fingerprint == p_fp) | (User.phone == phone)).first() is not None:
+            return templates.TemplateResponse("admin_signup_request2.html", {"request": request, "error": "이미 등록된 전화번호입니다"}, status_code=200)
     except Exception:
         pass
     try:
-        if ident:
-            ident_digits = normalize_phone(ident)
-            if ident_digits and len(ident_digits) == 13:
-                i_fp = id_fingerprint(ident_digits)
-                if db.query(User.id).filter(User.identification_fingerprint == i_fp).first() is not None:
-                    return templates.TemplateResponse("admin_signup_request2.html", {"request": request, "error": "이미 등록된 주민번호입니다"}, status_code=200)
+        ident_digits = normalize_phone(ident or "")
+        if not (ident_digits and len(ident_digits) == 13):
+            return templates.TemplateResponse("admin_signup_request2.html", {"request": request, "error": "주민등록번호 형식이 올바르지 않습니다"}, status_code=200)
+        i_fp = id_fingerprint(ident_digits)
+        if db.query(User.id).filter(User.identification_fingerprint == i_fp).first() is not None:
+            return templates.TemplateResponse("admin_signup_request2.html", {"request": request, "error": "이미 등록된 주민번호입니다"}, status_code=200)
     except Exception:
         pass
     
@@ -540,8 +608,9 @@ def admin_signup_request(
         name=name,
         is_admin=False,
         is_superadmin=False,
-        is_active=False,  # 승인 전까지 비활성
-        email_verified=False,
+        # 일반 회원 권한 즉시 사용 가능하도록 활성화
+        is_active=True,
+        email_verified=True,
         introduction="",
     )
     # 선택 입력: 전화/주민번호 저장 (모델 setter에서 검증/정규화)
@@ -570,22 +639,34 @@ def admin_signup_request(
     except Exception:
         pass
 
-    # also_user 체크 시, 가입 추가 단계로 이동할 수 있도록 한시 쿠키 설정 후 step2으로 이동
-    if str(also_user or 0) == '1':
-        resp = RedirectResponse(url="/admin/signup-request2_2", status_code=303)
-        secure_flag = not settings.debug
+    # 추가 단계 플로우 항상 진행: 한시 쿠키 설정 후 2단계로 이동
+    resp = RedirectResponse(url="/admin/signup-request2_2", status_code=303)
+    secure_flag = not settings.debug
+    # 신규 생성 사용자로 로그인 쿠키 발급 (후속 단계에서 프로필 저장 가능하게)
+    try:
+        login_token = _issue_cookie_token(user, admin_mode=False)
         resp.set_cookie(
-            key="allow_signup_steps",
-            value="1",
-            httponly=True,
+            key=(settings.auth_access_cookie_name or "access_token"),
+            value=login_token,
+            httponly=settings.auth_cookie_http_only,
             secure=secure_flag,
-            samesite="lax",
-            max_age=60*30,
-            path="/",
+            samesite=(settings.auth_cookie_samesite or "lax"),
+            max_age=settings.jwt_access_token_expire_minutes * 60,
+            path=(settings.auth_cookie_path or "/"),
+            domain=(settings.auth_cookie_domain or None),
         )
-        return resp
-
-    return RedirectResponse(url="/admin/requested", status_code=303)
+    except Exception:
+        pass
+    resp.set_cookie(
+        key="allow_signup_steps",
+        value="1",
+        httponly=True,
+        secure=secure_flag,
+        samesite="lax",
+        max_age=60*30,
+        path="/",
+    )
+    return resp
 
 
 # 신규: 신규 가입 + 관리자 신청 (2단계) 화면
@@ -625,13 +706,14 @@ def enable_admin_mode_api(
     # 관리자 모드 쿠키 토큰 발급
     admin_token = _issue_cookie_token(current_user, admin_mode=True)
     response.set_cookie(
-        key="access_token",
+        key=(settings.auth_access_cookie_name or "access_token"),
         value=admin_token,
         max_age=settings.jwt_access_token_expire_minutes * 60,
-        httponly=True,
-        secure=False,  # HTTPS에서는 True로 설정
-        samesite="lax",
-        path="/",
+        httponly=settings.auth_cookie_http_only,
+        secure=settings.auth_cookie_secure,
+        samesite=(settings.auth_cookie_samesite or "lax"),
+        path=(settings.auth_cookie_path or "/"),
+        domain=(settings.auth_cookie_domain or None),
     )
     
     return {"detail": "관리자 모드가 활성화되었습니다"}

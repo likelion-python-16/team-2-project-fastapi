@@ -59,7 +59,7 @@ async def social_finalize(request: Request, payload: dict = Body(...), db: Sessi
         gender=payload.get('gender') or 'other',
         region_living=payload.get('region_living') or '',
         region_active=payload.get('region_active') or '',
-        profile_image=payload.get('profile_image') or ident.get('picture') or '/static/pictures/defaultprofile.jpeg',
+        profile_image=payload.get('profile_image') or ident.get('picture') or '/static/pictures/defaultprofile.svg',
         introduction=payload.get('introduction') or '',
     )
     

@@ -29,6 +29,7 @@
               <button type="button" class="kt-btn kt-btn-sm kt-btn-light" id="btnUpload">업로드</button>
               <button type="button" class="kt-btn kt-btn-sm kt-btn-light" id="btnDefault">기본 아바타</button>
             </div>
+            <div id="uploadMsg" class="text-xs" style="display:none;color:#059669">업로드 완료!</div>
           </div>
         </div>
       </div>
@@ -58,7 +59,7 @@
 </div>
 
 <script>
-const DEFAULT_AVATAR = '/static/pictures/defaultprofile.jpeg';
+const DEFAULT_AVATAR = '/static/pictures/defaultprofile.svg';
 function updateProfilePreview(url){
   const img=document.getElementById('profilePreview');
   const icon=document.getElementById('defaultAvatar');
@@ -72,7 +73,7 @@ async function uploadFileToServer(file, btn){
   if(!file){ alert('먼저 파일을 선택해 주세요.'); return null; }
   const fd=new FormData(); fd.append('file', file);
   const orig=btn.textContent; btn.disabled=true; btn.textContent='업로드 중...';
-  try{ const res=await fetch('/api/v1/files/profile-image',{method:'POST',body:fd}); const j=await res.json(); if(!res.ok||!j?.url) throw new Error(j?.detail||'업로드 실패'); return j.url; }
+  try{ const res=await fetch('/api/v1/files/profile-image',{method:'POST',body:fd}); const j=await res.json(); if(!res.ok||!j?.url) throw new Error(j?.detail||'업로드 실패'); alert('업로드 완료!'); const m=document.getElementById('uploadMsg'); if(m){ m.textContent='업로드 완료!'; m.style.display='block'; } return j.url; }
   catch(e){ alert(e.message||e); return null; }
   finally{ btn.disabled=false; btn.textContent=orig; }
 }
@@ -85,27 +86,41 @@ document.addEventListener('DOMContentLoaded',()=>{
   const intro=document.getElementById('introduction');
   const cnt=document.getElementById('charCount');
 
+  async function autoSaveAvatar(url){
+    try{
+      if(!url) return;
+      const token = localStorage.getItem('access_token')||sessionStorage.getItem('access_token')||'';
+      await fetch('/api/v1/users/me/profile',{
+        method:'PATCH',
+        headers:{'Content-Type':'application/json', ...(token? { Authorization: 'Bearer '+token } : {})},
+        credentials:'include',
+        body: JSON.stringify({ avatar_url: url })
+      });
+    }catch(_){ /* ignore auto-save errors */ }
+  }
+
   if(!urlInput.value?.trim()){ urlInput.value=DEFAULT_AVATAR; }
   updateProfilePreview(urlInput.value.trim());
   intro.addEventListener('input',()=>{ cnt.textContent = (intro.value.length||0) + '/500'; });
   btnPick.addEventListener('click',()=>fileInput.click());
-  btnDefault.addEventListener('click',()=>{ urlInput.value=DEFAULT_AVATAR; updateProfilePreview(DEFAULT_AVATAR); });
-  fileInput.addEventListener('change', async ()=>{ const f=fileInput.files?.[0]; if(!f) return; updateProfilePreview(URL.createObjectURL(f)); const u=await uploadFileToServer(f, btnUpload); if(u){ urlInput.value=u; updateProfilePreview(u); } });
-  btnUpload.addEventListener('click', async ()=>{ const f=fileInput.files?.[0]; const u=await uploadFileToServer(f, btnUpload); if(u){ urlInput.value=u; updateProfilePreview(u); } });
+  btnDefault.addEventListener('click',async ()=>{ urlInput.value=DEFAULT_AVATAR; updateProfilePreview(DEFAULT_AVATAR); await autoSaveAvatar(DEFAULT_AVATAR); const m=document.getElementById('uploadMsg'); if(m){ m.textContent='기본 아바타 저장됨'; m.style.display='block'; } alert('기본 아바타가 저장되었습니다.'); });
+  fileInput.addEventListener('change', async ()=>{ const f=fileInput.files?.[0]; if(!f) return; updateProfilePreview(URL.createObjectURL(f)); const u=await uploadFileToServer(f, btnUpload); if(u){ urlInput.value=u; updateProfilePreview(u); await autoSaveAvatar(u); } });
+  btnUpload.addEventListener('click', async ()=>{ const f=fileInput.files?.[0]; const u=await uploadFileToServer(f, btnUpload); if(u){ urlInput.value=u; updateProfilePreview(u); await autoSaveAvatar(u); } });
+  urlInput.addEventListener('change', async ()=>{ const v=(urlInput.value||'').trim(); if(v){ updateProfilePreview(v); await autoSaveAvatar(v); } });
   document.getElementById('adminProfileForm').addEventListener('submit', async (e)=>{
     e.preventDefault();
     const bioText = (document.getElementById('introduction').value||'').trim();
     const interests = { categories: [], keywords: [...selected] };
     const introJson = JSON.stringify({ bio: bioText, interests });
     const payload = {
-      profile_image: (document.getElementById('profile_image').value||'').trim(),
-      introduction: introJson,
-      tags: [...selected]
+      avatar_url: (document.getElementById('profile_image').value||'').trim(),
+      introduction: introJson
     };
     try{
+      const token = localStorage.getItem('access_token')||sessionStorage.getItem('access_token')||'';
       await fetch('/api/v1/users/me/profile', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...(token? { Authorization: 'Bearer '+token } : {}) },
         credentials: 'include',
         body: JSON.stringify(payload)
       });

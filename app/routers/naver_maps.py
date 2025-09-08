@@ -4,25 +4,24 @@ import os
 import httpx
 from fastapi import APIRouter
 
-router = APIRouter(prefix="/naver", tags=["Naver"])
+"""
+NOTE:
+This module previously exposed stub endpoints under the 
+same prefix as the real Naver local router ("/naver").
+That caused route collisions with /naver/local. To avoid
+masking the real endpoints, we publish any demo/stub routes
+under a distinct prefix.
+"""
+
+router = APIRouter(prefix="/naver-maps", tags=["Naver Maps"])
 
 NCP_ID  = os.getenv("NAVER_MAPS_CLIENT_ID")  or os.getenv("X_NCP_APIGW_API_KEY_ID")
 NCP_KEY = os.getenv("NAVER_MAPS_CLIENT_SECRET") or os.getenv("X_NCP_APIGW_API_KEY")
 
-@router.get("/local")
-async def search_local(q: str, display: int = 10, start: int = 1):
-    # ... 네이버 로컬 검색 구현
-    return {"items": []}
-
-@router.get("/geocode")
-async def geocode(query: str):
-    # ... 지오코딩 구현
-    return {"lat": None, "lng": None}
-
-@router.get("/staticmap")
-async def static_map(lat: float, lng: float, w: int = 360, h: int = 220, scale: int = 2, level: int = 16):
-    # ... 정적 지도 프록시
-    return {"ok": True}
+# Intentionally no overlapping endpoints here.
+# The actual search/geocode/staticmap routes live in:
+# - app/routers/naver_local.py (/naver/local)
+# - app/routers/places.py (/places/geocode, /places/staticmap)
 
 # --- 지오코딩: 주소/장소명 -> 좌표
 async def geocode(query: str) -> dict | None:

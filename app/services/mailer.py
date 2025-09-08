@@ -1,25 +1,40 @@
 # app/services/mailer.py
 import smtplib, ssl
 from email.message import EmailMessage
+from urllib.parse import quote_plus
 from app.core.config import settings
 
-def build_verify_url(token: str) -> str:
+def build_verify_url(token: str, flow: str | None = None, return_to: str | None = None) -> str:
     """
     인증 버튼/텍스트 링크에 쓰이는 최종 URL.
     반드시 백엔드(8001)로 들어오도록 verification_link_base 사용.
+    추가 파라미터(flow, return_to) 지원.
     """
-    return f"{settings.verification_link_base}/auth/verify-email/redirect?token={token}"
+    base = f"{settings.verification_link_base}/auth/verify-email/redirect?token={quote_plus(token)}"
+    params = []
+    if flow:
+        params.append(f"flow={quote_plus(flow)}")
+    if return_to:
+        params.append(f"return_to={quote_plus(return_to)}")
+    return base + ("&" + "&".join(params) if params else "")
 
-def build_password_reset_url(token: str) -> str:
+def build_password_reset_url(token: str, flow: str | None = None, return_to: str | None = None) -> str:
     """
     비밀번호 재설정 링크: 백엔드 리디렉트 엔드포인트로 유도하여
     배포 환경(도메인/포트)에서도 자동으로 프론트 URL을 계산하도록 합니다.
+    추가 파라미터(flow, return_to) 지원.
     """
     base = settings.verification_link_base.rstrip('/') or 'http://localhost:8000/api/v1'
-    return f"{base}/auth/password-reset/redirect?token={token}"
+    url = f"{base}/auth/password-reset/redirect?token={quote_plus(token)}"
+    extras = []
+    if flow:
+        extras.append(f"flow={quote_plus(flow)}")
+    if return_to:
+        extras.append(f"return_to={quote_plus(return_to)}")
+    return url + ("&" + "&".join(extras) if extras else "")
 
-def build_password_reset_email(token: str, username: str) -> tuple[str, str]:
-    url = build_password_reset_url(token)
+def build_password_reset_email(token: str, username: str, flow: str | None = None, return_to: str | None = None) -> tuple[str, str]:
+    url = build_password_reset_url(token, flow=flow, return_to=return_to)
     html = f"""
     <table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"font-family:Arial, Helvetica, sans-serif; background:#ffffff;\">
       <tr>
@@ -44,8 +59,8 @@ def build_password_reset_email(token: str, username: str) -> tuple[str, str]:
     text = "비밀번호 재설정 링크: " + url
     return html, text
 
-def build_verification_email(token: str) -> tuple[str, str]:
-    verify_url = build_verify_url(token)
+def build_verification_email(token: str, flow: str | None = None, return_to: str | None = None) -> tuple[str, str]:
+    verify_url = build_verify_url(token, flow=flow, return_to=return_to)
     html = f"""
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-family:Arial, Helvetica, sans-serif; background:#ffffff;">
       <tr>

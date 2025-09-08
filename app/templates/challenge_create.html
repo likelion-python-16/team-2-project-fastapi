@@ -128,8 +128,8 @@
         </ul>
 
         <div class="inline-controls" style="margin-top:10px">
-          <label>최소 인원 <input id="min_participants" type="number" min="0" placeholder="예: 4"></label>
-          <label>최대 인원 <input id="max_participants" type="number" min="0" placeholder="예: 12"></label>
+          <label>최소 인원 <input id="min_participants" type="number" min="1" placeholder="예: 4"></label>
+          <label>최대 인원 <input id="max_participants" type="number" min="1" max="100" placeholder="예: 12"></label>
         </div>
         <div id="peopleError" class="error"></div>
       </div>
@@ -519,7 +519,13 @@ const endEl   = document.getElementById('end');
 const startErr= document.getElementById('startError');
 const endErr  = document.getElementById('endError');
 
-function fmt(d){ return d.toISOString().slice(0,10); }
+// Local-date formatter to avoid UTC shift issues in min/max
+function fmt(d){
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 function today0(){
   const d=new Date(); d.setHours(0,0,0,0); return d;
 }
@@ -615,6 +621,20 @@ function repaintPriceHelp(){
 }
 [feeEl, partEl].forEach(el => el.addEventListener('input', repaintPriceHelp));
 
+// 0 자동 지우기/복구: 포커스 시 0이면 비우고, 블러 시 공백이면 0으로
+function setupZeroAutoClear(el){
+  if (!el) return;
+  el.addEventListener('focus', () => {
+    if (el.value === '0') el.value = '';
+  });
+  el.addEventListener('blur', () => {
+    if (el.value.trim() === '') el.value = '0';
+    repaintPriceHelp();
+  });
+}
+setupZeroAutoClear(feeEl);
+setupZeroAutoClear(partEl);
+
 const totalEl = document.getElementById('total');
 const totalErrEl = document.getElementById('totalError');
 const minPeopleEl = document.getElementById('min_participants');
@@ -630,6 +650,10 @@ function repaintPeopleHelp(){
   peopleErrEl.textContent = '';
   const mn = parseInt(minPeopleEl.value||'0',10);
   const mx = parseInt(maxPeopleEl.value||'0',10);
+  if (mx && mx > 100){
+    peopleErrEl.textContent = '최대 인원은 100명입니다.';
+    return;
+  }
   if (mn && mx && mn > mx){ peopleErrEl.textContent = '최소 인원은 최대 인원보다 작거나 같아야 합니다.'; }
 }
 ;[totalEl,minPeopleEl,maxPeopleEl].forEach(el=> el?.addEventListener('input', ()=>{
@@ -674,6 +698,7 @@ async function createChallenge(){
   if (total > 100){ err.push('총 회차 수는 최대 100까지 가능합니다.'); markErr(totalEl,true); }
   const mn = parseInt((minPeopleEl.value||'0'),10);
   const mx = parseInt((maxPeopleEl.value||'0'),10);
+  if (mx && mx > 100){ err.push('최대 인원은 100명입니다.'); markErr(maxPeopleEl,true); }
   if (mn && mx && mn > mx){ err.push('최소 인원은 최대 인원보다 작거나 같아야 합니다.'); }
   if (err.length || !v1 || !v2){ alert(err.join('\n')); return; }
 
@@ -744,7 +769,9 @@ async function createChallenge(){
   try{
     if (createBtn) createBtn.disabled = true;
     if (statusEl) statusEl.textContent = '생성 중...';
-    const res = await axios.post('/api/v1/challenges', payload, { headers: { ...authHeader() } });
+    // FastAPI 라우트는 /api/v1/challenges/ (trailing slash).
+    // 307 리다이렉트를 피하기 위해 슬래시 버전을 직접 호출합니다.
+    const res = await axios.post('/api/v1/challenges/', payload, { headers: { ...authHeader() } });
     const ch = res.data || {};
     const id = ch.id;
     if (!id) throw new Error('생성 결과에 id가 없습니다.');

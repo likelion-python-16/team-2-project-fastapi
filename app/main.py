@@ -3,15 +3,16 @@ import os
 from pathlib import Path
 from datetime import datetime
 from typing import Any
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse
+from starlette.datastructures import FormData
 
 # Moved to lifespan.py:
 # from app.core.database import SessionLocal
@@ -88,6 +89,83 @@ async def home_page(request: Request):
 async def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
 
+@app.post("/login", response_class=HTMLResponse, tags=["Pages"])
+async def login_page_post(request: Request):
+    """HTML 폼으로 /login이 직접 POST될 때를 대비한 폴백 처리.
+    정상 플로우는 JS가 /api/v1/auth/login 으로 fetch 하지만,
+    JS 바인딩 이전 제출 또는 브라우저 자동 제출 시 여기서 처리합니다.
+    """
+    try:
+        form: FormData = await request.form()
+        username = (str(form.get("username") or form.get("login") or "")).strip().lower()
+        password = str(form.get("password") or "")
+        remember = str(form.get("rememberMe") or "").strip() in ("1","true","on","yes")
+        if not username or not password:
+            return templates.TemplateResponse(
+                "login.html", {"request": request, "error": "아이디/비밀번호를 입력해 주세요."}, status_code=400
+            )
+
+        # 동일 로직 사용: API 로그인 함수 호출
+        from app.schemas.auth import LoginIn
+        from app.routers.auth import login as api_login
+        from app.core.database import SessionLocal
+
+        db = SessionLocal()
+        try:
+            tokens = api_login(LoginIn(login=username, password=password), db)
+        finally:
+            db.close()
+
+        # 토큰 저장: JS 기반 흐름과 동일하게 storage에 기록 후 홈으로 이동시키는 미니 페이지 반환
+        # remember 체크 시 쿠키도 함께 발급해 서버사이드 렌더링/페이지 전환 호환성 확보
+        access_cookie = settings.auth_access_cookie_name or "access_token"
+        refresh_cookie = settings.auth_refresh_cookie_name or "refresh_token"
+        secure_flag = (settings.auth_cookie_secure if settings.auth_cookie_secure is not None else not settings.debug)
+        html = f"""
+        <!doctype html><html><head><meta charset=\"utf-8\"><title>Signing in...</title></head>
+        <body><script>
+        try {{
+          var remember = {str(remember).lower()};
+          var t = {repr(getattr(tokens,'access_token', ''))};
+          var r = {repr(getattr(tokens,'refresh_token', ''))};
+          var store = remember ? window.localStorage : window.sessionStorage;
+          store.setItem('access_token', t);
+          if (r) store.setItem('refresh_token', r);
+          if (remember) localStorage.setItem('remember_login','1');
+        }} catch(_) {{}}
+        window.location.replace('/home');
+        </script></body></html>
+        """
+        resp = HTMLResponse(content=html, status_code=200)
+        if remember:
+            resp.set_cookie(
+                key=access_cookie,
+                value=tokens.access_token,
+                httponly=settings.auth_cookie_http_only,
+                secure=secure_flag,
+                samesite=(settings.auth_cookie_samesite or "lax"),
+                max_age=settings.jwt_access_token_expire_minutes * 60,
+                path=(settings.auth_cookie_path or "/"),
+                domain=(settings.auth_cookie_domain or None),
+            )
+            if getattr(tokens, "refresh_token", None):
+                resp.set_cookie(
+                    key=refresh_cookie,
+                    value=tokens.refresh_token,
+                    httponly=settings.auth_cookie_http_only,
+                    secure=secure_flag,
+                    samesite=(settings.auth_cookie_samesite or "lax"),
+                    max_age=settings.jwt_refresh_expire_minutes * 60,
+                    path=(settings.auth_cookie_path or "/"),
+                    domain=(settings.auth_cookie_domain or None),
+                )
+        return resp
+    except HTTPException as exc:
+        msg = exc.detail if isinstance(exc.detail, str) else "로그인에 실패했습니다."
+        return templates.TemplateResponse("login.html", {"request": request, "error": msg}, status_code=exc.status_code)
+    except Exception:
+        return templates.TemplateResponse("login.html", {"request": request, "error": "로그인 처리 중 오류가 발생했습니다"}, status_code=500)
+
 @app.get("/signup", response_class=HTMLResponse, tags=["Pages"])
 async def signup_page():
     """기본 회원가입 페이지 - 1단계로 리다이렉트"""
@@ -111,6 +189,33 @@ async def social_signup_step2(request: Request):
 async def social_signup_step3(request: Request):
     return templates.TemplateResponse("signup3forsocial.html", {"request": request})
 
+# Support alternate path prefix: /signup/social/* (redirect to /social/*)
+@app.get("/signup/social/step1", response_class=HTMLResponse, tags=["Pages"])
+async def signup_social_step1_alias():
+    return RedirectResponse(url="/social/step1", status_code=307)
+
+@app.get("/signup/social/step2", response_class=HTMLResponse, tags=["Pages"])
+async def signup_social_step2_alias():
+    return RedirectResponse(url="/social/step2", status_code=307)
+
+@app.get("/signup/social/step3", response_class=HTMLResponse, tags=["Pages"])
+async def signup_social_step3_alias():
+    return RedirectResponse(url="/social/step3", status_code=307)
+
+# Completion aliases
+@app.get("/social/complete", response_class=HTMLResponse, tags=["Pages"])  
+async def social_complete_page(request: Request):
+    return templates.TemplateResponse("signup_complete_social.html", {"request": request})
+
+@app.get("/signup/social/complete", response_class=HTMLResponse, tags=["Pages"])  
+async def signup_social_complete_alias():
+    return RedirectResponse(url="/social/complete", status_code=307)
+
+# Social login tokens callback page
+@app.get("/auth/callback", response_class=HTMLResponse, tags=["Pages"])
+async def auth_callback_page(request: Request):
+    return templates.TemplateResponse("auth_callback.html", {"request": request})
+
 @app.get("/social/onboarding", response_class=HTMLResponse, tags=["Pages"])
 async def social_onboarding():
     """소셜 로그인 후 신규 사용자 온보딩"""
@@ -120,6 +225,11 @@ async def social_onboarding():
 async def social_merge_page(request: Request):
     """계정 연동 확인 페이지"""
     return templates.TemplateResponse("social_merge.html", {"request": request})
+
+@app.get("/social/merge-done", response_class=HTMLResponse, tags=["Pages"])
+async def social_merge_done_page(request: Request):
+    """계정 연동 완료 안내 페이지"""
+    return templates.TemplateResponse("social_merge_done.html", {"request": request})
 
 @app.get("/dashboard", response_class=HTMLResponse, tags=["Pages"])
 async def dashboard_page(request: Request):
@@ -270,6 +380,22 @@ async def api_info():
 async def metrics():
     """Prometheus 메트릭 엔드포인트"""
     return get_metrics()
+
+# ---------------------------
+# Exception Handlers
+# ---------------------------
+from fastapi.exceptions import RequestValidationError
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(_: Request, exc: RequestValidationError):
+    return JSONResponse(status_code=422, content={"detail": exc.errors()})
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    path = request.url.path if request and request.url else ""
+    if path.startswith("/admin") and exc.status_code in (401, 403):
+        return RedirectResponse(url="/admin/login", status_code=303)
+    detail = exc.detail if isinstance(exc.detail, (str, list, dict)) else str(exc.detail)
+    return JSONResponse(status_code=exc.status_code, content={"detail": detail})
 
 # ---------------------------
 # Router include (중복 제거, 한 번씩만)

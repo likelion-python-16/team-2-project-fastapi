@@ -96,6 +96,19 @@ class Settings(BaseSettings):
     # Email verification policy (general signup)
     require_email_verification: bool = os.getenv("REQUIRE_EMAIL_VERIFICATION", "false").lower() in ("1","true","yes")
     
+    # ---------- Auth: Cookies / JWT (Login) ----------
+    auth_access_cookie_name: str = os.getenv("AUTH_ACCESS_COOKIE_NAME", "access_token")
+    auth_refresh_cookie_name: str = os.getenv("AUTH_REFRESH_COOKIE_NAME", "refresh_token")
+    auth_cookie_domain: str = os.getenv("AUTH_COOKIE_DOMAIN", "")
+    auth_cookie_path: str = os.getenv("AUTH_COOKIE_PATH", "/")
+    auth_cookie_secure: bool = os.getenv("AUTH_COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
+    auth_cookie_http_only: bool = os.getenv("AUTH_COOKIE_HTTP_ONLY", "true").lower() in ("1", "true", "yes")
+    auth_cookie_samesite: str = os.getenv("AUTH_COOKIE_SAMESITE", "lax")  # lax | strict | none
+
+    # Optional JWT claims metadata
+    jwt_issuer: str = os.getenv("JWT_ISSUER", "team-project-api")
+    jwt_audience: str = os.getenv("JWT_AUDIENCE", "team-project-clients")
+    
     # Social login
     naver_client_id: str = os.getenv("NAVER_CLIENT_ID", "")
     naver_client_secret: str = os.getenv("NAVER_CLIENT_SECRET", "")
@@ -105,11 +118,29 @@ class Settings(BaseSettings):
     google_client_secret: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
     google_redirect_path: str = os.getenv("GOOGLE_REDIRECT_PATH", "/api/v1/auth/callback/google")
 
+    # ---------- Signup Policy ----------
+    signup_enabled: bool = os.getenv("SIGNUP_ENABLED", "true").lower() in ("1", "true", "yes")
+    signup_default_role: str = os.getenv("SIGNUP_DEFAULT_ROLE", "user")
+    signup_min_password_length: int = int(os.getenv("SIGNUP_MIN_PASSWORD_LENGTH", "8"))
+    signup_require_number: bool = os.getenv("SIGNUP_REQUIRE_NUMBER", "false").lower() in ("1", "true", "yes")
+    signup_require_uppercase: bool = os.getenv("SIGNUP_REQUIRE_UPPERCASE", "false").lower() in ("1", "true", "yes")
+    signup_require_special: bool = os.getenv("SIGNUP_REQUIRE_SPECIAL", "false").lower() in ("1", "true", "yes")
+
+    # ---------- Tags / Interests Policy ----------
+    # If true, allow creating Tag rows on the fly from interests.keywords
+    allow_dynamic_tag_create: bool = os.getenv("ALLOW_DYNAMIC_TAG_CREATE", "true").lower() in ("1","true","yes")
+
+    # ---------- Login Rate Limit ----------
+    login_max_attempts: int = int(os.getenv("LOGIN_MAX_ATTEMPTS", "5"))
+    login_lockout_minutes: int = int(os.getenv("LOGIN_LOCKOUT_MINUTES", "15"))
+
     # 초기 관리자 설정
     initial_admin_username: str = os.getenv("INITIAL_ADMIN_USERNAME", "")
     initial_admin_email: str = os.getenv("INITIAL_ADMIN_EMAIL", "")  
     initial_admin_password: str = os.getenv("INITIAL_ADMIN_PASSWORD", "")
     initial_admin_name: str = os.getenv("INITIAL_ADMIN_NAME", "System Admin")
+    # Control whether to auto-seed initial admin at startup (default: disabled)
+    enable_initial_admin_seed: bool = os.getenv("ENABLE_INITIAL_ADMIN_SEED", "false").lower() in ("1", "true", "yes")
 
     @property
     def database_url(self) -> str:
@@ -128,6 +159,15 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.environment == Environment.PRODUCTION
+
+    # Convenience flags for social providers
+    @property
+    def naver_oauth_configured(self) -> bool:
+        return bool(self.naver_client_id and self.naver_client_secret and self.naver_redirect_path)
+
+    @property
+    def google_oauth_configured(self) -> bool:
+        return bool(self.google_client_id and self.google_client_secret and self.google_redirect_path)
 
     def validate_required_keys(self):
         missing_keys = []

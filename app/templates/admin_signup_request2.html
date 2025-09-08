@@ -85,12 +85,7 @@
         </div>
       </div>
 
-      <label class="kt-label m-0 flex items-center gap-2">
-        <input class="kt-checkbox kt-checkbox-sm" type="checkbox" name="also_user" value="1" />
-        <span class="kt-checkbox-label">일반 회원 계정으로 사용시에는 추가 정보 입력이 필요합니다.</span>
-      </label>
-
-      <div class="text-xs text-muted-foreground">제출 시 일반 회원 계정이 생성되고 동시에 관리자 권한 신청이 접수됩니다. 체크 시 다음 단계에서 추가 정보를 입력합니다.</div>
+      <div class="text-xs text-muted-foreground">일반회원으로도 사용하실 수 있는 계정입니다.</div>
 
       <button class="kt-btn kt-btn-primary flex justify-center" type="submit">신청하기</button>
     </form>
@@ -111,14 +106,23 @@ function formatPhoneOnInput010(v){ const d=String(v||'').replace(/\D/g,'').slice
   const pw = document.getElementById('pw');
   const pw2 = document.getElementById('pw2');
   const pwRules = document.getElementById('pw_rules');
+  const submitBtn = document.querySelector('button[type="submit"]');
+  const errPhone = document.getElementById('errPhone');
+  const errIdent = document.getElementById('errIdent');
+  const errUsername = document.getElementById('errUsername');
+  const errEmail = document.getElementById('errEmail');
   function updateDomainInput(){ const v=domainSel.value; domainCustom.classList.toggle('hidden', v!=='custom'); }
   domainSel.addEventListener('change', updateDomainInput); updateDomainInput();
+  // 필수 입력으로 강제
+  if (phone) phone.setAttribute('required','true');
+  if (ident) ident.setAttribute('required','true');
   phone.addEventListener('input', ()=>{ phone.value = formatPhoneOnInput010(phone.value); });
   ident.addEventListener('input', ()=>{
     ident.value = formatIdentification(ident.value);
     const d13 = ident.value.replace(/\D/g,'');
     const ok = d13.length===13 && isValidRRN13(d13);
     if(identHint){ identHint.textContent = ok? '형식이 올바릅니다.' : '주민번호 형식이 올바르지 않습니다.'; identHint.style.color = ok? '#059669' : '#dc2626'; }
+    ident.setCustomValidity(ok? '' : 'invalid');
   });
 
   function mark(rule, ok){
@@ -145,6 +149,50 @@ function formatPhoneOnInput010(v){ const d=String(v||'').replace(/\D/g,'').slice
   }
   pw.addEventListener('input', checkPw);
   pw2.addEventListener('input', checkPw);
+
+  // ---- 실시간 중복 체크 (디바운스) ----
+  let dupTimer = null;
+  function debounceDupCheck(){
+    if (dupTimer) clearTimeout(dupTimer);
+    dupTimer = setTimeout(runDupCheck, 300);
+  }
+  function buildEmail(){
+    const local = (emailId.value||'').trim();
+    let domain = domainSel.value;
+    if (domain === 'custom') domain = (domainCustom.value||'').trim();
+    return (local && domain) ? (local + '@' + domain) : '';
+  }
+  async function runDupCheck(){
+    try{
+      const username = (document.querySelector('input[name="username"]').value||'').trim();
+      const email = buildEmail().toLowerCase();
+      const phoneDigits = (phone.value||'').replace(/\D+/g,'');
+      const identDigits = (ident.value||'').replace(/\D+/g,'');
+      const qs = new URLSearchParams();
+      if (username) qs.set('username', username.toLowerCase());
+      if (email) qs.set('email', email);
+      if (phoneDigits) qs.set('phone', phoneDigits);
+      if (identDigits) qs.set('identification_number', identDigits);
+      const res = await fetch('/api/v1/auth/check-duplicates?' + qs.toString());
+      const j = await res.json();
+      const t = (j && j.taken) ? j.taken : {};
+      // 표시 갱신
+      if (errUsername) errUsername.classList.toggle('hidden', !t.username);
+      if (errEmail) errEmail.classList.toggle('hidden', !t.email);
+      if (errPhone) errPhone.classList.toggle('hidden', !t.phone);
+      if (errIdent) errIdent.classList.toggle('hidden', !t.identification_number);
+      // 제출 가능 여부
+      const hasDup = !!(t.username || t.email || t.phone || t.identification_number);
+      if (submitBtn) submitBtn.disabled = hasDup;
+    }catch(_){}
+  }
+  // 필드 변경 시 중복 체크
+  document.querySelector('input[name="username"]').addEventListener('input', debounceDupCheck);
+  emailId.addEventListener('input', debounceDupCheck);
+  domainSel.addEventListener('change', debounceDupCheck);
+  domainCustom.addEventListener('input', debounceDupCheck);
+  phone.addEventListener('input', debounceDupCheck);
+  ident.addEventListener('input', debounceDupCheck);
   document.getElementById('adminApplyForm').addEventListener('submit', async (e)=>{
     e.preventDefault();
     const local = (emailId.value||'').trim();
@@ -165,6 +213,20 @@ function formatPhoneOnInput010(v){ const d=String(v||'').replace(/\D/g,'').slice
     errIdent.classList.add('hidden');
     errUsername.classList.add('hidden');
     errEmail.classList.add('hidden');
+
+    // 전화/주민번호 형식 사전 검증
+    const phoneDigits = phoneVal.replace(/\D/g,'');
+    if (!(phoneDigits.length===11 && phoneDigits.startsWith('010'))){
+      alert('전화번호는 010으로 시작하는 11자리여야 합니다.');
+      document.getElementById('phone').focus();
+      return;
+    }
+    const identDigits = identVal.replace(/\D/g,'');
+    if (!(identDigits.length===13 && isValidRRN13(identDigits))){
+      alert('주민등록번호 형식이 올바르지 않습니다.');
+      document.getElementById('ident').focus();
+      return;
+    }
 
     try{
       const q = new URLSearchParams();

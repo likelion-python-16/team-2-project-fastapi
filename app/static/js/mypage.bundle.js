@@ -52,6 +52,7 @@
 
     function token(){
       try{const t=localStorage.getItem("access_token"); if(t) return t;}catch{}
+      try{const s=sessionStorage.getItem("access_token"); if(s) return s;}catch{}
       const m=document.cookie.match(/(?:^|;)\s*access_token=([^;]+)/); return m?decodeURIComponent(m[1]):null;
     }
 
@@ -278,14 +279,14 @@
       if(u.total_points != null){
         try { qs("my_points").textContent = Number(u.total_points||0).toLocaleString('ko-KR'); } catch {}
       }
-      if(u.avatar_url || u.profile_image){
-        const raw = u.avatar_url || u.profile_image;
-        const bust = (url)=> url + (url.includes('?')? '&':'?') + 'v=' + Date.now();
-        const src = bust(raw);
-        const prev = qs("avatar_preview"); if(prev) prev.src = src;
-        const edit = qs("edit_avatar_preview"); if(edit) edit.src = src;
-        const ha = qs("hero_avatar"); if(ha) ha.src = src;
-      }
+      const DEF = '/static/defaults/avatar-default.png';
+      const raw = u.avatar_url || u.profile_image || '';
+      const bust = (url)=> url ? (url + (url.includes('?')? '&':'?') + 'v=' + Date.now()) : DEF;
+      const src = bust(raw);
+      const setImg = (el)=>{ if(!el) return; el.onerror = ()=>{ el.src = DEF; }; el.src = src; };
+      setImg(qs("avatar_preview"));
+      setImg(qs("edit_avatar_preview"));
+      setImg(qs("hero_avatar"));
     }
 
     /* ===== 데이터 로드 ===== */

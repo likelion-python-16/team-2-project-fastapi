@@ -88,7 +88,9 @@ class Challenge(Base, TimestampMixin):
     default_longitude = Column(Float, nullable=True)
     
     same_place_for_all_rounds = Column(Boolean, default=False, nullable=False)
-    
+
+    default_map_url = Column(String(512), nullable=True)
+
     # ============= 리워드 시스템 =============
     use_reward = Column(Boolean, default=False, nullable=False)
     reward_description = Column(Text, nullable=True)

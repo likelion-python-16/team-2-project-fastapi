@@ -92,7 +92,7 @@
   // 라우팅/유틸
   function goToDashboard(){ window.location.href = '/home'; }
   function copyInviteLink(){
-    const invite = 'http://localhost/home';
+    const invite = 'http://localhost:8001/home';
     if(navigator.clipboard){
       navigator.clipboard.writeText(invite).then(()=>showToast('링크가 복사되었습니다! 📋'));
     }else{
