@@ -46,9 +46,16 @@
   </div>
 </div>
 <script>
-  document.getElementById('adminStep2Form').addEventListener('submit', function(e){
+  document.getElementById('adminStep2Form').addEventListener('submit', async function(e){
     e.preventDefault();
-    window.location.href = '/admin/signup3';
+    const fd = new FormData(e.target);
+    try{
+      const res = await fetch('/admin/signup2', { method:'POST', body: fd, credentials:'include' });
+      if(!res.ok){ throw new Error('저장 실패'); }
+      const j = await res.json().catch(()=>({ok:false}));
+      if(!j.ok){ throw new Error('저장 실패'); }
+      window.location.href = '/admin/signup3';
+    }catch(err){ alert('추가 정보 저장 중 오류가 발생했습니다. 다시 시도해 주세요.'); }
   });
   document.getElementById('btnPrev').addEventListener('click', ()=>{ window.location.href = '/admin/signup'; });
   document.getElementById('linkSkip').addEventListener('click', (e)=>{ e.preventDefault(); window.location.href = '/admin/signup3'; });

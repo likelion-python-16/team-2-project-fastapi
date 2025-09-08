@@ -29,7 +29,7 @@ from .utils.logging import logger
 # 라우터들
 from .routers import (
     users, health, system, challenges, auth, homepage, follow,
-    naver_maps, map, files, tags_categories, places, naver_local, pages, tags,
+    naver_maps, map, files, places, naver_local, pages, tags,
     users_mypage, users_mypage_chat, users_mypage_more, point_management
 )
 
@@ -420,7 +420,6 @@ app.include_router(homepage.router)  # 내부 prefix: /api/v1/home
 app.include_router(map.router)
 app.include_router(files.router, prefix="/api/v1")
 app.include_router(pages.router)
-app.include_router(tags_categories.router, prefix="/api/v1")
 app.include_router(tags.router, prefix="/api/v1")  # AI 태그 검색 기능
 app.include_router(challengecreating_router)
 app.include_router(challengedetail_router)

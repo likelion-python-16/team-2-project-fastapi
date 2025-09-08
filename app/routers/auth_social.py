@@ -661,8 +661,27 @@ async def social_finalize(request: Request, payload: dict = Body(...), db: Sessi
         birth_year=ident.get('birth_year', ''),
     )
     
-    # 비밀번호 설정 (소셜 로그인이므로 랜덤)
-    user.set_password(secrets.token_urlsafe(12))
+    # 비밀번호 설정
+    # - 소셜 온보딩에서 사용자가 비밀번호를 제공했다면 그대로 저장
+    # - 아니면 랜덤 비밀번호를 설정하여 소셜 로그인 전용으로 동작
+    try:
+        from app.security import validate_password_strength, get_password_requirements
+        raw_pw = (payload.get('password') or payload.get('new_password') or '').strip()
+        raw_pw_confirm = (payload.get('password_confirm') or '').strip()
+        if raw_pw:
+            if raw_pw_confirm and raw_pw != raw_pw_confirm:
+                raise HTTPException(400, {"message": "비밀번호 확인이 일치하지 않습니다"})
+            if not validate_password_strength(raw_pw):
+                req = get_password_requirements()
+                raise HTTPException(400, {"message": "비밀번호가 요구사항을 충족하지 않습니다", "requirements": req})
+            user.set_password(raw_pw)
+        else:
+            user.set_password(secrets.token_urlsafe(12))
+    except HTTPException:
+        raise
+    except Exception:
+        # 어떤 이유로든 비밀번호 처리에 실패하면 안전하게 랜덤 비밀번호를 설정
+        user.set_password(secrets.token_urlsafe(12))
     
     # 전화번호 설정
     try:
@@ -730,10 +749,75 @@ async def social_finalize(request: Request, payload: dict = Body(...), db: Sessi
 
 @router.get('/social/merge-info')
 async def get_merge_info(request: Request, db: Session = Depends(get_db)):
-    """계정 연동 정보 조회 (템플릿 기대 구조에 맞춤)"""
+    """계정 연동 정보 조회 (템플릿 기대 구조에 맞춤)
+
+    우선순위:
+    1) merge_candidate가 있으면 기존 계정 + 소셜 정보 모두 표시
+    2) merge_candidate가 없고 pending_social/last_social_identity만 있으면
+       소셜 정보만 채워서 반환하고 existing은 비워 둔다(needs_selection=true)
+    3) 둘 다 없으면 404
+    """
     merge_data = request.session.get('merge_candidate')
     if not merge_data:
-        raise HTTPException(404, '연동할 계정 정보가 없습니다')
+        # 소셜 정보만 있는 경우 자동 준비 시도
+        social_src = request.session.get('pending_social') or request.session.get('last_social_identity')
+        if not social_src:
+            raise HTTPException(404, '연동할 계정 정보가 없습니다')
+
+        # 1) 쿼리 파라미터 ?login= 이 오면 우선 사용
+        login = (request.query_params.get('login') or '').strip()
+        matched_user = None
+        if login:
+            matched_user = db.query(User).filter(or_(User.username == login, User.email == login)).first()
+
+        # 2) 없으면 소셜 이메일로 자동 매칭 (유일할 때만)
+        if not matched_user:
+            soc_email = (social_src.get('email') or '').strip().lower()
+            if soc_email:
+                candidates = db.query(User).filter(User.email == soc_email).all()
+                if len(candidates) == 1:
+                    matched_user = candidates[0]
+
+        if matched_user:
+            # 세션에 merge_candidate 설정 후 계속 진행(즉시 기존+소셜 데이터 반환)
+            try:
+                request.session['merge_candidate'] = {
+                    'user_id': matched_user.id,
+                    'username': matched_user.username,
+                    'email': matched_user.email,
+                    'name': matched_user.name,
+                    'match_type': 'auto',
+                    'social_data': {
+                        'provider': social_src.get('provider'),
+                        'provider_id': social_src.get('provider_id') or social_src.get('sub'),
+                        'email': social_src.get('email'),
+                        'name': social_src.get('name'),
+                        'picture': social_src.get('profile_image') or social_src.get('picture')
+                    }
+                }
+            except Exception:
+                pass
+            merge_data = request.session.get('merge_candidate')
+        else:
+            # 자동 준비 불가 → 소셜 정보만 반환하고 선택 유도
+            social = {
+                'provider': social_src.get('provider'),
+                'email': (social_src.get('email') or ''),
+                'name': (social_src.get('name') or ''),
+                'picture': (social_src.get('profile_image') or social_src.get('picture') or ''),
+            }
+            return {
+                'existing': {
+                    'username': '',
+                    'email': '',
+                    'name': '',
+                    'match_type': '',
+                    'phone_masked': '',
+                    'profile_image_url': ''
+                },
+                'social': social,
+                'needs_selection': True,
+            }
 
     # 기존 계정 상세 보강
     user = db.query(User).filter(User.id == merge_data['user_id']).first()
@@ -754,18 +838,30 @@ async def get_merge_info(request: Request, db: Session = Depends(get_db)):
         phone_plain = None
 
     existing = {
-        "username": merge_data.get('username', user.username if user else ''),
-        "email": merge_data.get('email', user.email if user else ''),
-        "name": merge_data.get('name', user.name if user else ''),
+        "username": merge_data.get('username') or (user.username if user else ''),
+        "email": merge_data.get('email') or (user.email if user else ''),
+        "name": merge_data.get('name') or (user.name if user else ''),
         "match_type": merge_data.get('match_type', ''),
         "phone_masked": mask_phone(phone_plain),
         "profile_image_url": (user.profile_image if user and getattr(user, 'profile_image', None) else ''),
     }
+    # 소셜 데이터가 비어 있으면 세션의 pending_social/last_social_identity로 보강
+    social_raw = merge_data.get('social_data', {}) or {}
+    if not social_raw.get('provider'):
+        extra = request.session.get('pending_social') or request.session.get('last_social_identity') or {}
+        if extra:
+            social_raw = {
+                'provider': extra.get('provider'),
+                'provider_id': extra.get('provider_id') or extra.get('sub'),
+                'email': extra.get('email'),
+                'name': extra.get('name'),
+                'picture': extra.get('profile_image') or extra.get('picture'),
+            }
     social = {
-        "provider": merge_data.get('social_data', {}).get('provider'),
-        "email": merge_data.get('social_data', {}).get('email'),
-        "name": merge_data.get('social_data', {}).get('name'),
-        "picture": merge_data.get('social_data', {}).get('picture'),
+        "provider": social_raw.get('provider'),
+        "email": social_raw.get('email'),
+        "name": social_raw.get('name'),
+        "picture": social_raw.get('picture'),
     }
 
     # 기존 구조도 유지하여 다른 클라이언트와 호환
@@ -773,7 +869,8 @@ async def get_merge_info(request: Request, db: Session = Depends(get_db)):
         "existing": existing,
         "social": social,
         "existing_account": existing,
-        "social_data": merge_data.get('social_data', {}),
+        "social_data": social_raw,
+        "needs_selection": False,
     }
 
 

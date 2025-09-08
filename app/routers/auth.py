@@ -13,6 +13,7 @@ from app.models.user import User
 from app.models.email_verification import EmailVerification
 from app.schemas.auth import SignUpIn, LoginIn, TokenOut, RefreshTokenIn
 from app.services.mailer import send_email, build_verification_email, build_password_reset_email
+from app.services.email import EmailService
 from app.models.tag import Tag, UserTag
 from app.security import (
     create_access_token,
@@ -331,6 +332,66 @@ def logout():
     return resp
 
 
+@router.post("/update-email")
+def update_email(
+    payload: dict = Body(...),
+    request: Request = None,
+    db: Session = Depends(get_db),
+):
+    """이메일 변경 + 인증 메일 발송
+
+    Body: { login, current_password?, new_email }
+    - 로그인 상태(쿠키/Bearer)가 있으면 비밀번호 없이 현재 사용자로 처리
+    - 그렇지 않으면 login+current_password 검증 필요
+    - 소셜 연동 계정도 허용 (비번 없이 로그인 상태에서 변경 가능)
+    """
+    from app.core.deps import get_current_user_from_cookie
+
+    login = (payload.get("login") or "").strip().lower()
+    current_password = payload.get("current_password") or ""
+    new_email = (payload.get("new_email") or "").strip().lower()
+
+    if not new_email:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "새 이메일이 필요합니다")
+
+    # 새 이메일 중복 체크
+    if db.query(User.id).filter(User.email == new_email).first():
+        raise HTTPException(status.HTTP_409_CONFLICT, "이미 사용 중인 이메일입니다")
+
+    # 1) 로그인된 사용자 우선 (쿠키)
+    user = None
+    try:
+        if request is not None:
+            user = get_current_user_from_cookie(request, db)
+    except Exception:
+        user = None
+
+    # 2) 비로그인일 경우: login + password 검증
+    if not user:
+        if not login or not current_password:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "로그인이 필요합니다")
+        user = db.query(User).filter((User.username == login) | (User.email == login)).first()
+        if not user or not user.verify_password(current_password):
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "인증 자격 증명이 유효하지 않습니다")
+
+    # 동일 이메일이면 무시
+    if user.email and user.email.lower() == new_email:
+        return {"message": "이미 설정된 이메일입니다."}
+
+    # 변경 적용 및 인증 메일 발송
+    user.email = new_email
+    user.email_verified = False
+    db.commit()
+
+    try:
+        EmailService.send_verification_email(db, user)
+    except Exception as e:
+        # 메일 실패해도 변경은 반영됨
+        return {"message": "이메일이 변경되었습니다. 인증 메일 발송에 실패했습니다.", "error": str(e)}
+
+    return {"message": "이메일이 변경되었습니다. 받은 메일함에서 인증을 완료해 주세요."}
+
+
 @router.get("/me")
 def get_current_user_info(current_user: User = Depends(get_current_user)):
     """현재 로그인한 사용자 정보 반환"""
@@ -340,6 +401,9 @@ def get_current_user_info(current_user: User = Depends(get_current_user)):
         "email": current_user.email,
         "name": current_user.name,
         "phone": current_user.phone,
+        "profile_image": getattr(current_user, "profile_image", None),
+        "is_admin": bool(getattr(current_user, "is_admin", False)),
+        "is_superadmin": bool(getattr(current_user, "is_superadmin", False)),
         "is_active": current_user.is_active,
         "created_at": current_user.created_at
     }

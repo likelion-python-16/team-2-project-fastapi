@@ -37,17 +37,14 @@ function showAlert(message, type) {
   el.classList.remove('hidden');
 }
 
-// 소셜 연동 계정이면 비활성화
+// 소셜 연동 계정도 변경 가능: 안내만 유지
 (async function(){
   try{
     const r = await fetch('/api/v1/users/me');
     if(r.ok){
       const j = await r.json();
       if (j && (j.provider_linked || j.provider)){
-        showAlert('소셜 연동 계정은 이메일을 변경할 수 없습니다.', 'error');
-        ['login','currentPassword','newEmail','btnUpdate'].forEach(id=>{
-          const el = document.getElementById(id); if(el) el.disabled = true;
-        });
+        showAlert('소셜 연동 계정입니다. 변경 후 이메일 인증을 완료해 주세요.', 'success');
       }
     }
   }catch(_){ }
@@ -63,7 +60,7 @@ document.getElementById('btnUpdate').addEventListener('click', async ()=>{
   }
 
   let ok = false, msg = '변경에 실패했습니다.';
-  const endpoints = ['/api/v1/auth/update-email', '/auth/update-email'];
+  const endpoints = ['/api/v1/auth/update-email'];
   for (const url of endpoints) {
     try {
       const r = await fetch(url, {

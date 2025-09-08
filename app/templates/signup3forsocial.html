@@ -216,13 +216,35 @@ document.addEventListener('DOMContentLoaded',()=>{
     const btn=document.getElementById('submitBtn'), txt=document.getElementById('submitText'), load=document.getElementById('submitLoading');
     btn.disabled=true; txt.classList.add('hidden'); load.classList.remove('hidden');
     try{
-      const token=localStorage.getItem('access_token')||sessionStorage.getItem('access_token')||'';
+      // 현재 토큰 유효성 확인 (있다고 가정하지 말고 /users/me로 검증)
+      let token=localStorage.getItem('access_token')||sessionStorage.getItem('access_token')||'';
+      try{
+        if(token){
+          const meResp = await fetch('/api/v1/users/me',{headers:{Authorization:'Bearer '+token}});
+          if(!meResp.ok) token='';
+        }
+      }catch(_){ token=''; }
+
       let res, j;
       if(token){
-        res=await fetch('/api/v1/users/me/onboarding',{method:'POST', headers:{'Content-Type':'application/json', Authorization:'Bearer '+token}, body:JSON.stringify(payload)});
-        j=await res.json().catch(()=>({}));
-      } else {
-        res=await fetch('/api/v1/auth/social/finalize',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+        // 로그인 상태: me/onboarding 사용
+        res=await fetch('/api/v1/users/me/onboarding',{
+          method:'POST',
+          headers:{'Content-Type':'application/json', Authorization:'Bearer '+token},
+          body:JSON.stringify(payload)
+        });
+        if(res.status===401){
+          // 토큰이 있지만 만료/무효 → 소셜 finalize로 폴백
+          token='';
+        } else {
+          j=await res.json().catch(()=>({}));
+        }
+      }
+      if(!token){
+        // 비로그인: 세션 기반 finalize (pending_social 사용)
+        res=await fetch('/api/v1/auth/social/finalize',{
+          method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+        });
         j=await res.json().catch(()=>({}));
         if(res.ok && j.access_token){
           localStorage.setItem('access_token', j.access_token);

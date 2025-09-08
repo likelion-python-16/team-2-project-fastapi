@@ -679,9 +679,91 @@ def admin_signup_request2_page(request: Request):
 def admin_signup_step2_page(request: Request):
     return templates.TemplateResponse("admin_signup2.html", {"request": request})
 
+@router.post("/signup2")
+def admin_signup_step2_save(
+    request: Request,
+    gender: Optional[str] = Form(None),
+    region_living: Optional[str] = Form(None),
+    region_active: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
+    """관리자 가입 2단계 저장: 성별/거주/활동지역.
+    - 쿠키(access_token) 기반 현재 사용자 식별 후 업데이트
+    """
+    me = get_current_user_from_cookie(request, db)
+    if not me:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다")
+    # 업데이트
+    if gender:
+        try:
+            me.gender = gender if gender in ("male","female","other") else me.gender
+        except Exception:
+            pass
+    if region_living is not None:
+        me.region_living = (region_living or "").strip()
+    if region_active is not None:
+        me.region_active = (region_active or "").strip()
+    db.commit()
+    return {"ok": True}
+
 @router.get("/signup3", response_class=HTMLResponse)
 def admin_signup_step3_page(request: Request):
     return templates.TemplateResponse("admin_signup3.html", {"request": request})
+
+@router.post("/signup3")
+async def admin_signup_step3_save(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """관리자 가입 3단계 저장: 프로필 이미지/소개/선택 태그.
+    - JSON 또는 폼 전송을 모두 지원
+    body: { profile_image?, introduction?, selected_tags?: [str] }
+    """
+    me = get_current_user_from_cookie(request, db)
+    if not me:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다")
+
+    # 파라미터 파싱 (JSON 우선)
+    profile_image = None
+    introduction = None
+    selected_tags = []
+    try:
+        data = await request.json()
+        profile_image = (data.get("profile_image") or None)
+        introduction = (data.get("introduction") or None)
+        st = data.get("selected_tags") or []
+        if isinstance(st, list):
+            selected_tags = [str(t).strip() for t in st if isinstance(t, str) and t.strip()]
+    except Exception:
+        form = await request.form()
+        profile_image = form.get("profile_image")
+        introduction = form.get("introduction")
+        st = form.getlist("selected_tags") if hasattr(form, "getlist") else []
+        selected_tags = [str(t).strip() for t in st if isinstance(t, str) and t.strip()]
+
+    # 업데이트: 이미지/소개
+    if profile_image is not None:
+        me.profile_image = profile_image.strip()
+    if introduction is not None:
+        me.introduction = introduction.strip()
+    db.commit()
+
+    # 태그 연결 (있을 때만)
+    if selected_tags:
+        from app.models.tag import Tag, UserTag
+        # existing only: 존재하는 태그만 연결
+        existing = db.query(Tag).filter(Tag.tag.in_(selected_tags), Tag.is_active == True).all()
+        tag_map = {t.tag: t for t in existing}
+        for name in selected_tags:
+            tag = tag_map.get(name)
+            if not tag:
+                continue
+            exists = db.query(UserTag).filter(UserTag.user_id == me.id, UserTag.tag_id == tag.id).first()
+            if not exists:
+                db.add(UserTag(user_id=me.id, tag_id=tag.id))
+        db.commit()
+
+    return {"ok": True}
 
 @router.get("/signup-request2_2", response_class=HTMLResponse)
 def admin_signup_request2_step2_page(request: Request):

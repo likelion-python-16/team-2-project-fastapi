@@ -174,6 +174,21 @@ def reload_defaults():
     store.load()
     return {"reloaded": True, "labels": store.centroid_labels}
 
+# ---- Backward-compat: expose categories and keywords (migrated from tags_categories) ----
+@router.get("/categories", response_model=list)
+def list_categories():
+    """카테고리 라벨 리스트 (평문 배열)"""
+    from app.services.store import store
+    return list(store.centroid_labels)
+
+@router.get("/by-category")
+def get_keywords_by_category(name: str = Query(..., description="카테고리명")):
+    from app.services.store import store
+    cats = store.categories or {}
+    if name not in cats:
+        raise HTTPException(status_code=404, detail="category not found")
+    return {"category": name, "keywords": cats[name]}
+
 @router.post("/seed-defaults")
 def seed_defaults(db: Session = Depends(get_db)):
     from app.services.store import store

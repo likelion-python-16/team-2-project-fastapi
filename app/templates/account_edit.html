@@ -190,21 +190,13 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     document.getElementById('username').value = me.json.username || '';
     document.getElementById('email').value = me.json.email || '';
     document.getElementById('name').value = me.json.name || '';
+    // 소셜 연동 계정도 이메일 변경 허용: 안내만 변경
     if (me.json.provider_linked || me.json.provider){
-      // 이메일 변경 버튼 완전 숨김 (모든 소셜 연동)
-      const emailBtn = document.getElementById('emailChangeBtn');
-      if (emailBtn) {
-        emailBtn.style.display = 'none';
-      }
-      
-      // 이메일 변경 불가 안내
       const emailNote = document.getElementById('emailNote');
       if (emailNote) {
-        emailNote.textContent = '소셜 연동 계정은 이메일 변경이 불가능합니다.';
-        emailNote.className = 'text-[11px] text-red-600';
+        emailNote.textContent = '이메일 변경이 가능합니다. 변경 후 인증을 완료해 주세요.';
+        emailNote.className = 'text-[11px] text-muted-foreground';
       }
-      
-      // 전화번호는 모든 소셜 연동 계정에서 수정 가능 (제한 제거)
     }
   }
   // 마스킹된 전화번호 표시

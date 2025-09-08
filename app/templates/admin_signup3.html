@@ -180,5 +180,31 @@ function renderSelected(){
 }
 
 document.addEventListener('DOMContentLoaded', loadCategories);
+
+// 최종 제출: 프로필/소개/태그 저장 후 완료 이동
+document.addEventListener('DOMContentLoaded', ()=>{
+  const form = document.getElementById('adminProfileForm');
+  if(form){
+    form.addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const intro = (document.getElementById('introduction').value||'').trim();
+      const img = (document.getElementById('profile_image').value||'').trim();
+      const tags = [...selected];
+      try{
+        const res = await fetch('/admin/signup3', {
+          method:'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ profile_image: img, introduction: intro, selected_tags: tags })
+        });
+        const j = await res.json().catch(()=>({ok:false}));
+        if(!res.ok || !j.ok){ throw new Error(); }
+        window.location.href = '/admin';
+      }catch(_){
+        alert('프로필 저장 중 오류가 발생했습니다. 다시 시도해 주세요.');
+      }
+    });
+  }
+});
 </script>
 {% endblock %}

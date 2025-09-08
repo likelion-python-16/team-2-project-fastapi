@@ -78,6 +78,92 @@ def _user_payload(me: User) -> dict:
 # =============================
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
 
+class _OnboardingIn(BaseModel):
+    phone: Optional[str] = None
+    identification_number: Optional[str] = None
+    name: Optional[str] = None
+    gender: Optional[str] = None
+    region_living: Optional[str] = None
+    region_active: Optional[str] = None
+    profile_image: Optional[str] = None
+    introduction: Optional[str] = None
+    selected_tags: Optional[list[str]] = None
+
+@router.post("/me/onboarding")
+def save_onboarding(
+    payload: _OnboardingIn,
+    db: Session = Depends(get_db),
+    me: User = Depends(get_current_user_dual),
+):
+    # 기본 정보
+    if payload.name is not None:
+        me.name = (payload.name or '').strip() or me.name
+    if payload.gender in ("male","female","other"):
+        me.gender = payload.gender
+    if payload.region_living is not None:
+        me.region_living = (payload.region_living or '').strip()
+    if payload.region_active is not None:
+        me.region_active = (payload.region_active or '').strip()
+    if payload.profile_image is not None:
+        me.profile_image = (payload.profile_image or '').strip()
+
+    try:
+        if payload.phone is not None:
+            me.set_phone(payload.phone)
+    except Exception:
+        pass
+    try:
+        if payload.identification_number is not None:
+            me.set_identification_number(payload.identification_number)
+    except Exception:
+        pass
+
+    # 소개 & 키워드 추출
+    intro_text = payload.introduction or ''
+    extracted_keywords: list[str] = []
+    if isinstance(intro_text, str) and intro_text.strip().startswith('{'):
+        try:
+            import json
+            parsed = json.loads(intro_text)
+            if isinstance(parsed, dict):
+                intro_text = (parsed.get('bio') or '').strip()
+                interests = parsed.get('interests') or {}
+                kws = interests.get('keywords') or []
+                if isinstance(kws, list):
+                    extracted_keywords = [str(k).strip() for k in kws if isinstance(k, str) and k.strip()]
+        except Exception:
+            intro_text = (payload.introduction or '').strip()
+    me.introduction = intro_text
+    db.commit()
+
+    # 태그 연결
+    want_tags: list[str] = []
+    if payload.selected_tags:
+        want_tags += [t for t in payload.selected_tags if isinstance(t, str) and t.strip()]
+    if extracted_keywords:
+        for t in extracted_keywords:
+            if t not in want_tags:
+                want_tags.append(t)
+    if want_tags:
+        from app.models.tag import Tag, UserTag
+        from app.core.config import settings
+        allow_dynamic = bool(getattr(settings, 'allow_dynamic_tag_create', False))
+        existing_user_tag_ids = {ut.tag_id for ut in db.query(UserTag).filter(UserTag.user_id == me.id).all()}
+        existing_tags = db.query(Tag).filter(Tag.tag.in_(want_tags)).all()
+        tag_by_name = {t.tag: t for t in existing_tags}
+        for name in want_tags:
+            tag = tag_by_name.get(name)
+            if not tag and allow_dynamic:
+                tag = Tag(tag=name, is_active=True)
+                db.add(tag)
+                db.flush()
+                tag_by_name[name] = tag
+            if tag and tag.id not in existing_user_tag_ids:
+                db.add(UserTag(user_id=me.id, tag_id=tag.id))
+        db.commit()
+
+    return {"ok": True, "user": _user_payload(me)}
+
 # -----------------------------
 # F-1-10: 지금까지 쓴 금액 요약
 # -----------------------------

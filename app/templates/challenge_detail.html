@@ -88,7 +88,7 @@
         <td style="padding:10px;width:140px;color:#555">Thumbnail</td>
         <td id="fld-thumb" style="padding:10px;color:#555">대표 이미지 (선택)</td>
         <td style="padding:10px;text-align:center;width:100px">
-          <div style="width:56px;height:56px;border:2px solid #16a34a;border-radius:50%;overflow:hidden;margin:0 auto;background:#f1f5f9;display:flex;align-items:center;justify-content:center">
+          <div style="width:96px;height:96px;border:2px solid #16a34a;border-radius:50%;overflow:hidden;margin:0 auto;background:#f1f5f9;display:flex;align-items:center;justify-content:center">
             <img id="chCover" alt="" style="max-width:100%;max-height:100%;display:none">
             <span id="chCoverPlaceholder" style="font-size:11px;color:#64748b">No img</span>
           </div>
@@ -120,7 +120,6 @@
             <option value="online">온라인</option>
             <option value="offline">오프라인</option>
           </select>
-          <button class="btn tiny edit-only" id="btnSaveMode" style="margin-left:8px">저장</button>
           <span id="saveModeMsg" class="muted" style="margin-left:8px"></span>
         </td>
         <td style="padding:10px;text-align:center"><span class="switch"><input type="checkbox" data-row-toggle data-target="fld-mode" checked><span class="slider"></span></span></td>
@@ -133,7 +132,11 @@
           <div id="chPlaceAddr" class="muted" style="font-size:12px"></div>
           <div style="margin-top:4px; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
             <a id="chPlaceLink" href="#" target="_blank" rel="noopener">네이버 장소 링크</a>
-            <button class="btn tiny edit-only" id="btnEditPlace">대표 장소 수정</button>
+            <input id="inpMapUrl" class="kt-input edit-only" placeholder="https://map.naver.com/..." style="display:none;max-width:320px"/>
+            <label class="kt-label edit-only" style="display:none;align-items:center;gap:8px">
+              모든 회차 동일 장소
+              <span class="switch"><input id="chkSamePlace" type="checkbox"><span class="slider"></span></span>
+            </label>
           </div>
         </td>
         <td style="padding:10px;text-align:center"><span class="switch"><input type="checkbox" data-row-toggle data-target="fld-place" checked><span class="slider"></span></span></td>
@@ -312,7 +315,7 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
 // ↳ 만약 404가 난다면 '/api/v1'로 바꿔보세요.
 
   function authHeader(){
-    const t = localStorage.getItem('access_token');
+    const t = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
     return t ? { 'Authorization': 'Bearer ' + t } : {};
   }
 
@@ -503,21 +506,101 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
         if (el) el.style.display = nowOn ? '' : 'none';
         sections[key] = nowOn;
         localStorage.setItem(SEC_KEY, JSON.stringify(sections));
+        // 편집 동작: 특정 필드 토글 시 입력/저장
+        handleEditToggle(target, nowOn);
       });
     });
+  }
+
+  async function handleEditToggle(targetId, on){
+    const canEdit = !!(await getCurrentUser().catch(()=>null));
+    if (!canEdit) return;
+    if (targetId === 'fld-title'){
+      const td = document.getElementById('fld-title');
+      if (!td) return;
+      let inp = document.getElementById('inpTitle');
+      const span = document.getElementById('chTitle');
+      if (on){
+        if (!inp){ inp = document.createElement('input'); inp.className='kt-input'; inp.id='inpTitle'; inp.style.maxWidth='360px'; td.appendChild(inp); }
+        inp.value = span?.textContent || '';
+        inp.style.display='';
+      } else {
+        if (inp){
+          const v = (inp.value||'').trim();
+          try{ await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ title: v }) }); if (span) span.textContent = v; }catch(e){ alert('제목 저장 실패: '+(e.message||'')); }
+          inp.style.display='none';
+        }
+      }
+    }
+    if (targetId === 'fld-desc'){
+      const td = document.getElementById('fld-desc');
+      if (!td) return;
+      let ta = document.getElementById('inpDesc');
+      const span = document.getElementById('chDesc');
+      if (on){
+        if (!ta){ ta = document.createElement('textarea'); ta.className='kt-input'; ta.id='inpDesc'; ta.rows=4; ta.style.maxWidth='520px'; td.appendChild(ta); }
+        ta.value = span?.textContent || '';
+        ta.style.display='';
+      } else {
+        if (ta){
+          const v = (ta.value||'').trim();
+          try{ await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ description: v }) }); if (span) span.textContent = v; }catch(e){ alert('설명 저장 실패: '+(e.message||'')); }
+          ta.style.display='none';
+        }
+      }
+    }
+    if (targetId === 'fld-mode'){
+      const sel = document.getElementById('chModeSel');
+      if (!sel) return;
+      if (!on){
+        try{ await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode: sel.value }) }); }catch(e){ alert('모드 저장 실패: '+(e.message||'')); }
+      }
+    }
+    if (targetId === 'fld-place'){
+      const inp = document.getElementById('inpMapUrl');
+      const link = document.getElementById('chPlaceLink');
+      const chkSame = document.getElementById('chkSamePlace');
+      if (on){
+        if (inp){ inp.style.display=''; inp.value = link?.href || ''; }
+        if (chkSame){ chkSame.closest('label').style.display='flex'; }
+      } else {
+        // 저장
+        try{
+          const payload = {};
+          if (inp){ payload['default_map_url'] = (inp.value||'').trim(); }
+          if (chkSame){ payload['same_place_for_all_rounds'] = !!chkSame.checked; }
+          if (Object.keys(payload).length){ await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }); if (inp && link){ link.href = inp.value||'#'; } }
+        }catch(e){ alert('대표 장소 저장 실패: '+(e.message||'')); }
+        if (inp) inp.style.display='none';
+        if (chkSame) chkSame.closest('label').style.display='none';
+      }
+    }
+    if (targetId === 'fld-thumb'){
+      const holder = document.getElementById('fld-thumb');
+      const img = document.getElementById('chCover');
+      const ph = document.getElementById('chCoverPlaceholder');
+      let inp = document.getElementById('inpCover');
+      if (on){
+        if (!inp){ inp = document.createElement('input'); inp.className='kt-input'; inp.id='inpCover'; inp.placeholder='이미지 URL 입력'; inp.style.maxWidth='420px'; holder.appendChild(inp); }
+        inp.value = img?.src || '';
+        inp.style.display='';
+      } else {
+        if (inp){
+          const url = (inp.value||'').trim();
+          try{ await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ cover_image_url: url }) }); if (img && ph){ if (url){ img.src=url; img.style.display='block'; ph.style.display='none'; } else { img.style.display='none'; ph.style.display=''; } } }catch(e){ alert('대표 이미지 저장 실패: '+(e.message||'')); }
+          inp.style.display='none';
+        }
+      }
+    }
   }
 
   function applyEditVisibility(canEdit){
     document.querySelectorAll('.edit-only').forEach(el=>{
       el.style.display = canEdit ? '' : 'none';
     });
-    if (!canEdit){
-      // 스위치 셀 숨김 (표시 토글은 그대로 두고, 편집 관련 버튼만 숨김 유지)
-      const btn = document.getElementById('btnSaveMode');
-      if (btn) btn.style.display = 'none';
-      const add = document.getElementById('btnAddRound');
-      if (add) add.style.display = 'none';
-    }
+    // 회차 추가 버튼은 편집 모드에서만 노출
+    const add = document.getElementById('btnAddRound');
+    if (add) add.style.display = canEdit ? '' : 'none';
   }
 
   // ===== 생성자 팔로우 기능 =====
@@ -608,25 +691,30 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
     }catch(_){ const oEl = document.getElementById('chOwner'); if (oEl) oEl.textContent = `user#${ch.creator_id}`; }
     // 모드 선택 초기화 + 저장 버튼 연결
     const sel = document.getElementById('chModeSel'); if (sel){ sel.value = (ch.mode||'').toLowerCase(); }
-    const btn = document.getElementById('btnSaveMode');
     const msg = document.getElementById('saveModeMsg');
-    if (btn){
-      btn.onclick = async () => {
-        try{
-          if (msg) msg.textContent = '저장 중...';
-          await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}`, {
-            method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode: sel.value })
-          });
-          if (msg) msg.textContent = '저장됨';
-          await loadRounds();
-        }catch(e){ if (msg) msg.textContent = '실패: ' + (e?.message || ''); }
-      };
-    }
 
     // 편집 권한 여부 계산 후 적용
     const cu = await getCurrentUser().catch(()=>null);
     const canEdit = !!(cu && ch && cu.id === ch.creator_id);
     applyEditVisibility(canEdit);
+
+    // 개요 수정 토글
+    const btnEdit = document.getElementById('btnEditOverview');
+    if (btnEdit && canEdit){
+      let editing = false;
+      btnEdit.onclick = ()=>{
+        editing = !editing;
+        btnEdit.textContent = editing ? '개요 수정 끝내기' : '개요 수정';
+        // 편집 전용 컨트롤 노출
+        document.querySelectorAll('.edit-only').forEach(el=>{ el.style.display = editing ? '' : 'none'; });
+        // 편집 시작 시 각 입력 숨김(대기), 토글은 사용자 제어에 따름
+        if (!editing){
+          // 편집 종료 시 열려있던 입력 숨김
+          ['inpTitle','inpDesc','inpMapUrl','inpCover'].forEach(id=>{ const e=document.getElementById(id); if(e){ e.style.display='none'; } });
+          const sp = document.getElementById('chkSamePlace'); if (sp){ sp.closest('label').style.display='none'; }
+        }
+      };
+    }
 
     const gp = document.getElementById('g_place_name'); if (gp) gp.value = ch.default_place_name || '';
     const gr = document.getElementById('g_road_address'); if (gr) gr.value = ch.default_road_address || '';
@@ -634,6 +722,7 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
     const gm = document.getElementById('g_map_url'); if (gm) gm.value = ch.default_map_url || '';
     const glat = document.getElementById('g_lat'); if (glat) glat.value = (ch.default_latitude ?? '') || '';
     const glon = document.getElementById('g_lon'); if (glon) glon.value = (ch.default_longitude ?? '') || '';
+    const sp = document.getElementById('chkSamePlace'); if (sp){ sp.checked = !!ch.same_place_for_all_rounds; }
 
     // 챌린지 상태에 따른 결제 버튼 제어
     await updatePaymentButtonStatus(ch);
@@ -736,7 +825,7 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
 
   async function getCurrentUser() {
     try {
-      return await safeFetchJSON('/api/v1/auth/me');
+      return await safeFetchJSON('/api/v1/users/me');
     } catch (e) {
       console.log('getCurrentUser failed:', e.message);
       return null;
@@ -1225,11 +1314,11 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
     
     try {
       // 토큰 확인
-      const token = localStorage.getItem('access_token');
+      const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
       console.log('저장된 토큰:', token ? '토큰 있음' : '토큰 없음');
       
       // 현재 사용자 정보 가져오기
-      const currentUser = await safeFetchJSON(`${API_CH}/auth/me`);
+      const currentUser = await safeFetchJSON(`/api/v1/users/me`);
       console.log('현재 사용자 정보:', currentUser);
       
       // 참가자 목록 가져오기
@@ -1461,6 +1550,15 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
       return;
     }
 
+    // 로그인 여부 확인: 미로그인 → 로그인 화면으로 유도
+    const currentUserBefore = await getCurrentUser();
+    if (!currentUserBefore) {
+      setMsg('로그인 후 참여해 주세요. 로그인 페이지로 이동합니다...', 'error');
+      const back = encodeURIComponent(location.pathname + location.search);
+      setTimeout(() => { location.href = '/login?return_to=' + back; }, 600);
+      return;
+    }
+
     // 챌린지 상태 재확인
     if (!S.challenge || S.challenge.status !== 'recruiting') {
       setMsg('모집중인 챌린지만 참여할 수 있습니다', 'error');
@@ -1468,7 +1566,7 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
     }
 
     // 생성자인지 확인
-    const currentUser = await getCurrentUser();
+    const currentUser = currentUserBefore; // 이미 위에서 확인한 사용자 재사용
     if (currentUser && S.challenge && currentUser.id === S.challenge.creator_id) {
       setMsg('챌린지 생성자는 참여할 수 없습니다', 'error');
       return;
@@ -1502,7 +1600,7 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('access_token') || ''}`
+            'Authorization': `Bearer ${localStorage.getItem('access_token') || sessionStorage.getItem('access_token') || ''}`
           },
           body: JSON.stringify({ challenge_id: CHALLENGE_ID })
         });
@@ -1553,7 +1651,7 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('access_token') || ''}`
+            'Authorization': `Bearer ${localStorage.getItem('access_token') || sessionStorage.getItem('access_token') || ''}`
           },
           body: JSON.stringify({ challenge_id: CHALLENGE_ID })
         }).catch(()=>{}); // 이미 신청한 경우 무시
@@ -1613,7 +1711,7 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
       console.log('[DEBUG] 참가 취소 시작:', { challengeId: CHALLENGE_ID, isActive });
       
       // 토큰 확인
-      const token = localStorage.getItem('access_token');
+      const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
       console.log('[DEBUG] 토큰 상태:', token ? '있음' : '없음');
       
       if (isActive) {
@@ -1641,13 +1739,42 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
         setMsg('✅ 참여가 성공적으로 취소되었습니다.', 'ok');
       }
       
-      // 챌린지 데이터 새로고침
+      // 챌린지 데이터 새로고침 및 버튼 상태 갱신
       await loadChallenge();
       await refreshParticipationStatus();
+      // 즉시 버튼 상태를 사용자에게 반영
+      if (btnJoin) {
+        btnJoin.disabled = false;
+        btnJoin.textContent = '참여하기';
+        btnJoin.style.background = '#2563eb';
+        btnJoin.style.color = 'white';
+      }
+      if (btnLeave) {
+        btnLeave.style.display = 'none';
+      }
       
     } catch (e) {
       console.error('[ERROR] 참가 취소 실패:', e);
-      setMsg(`참여 취소 실패: ${e.message}`, 'error');
+      const msgText = String(e && e.message || '');
+      // 이미 탈퇴했거나 비활성 상태인 경우: 성공과 동일하게 처리 (버튼 복구)
+      if (msgText.includes('이미 탈퇴했거나') || msgText.toLowerCase().includes('inactive')) {
+        setMsg('이미 취소된 상태입니다. 참여 버튼을 다시 활성화합니다.', 'ok');
+        try {
+          await loadChallenge();
+          await refreshParticipationStatus();
+        } catch(_) {}
+        if (btnJoin) {
+          btnJoin.disabled = false;
+          btnJoin.textContent = '참여하기';
+          btnJoin.style.background = '#2563eb';
+          btnJoin.style.color = 'white';
+        }
+        if (btnLeave) {
+          btnLeave.style.display = 'none';
+        }
+      } else {
+        setMsg(`참여 취소 실패: ${msgText}`, 'error');
+      }
     }
   });
 
@@ -1658,7 +1785,7 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
     if (!challenge?.creator_id) return;
     
     try {
-      const token = localStorage.getItem('access_token');
+      const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
       const response = await fetchJSON(`/api/v1/follow/${challenge.creator_id}`, {
         method: 'POST',
         headers: {
@@ -1672,7 +1799,14 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
       document.getElementById('btnUnfollowCreator').style.display = 'inline-block';
       
     } catch (e) {
-      document.getElementById('followMsg').textContent = `팔로우 실패: ${e.message}`;
+      const msg = String(e.message||'');
+      if (msg.includes('이미') || msg.toLowerCase().includes('already')) {
+        document.getElementById('followMsg').textContent = '이미 팔로우 상태입니다.';
+        document.getElementById('btnFollowCreator').style.display = 'none';
+        document.getElementById('btnUnfollowCreator').style.display = 'inline-block';
+      } else {
+        document.getElementById('followMsg').textContent = `팔로우 실패: ${msg}`;
+      }
     }
   });
   
@@ -1682,7 +1816,7 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
     if (!challenge?.creator_id) return;
     
     try {
-      const token = localStorage.getItem('access_token');
+      const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
       const response = await fetchJSON(`/api/v1/follow/${challenge.creator_id}`, {
         method: 'DELETE',
         headers: {
@@ -1696,7 +1830,14 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
       document.getElementById('btnUnfollowCreator').style.display = 'none';
       
     } catch (e) {
-      document.getElementById('followMsg').textContent = `언팔로우 실패: ${e.message}`;
+      const msg = String(e.message||'');
+      if (msg.includes('없습니다') || msg.includes('이미 취소') || msg.toLowerCase().includes('not following')) {
+        document.getElementById('followMsg').textContent = '이미 언팔로우 상태입니다.';
+        document.getElementById('btnFollowCreator').style.display = 'inline-block';
+        document.getElementById('btnUnfollowCreator').style.display = 'none';
+      } else {
+        document.getElementById('followMsg').textContent = `언팔로우 실패: ${msg}`;
+      }
     }
   });
 

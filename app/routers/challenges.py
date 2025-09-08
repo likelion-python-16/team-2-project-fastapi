@@ -813,8 +813,9 @@ def update_challenge(
     data = challenge_update.model_dump(exclude_unset=True)
     
     # ❌ 제거된 필드들 필터링
+    # default_map_url 업데이트 허용 (네이버 장소 링크 저장용)
     removed_fields = {'fee', 'participation_fee', 'max_participation_rate', 'is_closed', 
-                      'reward', 'default_road_address', 'default_map_url'}
+                      'reward', 'default_road_address'}
     data = {k: v for k, v in data.items() if k not in removed_fields}
     
     # 업데이트 적용

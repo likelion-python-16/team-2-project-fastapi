@@ -83,14 +83,46 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     const r = await fetch('/api/v1/auth/social/merge-info');
     const j = await r.json();
     if(!r.ok) throw new Error(j.detail||'정보를 불러오지 못했습니다');
-    document.getElementById('exName').textContent = '이름: '+ (j.existing.name||'-') + ' (아이디: '+j.existing.username+')';
-    document.getElementById('exEmail').textContent = '이메일: '+ (j.existing.email||'-');
-    document.getElementById('exPhone').textContent = '전화번호: '+ (j.existing.phone_masked||'-');
-    document.getElementById('exImg').src = j.existing.profile_image_url || '/static/pictures/defaultprofile.svg';
-    document.getElementById('scProv').textContent = j.social.provider ? '('+String(j.social.provider).toUpperCase()+')' : '';
-    document.getElementById('scName').textContent = '이름: '+ (j.social.name||'-');
-    document.getElementById('scEmail').textContent = '이메일: '+ (j.social.email||'-');
-    document.getElementById('scImg').src = j.social.picture || '/static/pictures/defaultprofile.svg';
+
+    // 기존 계정 정보 표시 (없으면 - 로 표시)
+    document.getElementById('exName').textContent = '이름: '+ (j.existing?.name||'-') + (j.existing?.username? ' (아이디: '+j.existing.username+')' : '');
+    document.getElementById('exEmail').textContent = '이메일: '+ (j.existing?.email||'-');
+    document.getElementById('exPhone').textContent = '전화번호: '+ (j.existing?.phone_masked||'-');
+    document.getElementById('exImg').src = (j.existing?.profile_image_url||'') || '/static/pictures/defaultprofile.svg';
+
+    // 소셜 정보 표시
+    document.getElementById('scProv').textContent = j.social?.provider ? '('+String(j.social.provider).toUpperCase()+')' : '';
+    document.getElementById('scName').textContent = '이름: '+ (j.social?.name||'-');
+    document.getElementById('scEmail').textContent = '이메일: '+ (j.social?.email||'-');
+    document.getElementById('scImg').src = (j.social?.picture||'') || '/static/pictures/defaultprofile.svg';
+
+    // 선택 필요 시 상단 준비 박스 노출 + 자동 준비 지원
+    if (j.needs_selection) {
+      const pb = document.getElementById('prepareBox');
+      pb.classList.remove('hidden');
+      const inp = document.getElementById('prepLogin');
+      // URL ?login= 파라미터 있으면 자동 준비 시도
+      const u = new URL(window.location.href);
+      const qlogin = (u.searchParams.get('login')||'').trim().toLowerCase();
+      if (qlogin) {
+        try {
+          const r2 = await fetch('/api/v1/auth/social/prepare-merge', {
+            method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ login: qlogin })
+          });
+          if (r2.ok) { location.reload(); return; }
+        } catch(_){}
+      }
+      // last_login 프리필
+      try{ const last = localStorage.getItem('last_login'); if(last && !inp.value) inp.value = last; }catch(_){ }
+      // 입력칸에 값이 이미 있으면 자동으로 준비 시도 (버튼 클릭 없이)
+      const v = (inp.value||'').trim().toLowerCase();
+      if (v) {
+        try{
+          const r3 = await fetch('/api/v1/auth/social/prepare-merge', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ login: v }) });
+          if (r3.ok) { location.reload(); return; }
+        }catch(_){ /* 무시하고 수동 선택 허용 */ }
+      }
+    }
   }catch(e){
     // 병합 후보가 없는 경우(세션 유실 등) 복구 플로우 제공
     const msg = String(e.message||e);
