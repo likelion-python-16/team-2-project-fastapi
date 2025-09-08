@@ -26,6 +26,9 @@ from .core.lifespan import lifespan
 # 로깅 설정
 from .utils.logging import logger
 
+# 메트릭 미들웨어
+from .core.metrics import MetricsMiddleware
+
 # 라우터들
 from .routers import (
     users, health, system, challenges, auth, homepage, follow,
@@ -33,7 +36,11 @@ from .routers import (
     users_mypage, users_mypage_chat, users_mypage_more, reviews, reviews_api
 )
 from .routers import reports, admin, notifications
+<<<<<<< Updated upstream
 from .routers import round_pictures, participations, payments
+=======
+from .routers import round_pictures, participations, payments, auth_social, payment_reminders, point_management
+>>>>>>> Stashed changes
 from app.routers.challengecreating import router as challengecreating_router
 from app.routers.challengedetail import router as challengedetail_router
 from app.routers.place_picker import router as place_picker_router

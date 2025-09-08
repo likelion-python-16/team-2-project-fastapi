@@ -59,6 +59,10 @@ class User(Base):
     deleted_at = Column(DateTime, nullable=True)
 
     token_version = Column(Integer, nullable=False, server_default='0')
+    
+    # 소셜 로그인 관련 필드
+    provider = Column(String(50), nullable=True)
+    provider_id = Column(String(100), nullable=True)
 
     notifications = relationship("Notification", back_populates="user", foreign_keys="Notification.user_id", overlaps="notifications")
     payments = relationship("Payment", back_populates="user", foreign_keys="Payment.user_id", overlaps="payments")

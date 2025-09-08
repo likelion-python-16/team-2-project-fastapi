@@ -78,6 +78,7 @@ class Participation(Base, TimestampMixin):
     #     nullable=True,
     #     comment="실제 참가 시작 시간 (결제 완료 후)"
     # )
+<<<<<<< Updated upstream
     # completed_at = Column(DateTime, nullable=True, comment="완료 시간")  # 임시 비활성화 - DB에 컬럼이 없음
     # left_at = Column(DateTime, nullable=True, comment="탈퇴 시간")  # 임시 비활성화 - DB에 컬럼이 없음
     
@@ -99,12 +100,39 @@ class Participation(Base, TimestampMixin):
     #     nullable=False,
     #     comment="연속 결제 실패 횟수"
     # )  # 임시 비활성화 - DB에 컬럼이 없음
+=======
+    completed_at = Column(DateTime, nullable=True, comment="완료 시간")
+    left_at = Column(DateTime, nullable=True, comment="탈퇴 시간")
+    
+    # ============= 결제 관련 정보 =============
+    payment_cycle = Column(
+        SAEnum(PaymentCycle, name="payment_cycle_enum"),
+        nullable=True,
+        comment="선택한 결제 방식 (챌린지가 multiple 옵션일 때)"
+    )
+    next_payment_date = Column(
+        Date, 
+        nullable=True,
+        index=True,
+        comment="다음 결제 예정일 (월회비용)"
+    )
+    payment_failed_count = Column(
+        Integer, 
+        default=0, 
+        nullable=False,
+        comment="연속 결제 실패 횟수"
+    )
+>>>>>>> Stashed changes
     # total_paid_amount = Column(
     #     Integer, 
     #     default=0, 
     #     nullable=False,
     #     comment="총 결제 금액"
+<<<<<<< Updated upstream
     # )  # 임시 비활성화 - DB에 컬럼이 없음
+=======
+    # )
+>>>>>>> Stashed changes
     
     # ============= 진행률 & 통계 =============
     # progress_rate = Column(
@@ -145,6 +173,7 @@ class Participation(Base, TimestampMixin):
     #     default=True, 
     #     nullable=False,
     #     comment="알림 수신 여부"
+<<<<<<< Updated upstream
     # )  # 임시 비활성화 - DB에 컬럼이 없음
     # auto_payment_enabled = Column(
     #     Boolean, 
@@ -152,6 +181,15 @@ class Participation(Base, TimestampMixin):
     #     nullable=False,
     #     comment="자동 결제 활성화 여부"
     # )  # 임시 비활성화 - DB에 컬럼이 없음
+=======
+    # )
+    auto_payment_enabled = Column(
+        Boolean, 
+        default=True, 
+        nullable=False,
+        comment="자동 결제 활성화 여부"
+    )
+>>>>>>> Stashed changes
     
     # 참가 시점 메모/동기
     # join_motivation = Column(Text, nullable=True, comment="참가 동기/목표")  # 임시 비활성화 - DB에 컬럼이 없음

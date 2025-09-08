@@ -9,7 +9,7 @@ from sqlalchemy import and_, or_
 
 from app.models.participation import Participation, PaymentCycle, ParticipationStatus
 from app.models.challenge import Challenge, ChallengeStatus
-from app.models.notification import Notification, NotificationType
+from app.models.notification import Notification, NotificationEvent
 from app.models.user import User
 from app.utils.logging import logger
 
@@ -122,7 +122,7 @@ class PaymentReminderService:
         existing_notification = self.db.query(Notification).filter(
             and_(
                 Notification.user_id == participation.user_id,
-                Notification.type == NotificationType.payment_reminder,
+                Notification.type == NotificationEvent.payment_reminder,
                 Notification.created_at >= datetime.now(timezone.utc).date(),
                 Notification.extra_data.contains(f'"challenge_id":{challenge.id}'),
                 Notification.extra_data.contains(f'"days_left":{days_left}')
@@ -143,7 +143,7 @@ class PaymentReminderService:
         # 알림 생성
         notification = Notification(
             user_id=participation.user_id,
-            type=NotificationType.payment_reminder,
+            type=NotificationEvent.payment_reminder,
             title=title,
             message=message,
             action_url=f"/pages/challenges/{challenge.id}",
@@ -209,7 +209,7 @@ class PaymentReminderService:
             # 탈퇴 알림
             notification = Notification(
                 user_id=participation.user_id,
-                type=NotificationType.participation_removed,
+                type=NotificationEvent.participation_removed,
                 title="챌린지 자동 탈퇴 알림 ⚠️",
                 message=f"'{challenge.title}'에서 월회비 연체로 인해 자동 탈퇴되었습니다. 재참여를 원하시면 다시 신청해주세요.",
                 action_url=f"/pages/challenges/{challenge.id}"
@@ -224,7 +224,7 @@ class PaymentReminderService:
             # 연체 알림
             notification = Notification(
                 user_id=participation.user_id,
-                type=NotificationType.payment_reminder,
+                type=NotificationEvent.payment_reminder,
                 title=f"월회비 연체 알림 ({participation.payment_failed_count}/3) ⚠️",
                 message=f"'{challenge.title}' 월회비 결제가 연체되었습니다. 7일 내 결제하지 않으면 자동 탈퇴됩니다.",
                 action_url=f"/pages/challenges/{challenge.id}",
