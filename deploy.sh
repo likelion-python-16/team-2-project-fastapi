@@ -182,7 +182,7 @@ main() {
     check_requirements
     cleanup_containers
     
-    if [ "$ENVIRONMENT" = "prod" ]; then
+    if [ "$ENVIRONMENT" = "prod" ] || [ "$ENVIRONMENT" = "aws" ] || [ "$ENVIRONMENT" = "ec2" ]; then
         run_migrations
     fi
     
