@@ -17,7 +17,8 @@ class Review(Base, TimestampMixin):
     __tablename__ = "reviews"
     
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)  # 리뷰 작성자
+    target_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)  # 리뷰 대상자
     challenge_id = Column(Integer, ForeignKey("challenges.id", ondelete="CASCADE"), nullable=False)
     round_id = Column(Integer, ForeignKey("challenge_rounds.id", ondelete="CASCADE"), nullable=True)
     comment = Column(Text, nullable=True)
@@ -31,7 +32,8 @@ class Review(Base, TimestampMixin):
     images_json = Column(JSON, nullable=True)
     
     # 관계
-    user = relationship("User", back_populates="reviews", lazy="joined", foreign_keys=[user_id])
+    user = relationship("User", lazy="joined", foreign_keys=[user_id])
+    target_user = relationship("User", lazy="joined", foreign_keys=[target_user_id])
     challenge = relationship("Challenge", back_populates="reviews", lazy="joined")
     round = relationship("ChallengeRound", back_populates="reviews", lazy="joined")
     helpfuls = relationship(

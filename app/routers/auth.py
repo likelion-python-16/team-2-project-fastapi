@@ -341,6 +341,9 @@ def get_current_user_info(current_user: User = Depends(get_current_user)):
         "name": current_user.name,
         "phone": current_user.phone,
         "is_active": current_user.is_active,
+        "is_admin": current_user.is_admin,
+        "manner_score": current_user.manner_score,
+        "total_points": current_user.total_points,
         "created_at": current_user.created_at
     }
 

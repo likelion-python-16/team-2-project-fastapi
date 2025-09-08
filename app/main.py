@@ -30,13 +30,10 @@ from .utils.logging import logger
 from .routers import (
     users, health, system, challenges, auth, homepage, follow,
     naver_maps, map, files, tags_categories, places, naver_local, pages, tags,
-    users_mypage, users_mypage_chat, users_mypage_more, point_management
+    users_mypage, users_mypage_chat, users_mypage_more, reviews, reviews_api
 )
-
-# 메트릭 미들웨어
-from .core.metrics import MetricsMiddleware, get_metrics
-from .routers import auth_social
-from .routers import round_pictures, participations, payments, payment_reminders
+from .routers import reports, admin, notifications
+from .routers import round_pictures, participations, payments
 from app.routers.challengecreating import router as challengecreating_router
 from app.routers.challengedetail import router as challengedetail_router
 from app.routers.place_picker import router as place_picker_router
@@ -430,6 +427,11 @@ app.include_router(users_mypage.router)
 app.include_router(users_mypage_chat.router)
 app.include_router(users_mypage_more.router)
 app.include_router(users_mypage.page_router)
+app.include_router(reviews.router)  # HTML pages for reviews
+app.include_router(reviews_api.router, prefix="/api/v1")  # API endpoints for reviews
+app.include_router(reports.router, prefix="/api/v1")  # API endpoints for reports
+app.include_router(admin.router, prefix="/api/v1")  # Admin endpoints
+app.include_router(notifications.router)  # Notifications endpoints
 
 # Admin routes
 app.include_router(admin_auth.router)

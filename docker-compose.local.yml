@@ -64,10 +64,11 @@ services:
       
       # 기타 설정
       - DEBUG=True
+    env_file:
+      - .env
     volumes:
       - ./app:/app/app
       - ./alembic:/app/alembic
-      - ./.env:/app/.env:ro
     networks:
       - team-network-local
     restart: unless-stopped

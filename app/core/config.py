@@ -40,12 +40,12 @@ class Settings(BaseSettings):
     debug: bool = True
 
     # DB
-    mysql_host: str = "mysql"
+    mysql_host: str = "localhost"
     mysql_port: int = 3306
-    mysql_user: str = "team_user"
-    mysql_password: str = "team_password_123"
-    mysql_database: str = "team_project_db"
-    mysql_root_password: str = "root_password_123"
+    mysql_user: str = "root"
+    mysql_password: str = "root"
+    mysql_database: str = "team2_challenge_dev"
+    mysql_root_password: str = "root"
 
     # JWT
     jwt_secret: str = os.getenv("JWT_SECRET", "team-project-secret-key-change-this-in-production")
@@ -182,11 +182,12 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
+        extra = "ignore"  # 추가 필드 무시
 
 class DevelopmentSettings(Settings):
     environment: Environment = Environment.DEVELOPMENT
     debug: bool = True
-    mysql_host: str = "mysql"
+    mysql_host: str = "localhost"
 
 class ProductionSettings(Settings):
     environment: Environment = Environment.PRODUCTION

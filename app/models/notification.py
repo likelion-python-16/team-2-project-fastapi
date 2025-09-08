@@ -12,17 +12,16 @@ class NotificationEvent(str, enum.Enum):
     creator_delegated = "creator_delegated"
     review_created = "review_created"
     review_updated = "review_updated"
+    review_received = "review_received"
     refund_succeeded = "refund_succeeded"
     refund_failed = "refund_failed"
     point_awarded = "point_awarded"
     notice_posted = "notice_posted"
     join_completed = "join_completed"
-    # 결제 알림용 추가
-    payment_reminder = "payment_reminder"
-    participation_removed = "participation_removed"
-
-# NotificationType 별칭 생성 (하위 호환성)
-NotificationType = NotificationEvent
+    challenge_created = "challenge_created"
+    challenge_joined = "challenge_joined"
+    report_received = "report_received"
+    warning_received = "warning_received"
 
 class Notification(Base, TimestampMixin):
     __tablename__ = "notifications"

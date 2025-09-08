@@ -25,6 +25,7 @@ def signup_step2(request: Request):
     return templates.TemplateResponse("signup_step2.html", {"request": request})
 
 @router.get("/signup/step3", response_class=HTMLResponse)
+@router.post("/signup/step3", response_class=HTMLResponse)
 def signup_step3(request: Request):
     return templates.TemplateResponse(
         "signup_step3.html",

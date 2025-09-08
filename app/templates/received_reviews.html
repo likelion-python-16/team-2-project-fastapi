@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>받은 리뷰</title>
+  <style>
+    :root{
+      --text:#111827; --muted:#6B7280; --line:#E5E7EB; --primary:#4338CA; --brand:#181C32; --bg:#fff;
+    }
+    body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;background:var(--bg);color:var(--text)}
+    .container{max-width:1100px;margin:0 auto;padding:24px 16px}
+
+    /* Header */
+    .header-bar{border-bottom:1px solid var(--line); background:#fff}
+    .header-inner{max-width:1100px;margin:0 auto; padding:12px 16px; display:flex; align-items:center; gap:12px}
+    .brand{display:flex; align-items:center; gap:10px; color:var(--brand); font-weight:800; letter-spacing:.2px; text-decoration:none}
+    .brand .dot{color:#9CA3AF; font-weight:700}
+
+    /* Title */
+    h1{font-size:22px;font-weight:800;margin:18px 0 16px}
+
+    /* Card + table */
+    .rv-card{border:1px solid var(--line);border-radius:14px;background:#fff}
+    .rv-wrap{padding:16px}
+    .rv-table{width:100%;border-collapse:separate;border-spacing:0}
+    .rv-table th,.rv-table td{padding:14px 16px;border-bottom:1px solid #F3F4F6;text-align:left;font-size:14px}
+    .rv-table th{color:#6B7280;font-weight:700;white-space:nowrap}
+    .rv-table tr:last-child td{border-bottom:none}
+    .rv-comment{font-weight:600;color:#111827}
+
+    .rv-stars{display:inline-flex;gap:2px;vertical-align:middle}
+    .rv-star{font-size:16px}
+    .rv-date{color:#374151;white-space:nowrap}
+
+    .rv-member{display:flex;align-items:center;gap:10px}
+    .rv-ava-wrap{position:relative; width:32px; height:32px}
+    .rv-ava-initial{
+      position:absolute; inset:0; border-radius:50%;
+      display:flex; align-items:center; justify-content:center;
+      font-weight:700; font-size:14px; color:#fff; background:#3B82F6;
+    }
+    .rv-ava{
+      width:32px; height:32px; border-radius:50%;
+      object-fit:cover; border:1px solid var(--line); background:#F3F4F6; display:block;
+    }
+    .rv-name{font-weight:600;color:#111827}
+    .rv-muted{color:#6B7280}
+
+    .rv-footer{display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:10px 16px;color:#6B7280;font-size:12px}
+    .rv-pill{border:1px solid var(--line);padding:4px 10px;border-radius:10px}
+
+    .link{color:#4338CA; text-decoration:none; font-weight:700}
+    .link:hover{opacity:.9; text-decoration:underline}
+
+    .empty-state{text-align:center;padding:40px;color:var(--muted)}
+  </style>
+</head>
+<body>
+
+<header class="header-bar">
+  <div class="header-inner">
+    <a class="brand" href="/mypage">
+      <span>Metronic</span><span class="dot">·</span><span>MyPage</span>
+    </a>
+    <a class="brand" href="/api/my-reviews" style="margin-left:12px;">
+      <span>내가 쓴 리뷰</span>
+    </a>
+  </div>
+</header>
+
+<div class="container">
+  <h1>받은 리뷰</h1>
+
+  <div class="rv-card">
+    <div class="rv-wrap">
+      <table class="rv-table">
+        <thead>
+          <tr>
+            <th style="width:15%;">평점</th>
+            <th style="width:40%;">코멘트</th>
+            <th style="width:20%;">작성자</th>
+            <th style="width:15%;">챌린지</th>
+            <th style="width:10%;">날짜</th>
+          </tr>
+        </thead>
+        <tbody id="reviews_body">
+          <!-- 데이터는 JavaScript로 로드 -->
+        </tbody>
+      </table>
+    </div>
+    <div class="rv-footer">
+      <span id="itemCount" class="rv-pill">0 items</span>
+    </div>
+  </div>
+</div>
+
+<script>
+  // 색상 팔레트 (아바타용)
+  const palette = ["#3b82f6","#10b981","#ef4444","#f59e0b","#8b5cf6","#14b8a6","#0ea5e9","#f97316","#22c55e","#e11d48"];
+  function colorFor(name){ let h=0; for(let i=0;i<name.length;i++) h=(h*31+name.charCodeAt(i))>>>0; return palette[h%palette.length]; }
+
+  // 별점 렌더링
+  function renderStars(rating) {
+    const n = Math.max(0, Math.min(5, Math.round(rating)));
+    const on = '<span class="rv-star" style="color:#FBBF24">★</span>'.repeat(n);
+    const off = '<span class="rv-star" style="color:#E5E7EB">★</span>'.repeat(5 - n);
+    return `<span class="rv-stars">${on}${off}</span>`;
+  }
+
+  // 날짜 포맷
+  function formatDate(dateStr) {
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString('ko-KR', { 
+        year: 'numeric', 
+        month: 'short', 
+        day: 'numeric' 
+      });
+    } catch {
+      return dateStr;
+    }
+  }
+
+  // 받은 리뷰 로드
+  function loadReceivedReviews() {
+    const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+    if (!token) {
+      document.getElementById('reviews_body').innerHTML = 
+        '<tr><td colspan="5" class="empty-state">로그인이 필요합니다.</td></tr>';
+      return;
+    }
+
+    fetch('/api/v1/reviews/received', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    })
+    .then(r => r.json())
+    .then(data => {
+      const tbody = document.getElementById('reviews_body');
+      const items = data.items || [];
+      
+      if (items.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty-state">받은 리뷰가 없습니다.</td></tr>';
+        document.getElementById('itemCount').textContent = '0 items';
+        return;
+      }
+
+      tbody.innerHTML = items.map(review => `
+        <tr>
+          <td>${renderStars(review.rating)}</td>
+          <td><div class="rv-comment">${(review.comment || '').replace(/[<>]/g, '')}</div></td>
+          <td>
+            <div class="rv-member">
+              <span class="rv-ava-wrap">
+                <span class="rv-ava-initial" style="background:${colorFor('User')}">U</span>
+              </span>
+              <span class="rv-name">User ${review.user_id}</span>
+            </div>
+          </td>
+          <td><span class="rv-muted">Challenge #${review.challenge_id}</span></td>
+          <td class="rv-date">${formatDate(review.created_at)}</td>
+        </tr>
+      `).join('');
+
+      document.getElementById('itemCount').textContent = `${items.length} items`;
+    })
+    .catch(err => {
+      console.error('받은 리뷰 로드 실패:', err);
+      document.getElementById('reviews_body').innerHTML = 
+        '<tr><td colspan="5" class="empty-state">데이터를 불러오는 중 오류가 발생했습니다.</td></tr>';
+    });
+  }
+
+  // 페이지 로드 시 실행
+  document.addEventListener('DOMContentLoaded', loadReceivedReviews);
+</script>
+
+</body>
+</html>

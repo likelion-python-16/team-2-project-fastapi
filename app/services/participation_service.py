@@ -388,23 +388,23 @@ class ParticipationService:
                 "user_id": p.user_id,
                 "status": p.status,
                 "role": p.role,
-                "payment_cycle": p.payment_cycle,
-                "join_motivation": p.join_motivation,
+                # "payment_cycle": p.payment_cycle,  # 임시 비활성화 - DB에 컬럼이 없음
+                # "join_motivation": p.join_motivation,  # 임시 비활성화 - DB에 컬럼이 없음
                 "joined_at": p.joined_at,
-                "activated_at": p.activated_at,
-                "completed_at": p.completed_at,
-                "left_at": p.left_at,
-                "next_payment_date": p.next_payment_date,
-                "payment_failed_count": p.payment_failed_count,
-                "total_paid_amount": p.total_paid_amount,
-                "progress_rate": p.progress_rate,
-                "attendance_count": p.attendance_count,
-                "total_rounds": p.total_rounds,
-                "leave_type": p.leave_type,
-                "leave_reason": p.leave_reason,
-                "kicked_by": p.kicked_by,
-                "is_notification_enabled": p.is_notification_enabled,
-                "auto_payment_enabled": p.auto_payment_enabled,
+                # "activated_at": p.activated_at,  # 임시 비활성화 - DB에 컬럼이 없음
+                # "completed_at": p.completed_at,  # 임시 비활성화 - DB에 컬럼이 없음
+                # "left_at": p.left_at,  # 임시 비활성화 - DB에 컬럼이 없음
+                # "next_payment_date": p.next_payment_date,  # 임시 비활성화 - DB에 컬럼이 없음
+                # "payment_failed_count": p.payment_failed_count,  # 임시 비활성화 - DB에 컬럼이 없음
+                # "total_paid_amount": p.total_paid_amount,  # 임시 비활성화 - DB에 컬럼이 없음
+                # "progress_rate": p.progress_rate,  # 임시 비활성화 - DB에 컬럼이 없음
+                # "attendance_count": p.attendance_count,  # 임시 비활성화 - DB에 컬럼이 없음
+                # "total_rounds": p.total_rounds,  # 임시 비활성화 - DB에 컬럼이 없음
+                # "leave_type": p.leave_type,  # 임시 비활성화 - DB에 컬럼이 없음
+                # "leave_reason": p.leave_reason,  # 임시 비활성화 - DB에 컬럼이 없음
+                # "kicked_by": p.kicked_by,  # 임시 비활성화 - DB에 컬럼이 없음
+                # "is_notification_enabled": p.is_notification_enabled,  # 임시 비활성화 - DB에 컬럼이 없음
+                # "auto_payment_enabled": p.auto_payment_enabled,  # 임시 비활성화 - DB에 컬럼이 없음
                 "user": user_data
             }
             
@@ -629,22 +629,22 @@ class ParticipationService:
             payment_cycle = self._determine_payment_cycle(challenge, participation_data)
             
             # 참여 데이터 초기화
-            participation.payment_cycle = payment_cycle
-            participation.join_motivation = getattr(participation_data, 'message', None)
-            participation.left_at = None
-            participation.leave_type = None
-            participation.leave_reason = None
-            participation.progress_rate = 0.0
-            participation.attendance_count = 0
+            # participation.payment_cycle = payment_cycle  # 임시 비활성화 - DB에 컬럼이 없음
+            # participation.join_motivation = getattr(participation_data, 'message', None)  # 임시 비활성화 - DB에 컬럼이 없음
+            # participation.left_at = None  # 임시 비활성화 - DB에 컬럼이 없음
+            # participation.leave_type = None  # 임시 비활성화 - DB에 컬럼이 없음
+            # participation.leave_reason = None  # 임시 비활성화 - DB에 컬럼이 없음
+            # participation.progress_rate = 0.0  # 임시 비활성화 - DB에 컬럼이 없음
+            # participation.attendance_count = 0  # 임시 비활성화 - DB에 컬럼이 없음
             
             # 상태 설정
             if payment_cycle == PaymentCycle.free:
                 participation.status = ParticipationStatus.active
-                participation.activated_at = datetime.now(timezone.utc)
+                # participation.activated_at = datetime.now(timezone.utc)  # 임시 비활성화 - DB에 컬럼이 없음
                 self._increment_challenge_participants(challenge)
             else:
                 participation.status = ParticipationStatus.payment_pending
-                participation.activated_at = None
+                # participation.activated_at = None  # 임시 비활성화 - DB에 컬럼이 없음
             
             self.db.commit()
             logger.info(f"참여 재활성화 완료: user_id={participation.user_id}, challenge_id={participation.challenge_id}, 새 상태: {participation.status}")

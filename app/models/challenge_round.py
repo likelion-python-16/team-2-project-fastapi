@@ -1,6 +1,6 @@
 from sqlalchemy import (
     Column, Integer, String, Text, Date, Time, DateTime, Float,
-    Enum, ForeignKey, UniqueConstraint, Index, func, Numeric
+    Enum, ForeignKey, UniqueConstraint, Index, func, Numeric, Boolean
 )
 from sqlalchemy.orm import relationship
 from .base import Base
@@ -46,6 +46,9 @@ class ChallengeRound(Base):
     from sqlalchemy import Boolean
     reward_enabled = Column(Boolean, default=False, nullable=False, comment="리워드 사용 여부")
     reward_text = Column(Text, nullable=True, comment="회차 리워드 내용")
+    
+    # 보상 관련
+    reward_enabled = Column(Boolean, nullable=False, default=False, comment="보상 활성화 여부")
     
     # 관계
     challenge = relationship("Challenge", back_populates="rounds")

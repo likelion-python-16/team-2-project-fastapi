@@ -84,7 +84,7 @@ class ParticipationResponse(BaseModel):
     
     # 시간 정보
     joined_at: datetime
-    activated_at: Optional[datetime] = None
+    # activated_at: Optional[datetime] = None  # 임시 비활성화 - DB에 컬럼이 없음
     completed_at: Optional[datetime] = None
     left_at: Optional[datetime] = None
     
@@ -231,7 +231,7 @@ class PaymentCompleteResponse(BaseModel):
     message: str
     user_id: int
     challenge_id: int
-    activated_at: datetime
+    # activated_at: datetime  # 임시 비활성화 - DB에 컬럼이 없음
     payment_cycle: PaymentCycle
     
     model_config = ConfigDict(from_attributes=True)
@@ -347,7 +347,7 @@ class ActiveParticipation(BaseModel):
     user_id: int
     challenge_id: int
     role: ParticipationRole
-    activated_at: datetime
+    # activated_at: datetime  # 임시 비활성화 - DB에 컬럼이 없음
     progress_rate: float
     attendance_count: int
     payment_cycle: Optional[PaymentCycle] = None

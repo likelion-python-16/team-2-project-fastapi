@@ -273,6 +273,9 @@
   <h3>🎯 챌린지 참여</h3>
   <button id="btnJoinWithPayment" class="btn primary" style="background:#2563eb;color:white;border-color:#2563eb;margin-right:8px">참여하기</button>
   <button id="btnLeaveChallenge" class="btn" style="display:none;background:#fee;color:#c00;border-color:#fcc">참여 취소</button>
+  <div style="margin-top:8px">
+    <button id="btnWriteReview" class="btn" style="display:none;background:#10b981;color:white;border-color:#10b981">리뷰 쓰기</button>
+  </div>
   <div id="participationMsg" style="margin-top:8px;font-size:14px;color:#555"></div>
 </div>
 
@@ -651,6 +654,7 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
   async function updatePaymentButtonStatus(challenge) {
     const btnJoin = document.getElementById('btnJoinWithPayment');
     const btnLeave = document.getElementById('btnLeaveChallenge');
+    const btnWriteReview = document.getElementById('btnWriteReview');
     const msg = document.getElementById('participationMsg');
     
     const status = challenge.status || 'draft';
@@ -667,7 +671,8 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
       btnJoin.disabled = true;
       btnJoin.textContent = '생성자';
       btnLeave.style.display = 'none';
-      msg.innerHTML = '<span style="color:#888">👑 챌린지 생성자입니다. 관리 패널을 이용해 주세요.</span>';
+      if (btnWriteReview) btnWriteReview.style.display = 'inline-block';
+      msg.innerHTML = '<span style="color:#888">👑 생성자도 리뷰를 작성할 수 있습니다.</span>';
     } else if (userParticipation) {
       const participationStatus = userParticipation.status;
       
@@ -677,6 +682,7 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
         btnJoin.style.background = '#10b981';
         btnJoin.style.color = 'white';
         btnLeave.style.display = 'inline-block';
+        if (btnWriteReview) btnWriteReview.style.display = 'inline-block';
         msg.innerHTML = '<span style="color:#0a7">✅ 챌린지에 참여 중입니다!</span>';
       } else if (participationStatus === 'payment_pending') {
         btnJoin.disabled = false;
@@ -684,6 +690,7 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
         btnJoin.style.background = '#f59e0b';
         btnJoin.style.color = 'white';
         btnLeave.style.display = 'inline-block';
+        if (btnWriteReview) btnWriteReview.style.display = 'none';
         const fee = challenge.payment_type === 'entry_fee' ? challenge.entry_fee : challenge.monthly_fee;
         msg.innerHTML = `<span style="color:#f59e0b">💳 ${fee?.toLocaleString() || 0}원 결제를 완료해 주세요.</span>`;
       } else if (participationStatus === 'pending') {
@@ -692,12 +699,14 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
         btnJoin.style.background = '#6b7280';
         btnJoin.style.color = 'white';
         btnLeave.style.display = 'inline-block';
+        if (btnWriteReview) btnWriteReview.style.display = 'none';
         msg.innerHTML = '<span style="color:#f59e0b">⏳ 참가 승인을 기다리고 있습니다.</span>';
       }
     } else if (isDraft) {
       btnJoin.disabled = true;
       btnJoin.textContent = '준비 중';
       btnLeave.style.display = 'none';
+      if (btnWriteReview) btnWriteReview.style.display = 'none';
       msg.innerHTML = '<span style="color:#888">챌린지가 아직 준비 중입니다</span>';
     } else if (canJoin) {
       btnJoin.disabled = false;
@@ -705,6 +714,7 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
       btnJoin.style.background = '#2563eb';
       btnJoin.style.color = 'white';
       btnLeave.style.display = 'none';
+      if (btnWriteReview) btnWriteReview.style.display = 'none';
       
       const paymentType = challenge.payment_type || 'free';
       if (paymentType === 'free') {
@@ -717,6 +727,7 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
       btnJoin.disabled = true;
       btnJoin.textContent = '참여 불가';
       btnLeave.style.display = 'none';
+      if (btnWriteReview) btnWriteReview.style.display = 'none';
       const statusText = getStatusText(status);
       msg.innerHTML = `<span style="color:#c00">현재 참여할 수 없습니다 (상태: ${statusText})</span>`;
     }
@@ -1431,6 +1442,7 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
   // 참여/취소 버튼
   const btnJoin = document.getElementById('btnJoinWithPayment');
   const btnLeave = document.getElementById('btnLeaveChallenge');
+  const btnWriteReview = document.getElementById('btnWriteReview');
   const msg = document.getElementById('participationMsg');
   const setMsg = (t, type='info') => {
     const color = type === 'error' ? '#c00' : (type==='ok' ? '#0a7' : '#666');
@@ -1589,6 +1601,11 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
     } catch (e) {
       setMsg(`참여 처리 실패: ${e.message}`, 'error');
     }
+  });
+
+  // 리뷰 쓰기: 리뷰 목록 페이지로 이동(대상 선택)
+  btnWriteReview?.addEventListener('click', () => {
+    window.location.href = `/api/reviews?challenge_id=${encodeURIComponent(CHALLENGE_ID)}`;
   });
 
   // 참여 취소 버튼 이벤트 리스너

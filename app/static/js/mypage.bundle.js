@@ -272,10 +272,9 @@
       qs("my_intro").textContent  = intro || "소개글이 없습니다.";
       if(qs("hero_intro")) qs("hero_intro").textContent = intro ? `“${intro}”` : "“소개글이 없습니다.”";
 
-      const ms = (u.manner_score ?? u.manner ?? null);
-      if(ms!=null){
-        qs("my_manner").textContent    = ms;
-      }
+      const msRaw = (u.manner_score ?? u.manner ?? null);
+      const ms = (msRaw == null) ? 30 : Math.max(30, Math.min(100, Math.round(Number(msRaw)||0)));
+      if(qs("my_manner")) qs("my_manner").textContent = ms;
       if(u.total_points != null){
         try { qs("my_points").textContent = Number(u.total_points||0).toLocaleString('ko-KR'); } catch {}
       }
@@ -464,24 +463,58 @@
       }
     }
 
-    /* ===== 리뷰 내역 (프론트 전용) ===== */
+    /* ===== 리뷰 내역: 내가 받은 리뷰 표시 ===== */
     async function loadReviews(){
       const tbody = qs('reviews_body'); if(!tbody) return;
-      // 서버에 리뷰 API가 없을 수도 있으므로 graceful fallback
-      try{
-        const res = await jget('/api/v1/users/me/reviews?skip=0&limit=10');
-        const items = Array.isArray(res?.items) ? res.items : [];
-        if(items.length){
-          tbody.innerHTML = items.map(r=>{
-            const star='★'.repeat(Math.max(0,Math.min(5, r.rating||0)));
-            return `<tr><td>${star}</td><td>${(r.content||'').slice(0,120)}</td></tr>`;
+      const render = (arr)=>{
+        if(arr && arr.length){
+          tbody.innerHTML = arr.map(r=>{
+            const n = Math.max(0, Math.min(5, Math.round(Number(r.rating||0))));
+            const stars = '★'.repeat(n) + '☆'.repeat(5-n);
+            const comment = (r.comment || r.content || '').toString();
+            return `<tr><td>${stars}</td><td>${comment.replace(/[\n\r]/g,' ').slice(0,180)}</td></tr>`;
           }).join('');
-          return;
+          return true;
         }
-      }catch(_){
-        // 데이터 로딩 실패시 빈 상태 표시
-        tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;color:#999;">리뷰 데이터가 없습니다.</td></tr>';
-      }
+        return false;
+      };
+
+      try{
+        // 1) 기본: 내가 받은 리뷰 API
+        const res = await jget('/api/v1/reviews/received?size=20');
+        const items = Array.isArray(res?.items) ? res.items : [];
+        if (render(items)) return;
+      }catch(e){ console.warn('[mypage] received reviews error', e); }
+
+      // 2) 보조: 내가 참여/완료한 챌린지에서 대상이 나(me.id)인 리뷰 수집
+      try{
+        const me = await jget('/api/v1/auth/me');
+        const meId = me?.id;
+        if (meId) {
+          let chList = [];
+          try {
+            const done = await jget('/api/v1/me/challenges/completed');
+            chList = Array.isArray(done?.items) ? done.items : [];
+          } catch(_) {}
+          if (!Array.isArray(chList) || chList.length === 0) {
+            const mine = await jget('/api/v1/challenges?mine=true');
+            chList = Array.isArray(mine?.items) ? mine.items : [];
+          }
+          const ids = (chList||[]).map(c=>c.id).filter(Boolean).slice(0, 8);
+          const collected = [];
+          for (const cid of ids) {
+            try{
+              const r = await jget(`/api/v1/challenges/${cid}/reviews?size=50`);
+              const its = Array.isArray(r?.items) ? r.items : [];
+              its.forEach(x=>{ if (x.target_user_id === meId) collected.push(x); });
+            }catch(_){/* ignore */}
+          }
+          if (render(collected)) return;
+        }
+      }catch(e){ console.warn('[mypage] fallback collect error', e); }
+
+      // 3) 최종: 비어있음 메시지
+      tbody.innerHTML = '<tr><td colspan="2">아직 받은 리뷰가 없습니다.</td></tr>';
     }
 
     /* ===== 팔로워/팔로잉 카운트 ===== */

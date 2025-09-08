@@ -18,6 +18,7 @@ from app.models.challenge_round import ChallengeRound
 from app.models.round_manager import RoundManager
 from app.models.attendance import RoundAttendance
 from app.models.tag import Tag, ChallengeTag
+from app.models.notification import Notification, NotificationEvent
 
 # Schemas
 from app.schemas.challenge import (
@@ -678,6 +679,18 @@ async def create_challenge(
     db.commit()
     db.refresh(new_challenge)
     
+    # 챌린지 생성 알림 생성
+    notification = Notification(
+        user_id=me,
+        title="🎯 챌린지 생성 완료",
+        content=f"새로운 챌린지 '{new_challenge.title}'를 생성했습니다",
+        event_type=NotificationEvent.challenge_created,
+        target_type="challenge",
+        target_id=new_challenge.id
+    )
+    db.add(notification)
+    db.commit()
+    
     # ✅ 응답에 결제 필요 여부 추가
     challenge_response = _with_tags(db, new_challenge)
     
@@ -1047,6 +1060,19 @@ def join_challenge(challenge_id: int, db: Session = Depends(get_db), me: int = D
         ch.current_participants = (ch.current_participants or 0) + 1
     
     db.commit()
+    
+    # 챌린지 참여 알림 생성
+    notification = Notification(
+        user_id=me,
+        title="👥 챌린지 참여 완료",
+        content=f"'{ch.title}' 챌린지에 참여했습니다",
+        event_type=NotificationEvent.challenge_joined,
+        target_type="challenge",
+        target_id=challenge_id
+    )
+    db.add(notification)
+    db.commit()
+    
     return {"message": "Joined challenge successfully"}
 
 @router.delete("/{challenge_id}/leave")
