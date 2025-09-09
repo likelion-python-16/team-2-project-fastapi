@@ -6,7 +6,7 @@ from typing import List, Dict, Tuple, Optional
 import numpy as np
 from functools import lru_cache
 
-from app.nlp.model_loader_dummy import embed_texts
+from app.nlp.model_loader import embed_texts
 
 class SmartTagMatcher:
     """카테고리 키워드와 NLP 모델을 사용한 스마트 태그 매칭"""

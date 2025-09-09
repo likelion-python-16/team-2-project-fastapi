@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 from typing import List, Dict, Tuple, Optional
 from sqlalchemy.orm import Session
-from app.nlp.model_loader_dummy import embed_texts
+from app.nlp.model_loader import embed_texts
 from app.models.challenge import Challenge
 from app.models.participation import Participation
 from app.models.user import User
