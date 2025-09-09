@@ -34,6 +34,10 @@ class Notification(Base, TimestampMixin):
     event_type = Column(SAEnum(NotificationEvent, name="notification_event_enum"), nullable=True)
     type = Column(SAEnum(NotificationEvent, name="notification_type_enum"), nullable=True)  # type 필드도 지원
     
+    # 대상 객체 정보
+    target_type = Column(String(50), nullable=True, comment="대상 타입 (review, challenge 등)")
+    target_id = Column(Integer, nullable=True, comment="대상 객체 ID")
+    
     # TimestampMixin이 created_at, updated_at을 제공하므로 중복 제거
     
     # 관계 - 수정된 부분

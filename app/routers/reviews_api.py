@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import List, Optional
 from functools import lru_cache
 from pathlib import Path
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
@@ -21,6 +22,7 @@ from app.models.participation import Participation
 from app.schemas.reviews import ReviewCreate, ReviewUpdate, ReviewOut, ReviewList
 
 router = APIRouter(tags=["Reviews"])  # prefix 는 main.py 에서 /api/v1 로 묶음
+logger = logging.getLogger(__name__)
 
 
 # ---- helpers ---------------------------------------------------------------
@@ -189,6 +191,7 @@ def create_review(
             pass
     # 알림 생성(작성자/대상자)
     try:
+        logger.info(f"Creating notifications for review {m.id}")
         db.add(Notification(
             user_id=current_user.id,
             title="✍️ 리뷰 작성 완료",
@@ -198,6 +201,7 @@ def create_review(
             target_id=m.id,
         ))
         if payload.target_id:
+            logger.info(f"Creating notification for target user {payload.target_id}")
             db.add(Notification(
                 user_id=int(payload.target_id),
                 title="⭐ 새로운 리뷰 도착",
@@ -207,7 +211,9 @@ def create_review(
                 target_id=m.id,
             ))
         db.commit()
-    except Exception:
+        logger.info("Notifications created successfully")
+    except Exception as e:
+        logger.error(f"Failed to create notifications: {e}")
         db.rollback()
     
     return _to_review_out(m)
@@ -349,8 +355,9 @@ def update_review(
         now = datetime.now(timezone.utc)
         created = m.created_at if m.created_at.tzinfo else m.created_at.replace(tzinfo=timezone.utc)
         gap = now - created
-        if gap > timedelta(hours=settings.review_edit_window_hours):
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"작성 후 {settings.review_edit_window_hours}시간이 지나 수정할 수 없습니다")
+        edit_window_hours = getattr(settings, 'review_edit_window_hours', 24)  # 기본값 24시간
+        if gap > timedelta(hours=edit_window_hours):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"작성 후 {edit_window_hours}시간이 지나 수정할 수 없습니다")
 
     if payload.rating is not None:
         m.rating = float(payload.rating)

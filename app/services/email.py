@@ -15,21 +15,47 @@ from app.models.email_verification import EmailVerification
 class EmailService:
     @staticmethod
     def _send_smtp_email(to_email: str, subject: str, html_body: str) -> None:
-        """SMTP를 통해 이메일 발송"""
-        if not all([settings.smtp_host, settings.smtp_user, settings.smtp_pass]):
-            raise ValueError("SMTP 설정이 완료되지 않았습니다")
-        
+        """SMTP를 통해 이메일 발송 (로컬/프로덕션 모두 지원)
+
+        - 포트 465: SMTPS(SSL)
+        - 그 외: SMTP, 필요 시 STARTTLS
+        - 인증 정보 미설정 시 로그인 생략 (Mailpit, Mailhog 등 로컬 테스터 호환)
+        """
+        if not settings.smtp_host:
+            raise ValueError("SMTP_HOST가 설정되지 않았습니다")
+
         msg = MIMEMultipart('alternative')
         msg['Subject'] = subject
         msg['From'] = settings.mail_from
         msg['To'] = to_email
-        
+
         html_part = MIMEText(html_body, 'html', 'utf-8')
         msg.attach(html_part)
-        
-        with smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port) as server:
-            server.login(settings.smtp_user, settings.smtp_pass)
+
+        host = settings.smtp_host
+        port = int(settings.smtp_port or 25)
+
+        if port == 465:
+            server = smtplib.SMTP_SSL(host, port)
+        else:
+            server = smtplib.SMTP(host, port)
+            try:
+                if getattr(settings, 'smtp_starttls', False):
+                    server.ehlo()
+                    server.starttls()
+                    server.ehlo()
+            except Exception:
+                # STARTTLS 실패는 무시(평문 SMTP 허용 환경일 수 있음)
+                pass
+        try:
+            if settings.smtp_user and settings.smtp_pass:
+                server.login(settings.smtp_user, settings.smtp_pass)
             server.send_message(msg)
+        finally:
+            try:
+                server.quit()
+            except Exception:
+                pass
 
     @staticmethod
     def create_verification_token(db: Session, user: User) -> str:

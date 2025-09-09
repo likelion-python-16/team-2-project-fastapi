@@ -315,23 +315,74 @@
 
     editSave.addEventListener('click', () => {
       if (!editingId) return;
-      const state = loadState();
-
-      const now = new Date();
-      const pad = n => n.toString().padStart(2,'0');
-      const ts  = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
-
-      state[editingId] = {
-        ...(state[editingId] || {}),
-        comment  : editComment.value.trim(),
-        rating   : starValue,
-        updated_at: ts,
-        _deleted : false,
-      };
-      saveState(state);
-      applyState();
-      toast('저장되었습니다.');
-      closeModal();
+      
+      const comment = editComment.value.trim();
+      const rating = starValue;
+      
+      // 서버에 실제 업데이트 요청
+      const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+      if (token) {
+        fetch(`/api/v1/reviews/${editingId}`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': 'Bearer ' + token,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            comment: comment,
+            rating: rating
+          })
+        }).then(r => {
+          if (r.ok) {
+            return r.json();
+          } else {
+            throw new Error(`HTTP ${r.status}`);
+          }
+        }).then(data => {
+          // 서버 업데이트 성공 시 화면 갱신
+          const tr = document.querySelector(`tr[data-target-id="${editingId}"]`);
+          if (tr) {
+            const commentEl = tr.querySelector('.rv-comment');
+            if (commentEl) commentEl.textContent = comment;
+            
+            const ratingCell = tr.children[1];
+            if (ratingCell) {
+              ratingCell.innerHTML = renderStars(rating);
+              const starsEl = ratingCell.querySelector('.rv-stars');
+              if (starsEl) starsEl.setAttribute('aria-label', `${rating}/5`);
+            }
+            
+            const dateEl = tr.querySelector('.rv-date');
+            if (dateEl && data.updated_at) {
+              const date = new Date(data.updated_at);
+              dateEl.textContent = date.toISOString().slice(0,16).replace('T',' ');
+            }
+          }
+          toast('수정되었습니다.');
+          closeModal();
+        }).catch(err => {
+          console.error('Update error:', err);
+          toast('수정 실패: 서버 오류');
+        });
+      } else {
+        // 토큰이 없는 경우 기존 로컬 저장 방식 (백업용)
+        const state = loadState();
+        const now = new Date();
+        const pad = n => n.toString().padStart(2,'0');
+        const ts = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+        
+        state[editingId] = {
+          ...(state[editingId] || {}),
+          comment: comment,
+          rating: rating,
+          updated_at: ts,
+          _deleted: false,
+        };
+        saveState(state);
+        applyState();
+        toast('저장되었습니다 (로컬).');
+        closeModal();
+      }
     });
 
     // edit / delete 버튼

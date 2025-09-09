@@ -20,7 +20,11 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    op.add_column('users', sa.Column('is_superadmin', sa.Boolean(), nullable=False, server_default='0'))
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing_cols = {col['name'] for col in inspector.get_columns('users')}
+    if 'is_superadmin' not in existing_cols:
+        op.add_column('users', sa.Column('is_superadmin', sa.Boolean(), nullable=False, server_default='0'))
 
 
 def downgrade() -> None:

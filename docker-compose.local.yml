@@ -10,6 +10,8 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+      mailpit:
+        condition: service_started
     environment:
       # 환경 설정
       - ENVIRONMENT=development
@@ -46,6 +48,14 @@ services:
       - VERIFICATION_LINK_BASE=${VERIFICATION_LINK_BASE:-http://localhost:8001/api/v1}
       - VERIFY_SUCCESS_URL=${VERIFY_SUCCESS_URL:-http://localhost:8001/verify/success}
       - VERIFY_FAIL_URL=${VERIFY_FAIL_URL:-http://localhost:8001/verify/fail}
+      # 이메일 인증 사용 및 SMTP 설정(로컬: Mailpit)
+      - REQUIRE_EMAIL_VERIFICATION=${REQUIRE_EMAIL_VERIFICATION:-true}
+      - MAIL_FROM=${MAIL_FROM:-no-reply@example.com}
+      - SMTP_HOST=${SMTP_HOST:-mailpit}
+      - SMTP_PORT=${SMTP_PORT:-1025}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_STARTTLS=${SMTP_STARTTLS:-false}
       
       # AWS 설정 (.env에서 가져오기)
       - AWS_REGION=${AWS_REGION:-}
@@ -99,6 +109,17 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # 로컬 메일 서버 (http://localhost:8025)
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: team-mailpit-local
+    ports:
+      - "8025:8025"  # Web UI
+      - "1025:1025"  # SMTP
+    networks:
+      - team-network-local
+    restart: unless-stopped
 
 volumes:
   mysql_data_local:

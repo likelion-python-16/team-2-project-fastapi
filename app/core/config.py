@@ -82,6 +82,7 @@ class Settings(BaseSettings):
     smtp_port: int = int(os.getenv("SMTP_PORT", "465"))
     smtp_user: str = os.getenv("SMTP_USER", "")
     smtp_pass: str = os.getenv("SMTP_PASS", "")
+    smtp_starttls: bool = os.getenv("SMTP_STARTTLS", "false").lower() in ("1", "true", "yes")
 
     # 기본값을 8000으로 통일 (단일 앱 실행 환경 안전값)
     verification_link_base: str = os.getenv("VERIFICATION_LINK_BASE", "http://localhost:8000/api/v1")

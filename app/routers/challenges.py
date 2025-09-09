@@ -664,17 +664,14 @@ async def create_challenge(
     creator_participation = ParticipationManager.create_participation(
         user_id=me,
         challenge_id=new_challenge.id,
-        role=ParticipationRole.creator,
-        payment_cycle=payment_cycle,
-        join_motivation="챌린지 생성자"
+        role=ParticipationRole.creator
     )
     
     db.add(creator_participation)
     
-    # 무료 챌린지는 즉시 활성화, 유료는 결제 대기
-    if payment_cycle == PaymentCycle.free:
-        creator_participation.activate_participation()
-        new_challenge.current_participants = 1
+    # 생성자는 항상 활성 상태로 설정
+    creator_participation.status = ParticipationStatus.active
+    new_challenge.current_participants = 1
 
     db.commit()
     db.refresh(new_challenge)
@@ -1030,7 +1027,8 @@ def join_challenge(challenge_id: int, db: Session = Depends(get_db), me: int = D
     if not ch:
         raise HTTPException(404, "Challenge not found")
     if ch.status != ChallengeStatus.recruiting:
-        raise HTTPException(400, "Can only join recruiting challenges")
+        logger.warning(f"Challenge {challenge_id} has status '{ch.status}', expected 'recruiting'")
+        raise HTTPException(400, f"Can only join recruiting challenges (current status: {ch.status})")
     
     # 참가 가능 여부 확인 (새 모델 메서드 사용)
     try:

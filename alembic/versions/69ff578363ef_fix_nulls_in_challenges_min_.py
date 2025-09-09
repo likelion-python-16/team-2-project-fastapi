@@ -11,7 +11,7 @@ from sqlalchemy.dialects import mysql
 
 # revision identifiers, used by Alembic.
 revision = "69ff578363ef"
-down_revision = "<직전 리비전 ID 넣기>"
+down_revision = '877172f11b1f'
 branch_labels = None
 depends_on = None
 

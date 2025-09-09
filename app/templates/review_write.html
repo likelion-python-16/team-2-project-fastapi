@@ -97,7 +97,7 @@
         <div class="actions" style="margin-top:14px">
           <button type="submit" class="btn primary" id="btnSubmit">리뷰 등록</button>
         </div>
-        <div class="hint">※ 같은 챌린지에는 1회만 작성 가능</div>
+        <div class="hint">※ 같은 대상에게는 1회만 리뷰 작성 가능</div>
 
         <!-- 서버 값 전달용 hidden -->
         <input type="hidden" id="rating" value="0">
@@ -247,7 +247,7 @@
         }
         if (res.status === 401) msg = '로그인이 필요합니다.';
         if (res.status === 409) {
-          msg = '이미 해당 대상에게 리뷰를 작성하셨습니다.\\n리뷰 목록에서 확인하시겠습니까?';
+          msg = '이미 이 사용자에게 리뷰를 작성하셨습니다.\\n다른 챌린지 멤버에게는 리뷰 작성이 가능합니다.\\n리뷰 목록에서 확인하시겠습니까?';
           if (confirm(msg)) {
             window.location.href = `/api/reviews?challenge_id=${challenge_id}`;
             return;

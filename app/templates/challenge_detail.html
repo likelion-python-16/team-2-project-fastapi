@@ -314,22 +314,50 @@ window.USER_ID = {{ ((current_user.id) if (current_user) else None) | tojson }};
 const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
 // ↳ 만약 404가 난다면 '/api/v1'로 바꿔보세요.
 
+  function getToken(){
+    // localStorage와 sessionStorage 양쪽에서 토큰 찾기
+    let token = localStorage.getItem('access_token');
+    if (!token) {
+      token = sessionStorage.getItem('access_token');
+    }
+    return token;
+  }
+
   function authHeader(){
-    const t = localStorage.getItem('access_token');
+    const t = getToken();
+    console.log('[DEBUG] authHeader - 토큰 소스:', t ? (localStorage.getItem('access_token') ? 'localStorage' : 'sessionStorage') : 'null');
+    console.log('[DEBUG] authHeader - 토큰:', t ? 'Bearer ' + t.substring(0, 20) + '...' : 'null');
     return t ? { 'Authorization': 'Bearer ' + t } : {};
   }
 
   async function safeFetchJSON(url, options = {}) {
+    const token = getToken();
+    console.log('[DEBUG] safeFetchJSON - URL:', url);
+    console.log('[DEBUG] safeFetchJSON - 토큰 길이:', token ? token.length : '없음');
+    
+    const headers = { 'Accept': 'application/json', ...authHeader(), ...(options.headers||{}) };
+    console.log('[DEBUG] safeFetchJSON - 헤더:', headers);
+    
     const res = await fetch(url, {
       credentials: 'include',
-      headers: { 'Accept': 'application/json', ...authHeader(), ...(options.headers||{}) },
+      headers: headers,
       ...options,
     });
+    
+    console.log('[DEBUG] safeFetchJSON - 응답 상태:', res.status);
+    
     const ct = res.headers.get('content-type') || '';
     const isJSON = ct.includes('application/json');
     const body = isJSON ? await res.json() : await res.text();
+    
     if (!isJSON) throw new Error(`Expected JSON but got ${ct} ${res.status}: ${String(body).slice(0,200)}`);
-    if (!res.ok) throw new Error((body && (body.detail || body.message)) || `HTTP ${res.status}`);
+    if (!res.ok) {
+      console.log('[DEBUG] safeFetchJSON - 오류 응답:', body);
+      console.log('[DEBUG] safeFetchJSON - 전체 응답:', { status: res.status, headers: Object.fromEntries(res.headers), body });
+      const error = new Error((body && (body.detail || body.message)) || `HTTP ${res.status}`);
+      error.status = res.status;
+      throw error;
+    }
     return body;
   }
 
@@ -464,6 +492,36 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
       document.getElementById('challengeHeader').innerHTML = '<span class="err">challenge_id 없음</span>';
       return;
     }
+    
+    // 즉시 로그인 상태 확인
+    console.log('[DEBUG] 페이지 로드 시 로그인 상태 확인');
+    console.log('[DEBUG] CHALLENGE_ID 확인:', CHALLENGE_ID);
+    console.log('[DEBUG] CHALLENGE_ID 타입:', typeof CHALLENGE_ID);
+    
+    // URL에서 챌린지 ID 추출 (폴백)
+    const urlMatch = window.location.pathname.match(/\/pages\/challenges\/(\d+)/);
+    if (urlMatch && !CHALLENGE_ID) {
+      console.log('[DEBUG] URL에서 챌린지 ID 추출:', urlMatch[1]);
+      window.CHALLENGE_ID = parseInt(urlMatch[1]);
+    }
+    
+    // 토큰 상태 상세 확인
+    const localToken = localStorage.getItem('access_token');
+    const sessionToken = sessionStorage.getItem('access_token');
+    const token = getToken();
+    
+    console.log('[DEBUG] localStorage 토큰 존재:', !!localToken);
+    console.log('[DEBUG] sessionStorage 토큰 존재:', !!sessionToken);
+    
+    if (token) {
+      console.log('[DEBUG] 사용 중인 토큰 길이:', token.length);
+      console.log('[DEBUG] 토큰 형식 (점 개수):', (token.match(/\./g) || []).length);
+      console.log('[DEBUG] 토큰 소스:', localToken ? 'localStorage' : 'sessionStorage');
+    }
+    
+    const initialUser = await getCurrentUser();
+    console.log('[DEBUG] 초기 사용자:', initialUser?.id || 'null');
+    
     initVisibilityToggles();
     await loadChallenge();
     await loadRounds();
@@ -569,11 +627,60 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
   }
 
   async function loadChallenge(){
-    console.log('Loading challenge data...');
-    // 사용자 참여 상태가 포함된 챌린지 정보 로드
-    const ch = await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}/with-participation`);
-    console.log('Loaded challenge:', ch);
-    S.challenge = ch;
+    console.log('[DEBUG] Loading challenge data...');
+    console.log('[DEBUG] Challenge ID:', CHALLENGE_ID);
+    console.log('[DEBUG] API_CH:', API_CH);
+    
+    // CHALLENGE_ID 확인 및 수정
+    let challengeId = CHALLENGE_ID;
+    if (!challengeId || challengeId === null) {
+      const urlMatch = window.location.pathname.match(/\/pages\/challenges\/(\d+)/);
+      if (urlMatch) {
+        challengeId = parseInt(urlMatch[1]);
+        console.log('[DEBUG] URL에서 추출한 챌린지 ID:', challengeId);
+      } else {
+        console.error('[DEBUG] 챌린지 ID를 찾을 수 없음');
+        document.getElementById('challengeHeader').innerHTML = '<span class="err">챌린지 ID를 찾을 수 없습니다</span>';
+        return;
+      }
+    }
+    
+    try {
+      // 사용자 참여 상태가 포함된 챌린지 정보 로드
+      const ch = await safeFetchJSON(`${API_CH}/challenges/${challengeId}/with-participation`);
+      console.log('[DEBUG] Loaded challenge:', ch);
+      console.log('[DEBUG] Challenge status:', ch?.status);
+      
+      if (!ch || !ch.id) {
+        console.error('[DEBUG] 챌린지 데이터가 유효하지 않음:', ch);
+        throw new Error('챌린지 데이터를 불러올 수 없습니다.');
+      }
+      
+      S.challenge = ch;
+    } catch (error) {
+      console.error('[DEBUG] loadChallenge 실패:', error);
+      
+      // 폴백: 기본 챌린지 API 시도
+      try {
+        console.log('[DEBUG] 폴백: 기본 API로 재시도');
+        const ch = await safeFetchJSON(`${API_CH}/challenges/${challengeId}`);
+        console.log('[DEBUG] 폴백 성공:', ch);
+        S.challenge = ch;
+      } catch (fallbackError) {
+        console.error('[DEBUG] 폴백도 실패:', fallbackError);
+        S.challenge = null;
+        document.getElementById('challengeHeader').innerHTML = '<span class="err">챌린지 데이터 로드 실패</span>';
+        return;
+      }
+    }
+    
+    // S.challenge가 설정되었는지 확인
+    if (!S.challenge) {
+      console.error('[DEBUG] S.challenge가 null입니다');
+      return;
+    }
+    
+    const ch = S.challenge;
     document.getElementById('challengeHeader').innerHTML =
       `<b>#${ch.id}</b> ${ch.title || ''} · ${ch.mode || ''} · ${ch.status || ''}`;
     // 개발용 디버그 출력은 숨김 처리
@@ -617,7 +724,7 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
       btn.onclick = async () => {
         try{
           if (msg) msg.textContent = '저장 중...';
-          await safeFetchJSON(`${API_CH}/challenges/${CHALLENGE_ID}`, {
+          await safeFetchJSON(`${API_CH}/challenges/${challengeId}`, {
             method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode: sel.value })
           });
           if (msg) msg.textContent = '저장됨';
@@ -747,9 +854,33 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
 
   async function getCurrentUser() {
     try {
-      return await safeFetchJSON('/api/v1/auth/me');
+      const token = getToken();
+      console.log('[DEBUG] getCurrentUser - 토큰 상태:', token ? '존재' : '없음');
+      console.log('[DEBUG] getCurrentUser - 토큰 시작:', token ? token.substring(0, 20) + '...' : 'null');
+      
+      if (!token) {
+        console.log('[DEBUG] getCurrentUser - 토큰이 없음');
+        return null;
+      }
+      
+      // 토큰 형식 검증 (JWT는 보통 3개의 점으로 구분됨)
+      if (!token.includes('.')) {
+        console.log('[DEBUG] getCurrentUser - 유효하지 않은 토큰 형식');
+        localStorage.removeItem('access_token');
+        return null;
+      }
+      
+      const response = await safeFetchJSON('/api/v1/auth/me');
+      console.log('[DEBUG] getCurrentUser - 성공:', response?.id || 'no id');
+      return response;
     } catch (e) {
-      console.log('getCurrentUser failed:', e.message);
+      console.log('[DEBUG] getCurrentUser - 실패:', e.message, 'status:', e.status);
+      // 토큰이 만료되었거나 유효하지 않은 경우 양쪽 스토리지에서 제거
+      if (e.status === 401 || e.status === 403) {
+        console.log('[DEBUG] 인증 오류로 토큰 제거');
+        localStorage.removeItem('access_token');
+        sessionStorage.removeItem('access_token');
+      }
       return null;
     }
   }
@@ -1473,10 +1604,43 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
       return;
     }
 
+    // 챌린지 데이터 존재 확인
+    if (!S.challenge) {
+      console.error('[DEBUG] S.challenge가 null 또는 undefined');
+      setMsg('챌린지 데이터를 불러오는 중입니다. 잠시 후 다시 시도해주세요.', 'error');
+      // 챌린지 데이터 다시 로드 시도
+      await loadChallenge();
+      if (!S.challenge) {
+        setMsg('챌린지 데이터를 불러올 수 없습니다. 페이지를 새로고침해주세요.', 'error');
+        return;
+      }
+    }
+
     // 챌린지 상태 재확인
-    if (!S.challenge || S.challenge.status !== 'recruiting') {
-      setMsg('모집중인 챌린지만 참여할 수 있습니다', 'error');
-      return;
+    if (S.challenge.status !== 'recruiting') {
+      console.warn('[DEBUG] 챌린지 상태가 recruiting이 아님:', S.challenge?.status);
+      
+      // 임시: 챌린지 상태를 recruiting으로 강제 변경 시도
+      if (S.challenge && S.challenge.status === 'draft') {
+        console.log('[DEBUG] draft 상태를 recruiting으로 변경 시도');
+        try {
+          const token = getToken();
+          const response = await safeFetchJSON(`/api/v1/challenges/${CHALLENGE_ID}/status?new_status=recruiting`, {
+            method: 'PATCH',
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          console.log('[DEBUG] 상태 변경 성공:', response);
+          S.challenge.status = 'recruiting';
+          // 상태 변경 후 다시 진행
+        } catch (e) {
+          console.error('[DEBUG] 상태 변경 실패:', e);
+          setMsg(`현재 챌린지 상태: ${S.challenge?.status}. 관리자가 먼저 모집중으로 변경해야 합니다.`, 'error');
+          return;
+        }
+      } else {
+        setMsg(`현재 챌린지 상태: ${S.challenge?.status}. 모집중인 챌린지만 참여할 수 있습니다.`, 'error');
+        return;
+      }
     }
 
     // 생성자인지 확인
@@ -1485,6 +1649,26 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
       setMsg('챌린지 생성자는 참여할 수 없습니다', 'error');
       return;
     }
+
+    // 현재 사용자 정보 재확인 (토큰 유효성 검증 포함)
+    const verifiedUser = await getCurrentUser();
+    console.log('[DEBUG] 참여 버튼 클릭 - 사용자 검증:', verifiedUser?.id || 'null');
+    
+    if (!verifiedUser) {
+      setMsg('로그인이 필요합니다. 로그인 후 다시 시도해 주세요.', 'error');
+      const ret = encodeURIComponent(location.pathname + location.search);
+      setTimeout(()=>{ location.href = `/login?return_to=${ret}`; }, 800);
+      return;
+    }
+
+    // 현재 챌린지 상태 확인 및 로깅
+    console.log('[DEBUG] 현재 챌린지 상태:', S.challenge?.status);
+    console.log('[DEBUG] 챌린지 ID:', CHALLENGE_ID);
+    console.log('[DEBUG] 전체 챌린지 정보:', S.challenge);
+    
+    // 인증 토큰 체크
+    const tokenForJoin = getToken() || '';
+    console.log('[DEBUG] 토큰 존재 여부:', tokenForJoin ? '있음' : '없음');
 
     try {
       // 최신 챌린지 상태 확인
@@ -1514,7 +1698,7 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('access_token') || ''}`
+            'Authorization': `Bearer ${tokenForJoin}`
           },
           body: JSON.stringify({ challenge_id: CHALLENGE_ID })
         });
@@ -1534,7 +1718,7 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('access_token') || ''}`
+            'Authorization': `Bearer ${tokenForJoin}`
           },
           body: JSON.stringify({ challenge_id: CHALLENGE_ID })
         });

@@ -70,19 +70,17 @@ class ParticipationService:
             participation = ParticipationManager.create_participation(
                 user_id=user.id,
                 challenge_id=challenge.id,
-                role=ParticipationRole.participant,
-                payment_cycle=payment_cycle,
-                join_motivation=getattr(participation_data, 'message', None)
+                role=ParticipationRole.participant
             )
             
             self.db.add(participation)
             
             # 5. 자동 승인 처리
-            if not challenge.require_approval and payment_cycle == PaymentCycle.free:
-                participation.activate_participation()
+            if not challenge.require_approval:
+                participation.status = ParticipationStatus.active
                 self._increment_challenge_participants(challenge)
-            elif payment_cycle != PaymentCycle.free:
-                participation.status = ParticipationStatus.payment_pending
+            else:
+                participation.status = ParticipationStatus.pending
             
             self.db.commit()
             self.db.refresh(participation)
@@ -140,18 +138,12 @@ class ParticipationService:
         
         if approval_data.approved:
             # 승인 처리
-            if participation.payment_cycle == PaymentCycle.free:
-                participation.activate_participation()
-                self._increment_challenge_participants(challenge)
-            else:
-                participation.status = ParticipationStatus.payment_pending
+            participation.status = ParticipationStatus.active
+            self._increment_challenge_participants(challenge)
             logger.info(f"참가 승인: {participation.user_id} for challenge {participation.challenge_id}")
         else:
             # 거부 처리
-            participation.cancel_participation(
-                LeaveType.voluntary, 
-                approval_data.rejection_reason or "관리자가 참가를 거부했습니다"
-            )
+            participation.status = ParticipationStatus.cancelled
             logger.info(f"참가 거부: {participation.user_id} for challenge {participation.challenge_id}")
         
         self.db.commit()
@@ -179,14 +171,14 @@ class ParticipationService:
                     )
             
             # 결제 완료 후 활성화
-            participation.activate_participation()
+            participation.status = ParticipationStatus.active
             challenge = self._get_challenge_by_id(challenge_id)
             
             # 월회비인 경우만 다음 결제일 설정 (both 타입은 제외 - 회차별 수동 결제)
-            if participation.payment_cycle == PaymentCycle.monthly:
-                from app.services.payment_reminder_service import get_payment_reminder_service
-                reminder_service = get_payment_reminder_service(self.db)
-                reminder_service.set_next_payment_date(participation, challenge)
+            # if participation.payment_cycle == PaymentCycle.monthly:  # 임시 비활성화 - DB에 컬럼이 없음
+            #     from app.services.payment_reminder_service import get_payment_reminder_service
+            #     reminder_service = get_payment_reminder_service(self.db)
+            #     reminder_service.set_next_payment_date(participation, challenge)
             
             self._increment_challenge_participants(challenge)
             
@@ -245,10 +237,7 @@ class ParticipationService:
             logger.warning(f"음수 환불 금액: {refund_amount}원 - 환불 처리 건너뛰기")
         
         # 탈퇴 처리 (모델 메서드 활용)
-        participation.cancel_participation(
-            LeaveType.voluntary,
-            reason or "사용자 요청으로 탈퇴"
-        )
+        participation.status = ParticipationStatus.cancelled
         
         # 참가자 수 감소
         self._decrement_challenge_participants(challenge)
@@ -296,11 +285,7 @@ class ParticipationService:
             )
         
         # 강제 퇴출 처리
-        participation.cancel_participation(
-            LeaveType.kicked,
-            reason,
-            kicked_by_id=kicker.id
-        )
+        participation.status = ParticipationStatus.expelled
         
         # 참가자 수 감소
         self._decrement_challenge_participants(challenge)

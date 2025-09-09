@@ -40,6 +40,9 @@ class User(Base):
     region_living = Column(String(50), nullable=False, server_default='')
     region_active = Column(String(50), nullable=False, server_default='', index=True)
     profile_image = Column(String(255), nullable=False, server_default='')
+
+    # 사용자 자기소개 (TEXT, NOT NULL). DB 기본값 없이 애플리케이션에서 ''로 관리
+    introduction = Column(Text, nullable=False, default='')
     
     # 기본값이 있는 필드들
     manner_score = Column(Float, default=30.0, nullable=False, index=True)
@@ -70,7 +73,7 @@ class User(Base):
     uploaded_round_pictures = relationship("RoundPicture", back_populates="uploader", foreign_keys="RoundPicture.uploaded_by", overlaps="uploader")
     created_challenges = relationship("Challenge", back_populates="creator", foreign_keys="Challenge.creator_id", overlaps="creator")
     participations = relationship("Participation", back_populates="user", foreign_keys="Participation.user_id")
-    kicked_participations = relationship("Participation", foreign_keys="Participation.kicked_by")
+    # kicked_participations = relationship("Participation", foreign_keys="Participation.kicked_by")
     managed_rounds = relationship("RoundManager", back_populates="user", cascade="all, delete-orphan")
 
     user_tags = relationship("UserTag", back_populates="user")

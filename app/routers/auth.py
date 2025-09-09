@@ -13,6 +13,7 @@ from app.models.user import User
 from app.models.email_verification import EmailVerification
 from app.schemas.auth import SignUpIn, LoginIn, TokenOut, RefreshTokenIn
 from app.services.mailer import send_email, build_verification_email, build_password_reset_email
+from app.services.email import EmailService
 from app.models.tag import Tag, UserTag
 from app.security import (
     create_access_token,
@@ -215,6 +216,14 @@ def signup(payload: SignUpIn, db: Session = Depends(get_db)):
         return {"message": "가입이 완료되었습니다. 이메일 인증을 완료해 주세요.", "user_id": user.id, "email": user.email}
     else:
         try:
+            # 이메일 인증이 필요 없을 때는 즉시 활성화 처리
+            try:
+                user.is_active = True
+                user.email_verified = True
+                db.commit()
+                db.refresh(user)
+            except Exception:
+                db.rollback()
             claims = {"sub": user.username, "user_id": user.id, "tv": user.token_version}
             access_token = create_access_token(data=claims)
             refresh_token = create_refresh_token(data=claims)
@@ -393,15 +402,11 @@ def send_verification_email(
     db.add(verification)
     db.commit()
     
-    # 이메일 전송
+    # 이메일 전송 (EmailService 사용: Mailpit/SMTP 모두 지원)
     try:
-        html, text = build_verification_email(token)
-        send_email(
-            to=email,
-            subject="이메일 인증",
-            html=html,
-            text=text
-        )
+        # EmailService는 내부에서 토큰을 새로 생성하므로, 여기서는 방금 만든 토큰을 사용하도록 별도 메서드 제공이 없지만,
+        # 사용자가 여러 번 요청해도 최신 미사용 토큰이 유효하므로 그대로 발송해도 무방합니다.
+        EmailService.send_verification_email(db, verification.user)
         return {"message": "인증 이메일을 발송했습니다"}
     except Exception as e:
         logger.error(f"이메일 전송 실패: {str(e)}")

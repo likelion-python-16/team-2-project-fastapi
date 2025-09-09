@@ -30,7 +30,8 @@ from .utils.logging import logger
 from .routers import (
     users, health, system, challenges, auth, homepage, follow,
     naver_maps, map, files, tags_categories, places, naver_local, pages, tags,
-    users_mypage, users_mypage_chat, users_mypage_more, point_management
+    users_mypage, users_mypage_chat, users_mypage_more, point_management,
+    reviews, reviews_api, notifications, reports
 )
 
 # 메트릭 미들웨어
@@ -45,6 +46,7 @@ from app.routers import chat as chat_router
 # Admin routers
 from app.routers import admin_auth
 from app.routers import admin_pages
+from app.routers import admin
 
 # FastAPI 앱 생성
 app = FastAPI(
@@ -410,6 +412,10 @@ app.include_router(challenges.router, prefix="/api/v1")
 app.include_router(participations.router, prefix="/api/v1")
 app.include_router(payments.router, prefix="/api/v1")
 app.include_router(payment_reminders.router, prefix="/api/v1")
+app.include_router(reviews.router)  # 페이지 라우터 (prefix="/api" 포함)
+app.include_router(reviews_api.router, prefix="/api/v1")
+app.include_router(notifications.router)  # 이미 prefix가 포함됨
+app.include_router(reports.router, prefix="/api/v1")
 
 app.include_router(places.router)
 app.include_router(round_pictures.router)
@@ -434,6 +440,7 @@ app.include_router(users_mypage.page_router)
 # Admin routes
 app.include_router(admin_auth.router)
 app.include_router(admin_pages.router)
+app.include_router(admin.router, prefix="/api/v1")
 app.include_router(point_management.router, prefix="/api/v1")
 
 # ---------------------------
