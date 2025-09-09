@@ -5,12 +5,17 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 
 # 멀티언어 짧은 쿼리/고유명사에 강한 베이스
-MODEL_ID = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+MODEL_ID = "sentence-transformers/paraphrase-multilingual-MiniLM-L6-v2"
 
-@lru_cache(maxsize=1)
+# 글로벌 변수로 모델 캐시
+_model_cache = None
+
 def get_model() -> SentenceTransformer:
-    # 최초 1회만 다운로드 → 이후 ~/.cache/huggingface 캐시 사용
-    return SentenceTransformer(MODEL_ID)
+    global _model_cache
+    if _model_cache is None:
+        # 메모리 효율성을 위해 device='cpu' 명시
+        _model_cache = SentenceTransformer(MODEL_ID, device='cpu')
+    return _model_cache
 
 def embed_texts(texts: list[str]) -> np.ndarray:
     """
