@@ -16,7 +16,8 @@ class ChallengeRoundCreate(BaseModel):
     start_time: time
     finish_time: time
     description: str
-    url: Optional[str] = None  # online: zoom link
+    url: Optional[str] = None  # 유지: 안내/참고 또는 호환용 zoom link
+    zoom_url: Optional[str] = None  # 권장: 온라인 회차의 Zoom URL
     
     # 온라인(선택)
     zoom_meeting_id: Optional[str] = None
@@ -44,8 +45,8 @@ class ChallengeRoundCreate(BaseModel):
             raise ValueError("finish_time must be greater than start_time")
 
         if self.mode == RoundMode.ONLINE:
-            # 온라인이면 줌 URL 또는 미팅ID 중 하나는 있어야 함
-            if not (self.url or self.zoom_meeting_id):
+            # 온라인이면 줌 URL/ID 중 하나는 있어야 함
+            if not (self.zoom_url or self.url or self.zoom_meeting_id):
                 raise ValueError("online round requires zoom link (url) or zoom_meeting_id")
 
         if self.mode == RoundMode.OFFLINE:
@@ -62,6 +63,7 @@ class ChallengeRoundUpdate(BaseModel):
     finish_time: Optional[time] = None
     description: Optional[str] = None
     url: Optional[str] = None
+    zoom_url: Optional[str] = None
     lat: Optional[float] = None
     lon: Optional[float] = None
     geofence_radius_m: Optional[float] = None
@@ -71,6 +73,11 @@ class ChallengeRoundUpdate(BaseModel):
     address: Optional[str] = None
     map_url: Optional[str] = None
     mode: Optional[Literal["online", "offline"]] = None
+    
+    # 회차 리워드(선택)
+    reward_enabled: Optional[bool] = None
+    reward_points: Optional[int] = None
+    reward_note: Optional[str] = None
 
 class ChallengeRoundResponse(BaseModel):
     id: int
@@ -81,7 +88,8 @@ class ChallengeRoundResponse(BaseModel):
     start_time: time            # ← 모델이 NOT NULL이면 응답도 필수로
     finish_time: time           # ← 동일
     description: str           # ← 동일
-    url: Optional[str] = None  # online: zoom link / offline: naver map link
+    url: Optional[str] = None  # online: zoom link / offline: naver map link (호환)
+    zoom_url: Optional[str] = None
 
     place_name: Optional[str]
     road_address: Optional[str]
@@ -93,6 +101,15 @@ class ChallengeRoundResponse(BaseModel):
 
     geofence_radius_m: Optional[float]
     zoom_meeting_id: Optional[str]
+    
+    # 회차 리워드(선택)
+    reward_enabled: Optional[bool] = None
+    reward_points: Optional[int] = None
+    reward_note: Optional[str] = None
+    # 리워드
+    reward_enabled: Optional[bool]
+    reward_points: Optional[int]
+    reward_note: Optional[str]
     created_at: datetime
     updated_at: datetime
 

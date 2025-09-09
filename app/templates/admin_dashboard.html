@@ -90,20 +90,23 @@
 
   <div class="flex items-center justify-between mb-4">
     <h1 class="text-xl font-semibold">관리자 대시보드</h1>
-    <div class="flex items-center gap-3">
-      <!-- 관리자 모드 토글 -->
-      <div class="flex items-center gap-2">
-        <span class="text-sm font-medium">관리자 모드:</span>
+    <div class="flex items-center">
+      <style>
+        .admin-toggle-box{display:flex;align-items:center;gap:10px;background:#2563eb;color:#fff;border-radius:12px;padding:6px 12px;box-shadow:0 4px 12px rgba(37,99,235,.15)}
+        .admin-toggle-label{font-weight:600}
+        .switch{position:relative;display:inline-block;width:38px;height:20px}
+        .switch input{display:none}
+        .switch .slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,.35);border-radius:999px;transition:.2s}
+        .switch .slider:before{content:"";position:absolute;height:16px;width:16px;left:2px;top:2px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+        .switch input:checked + .slider{background:#1d4ed8}
+        .switch input:checked + .slider:before{transform:translateX(18px)}
+      </style>
+      <div class="admin-toggle-box" title="토글을 끄면 로그아웃됩니다">
+        <span class="admin-toggle-label">관리자 로그아웃</span>
         <label class="switch">
-          <input type="checkbox" 
-                 id="adminModeToggle"
-                 {% if request.state.admin_mode %}checked{% endif %}
-                 onchange="toggleAdminMode()">
+          <input type="checkbox" id="adminLogoutToggle" checked>
           <span class="slider"></span>
         </label>
-        <span class="text-sm {{ 'text-blue-600 font-semibold' if request.state.admin_mode else 'text-gray-500' }}">
-          {{ 'ON' if request.state.admin_mode else 'OFF' }}
-        </span>
       </div>
     </div>
   </div>
@@ -407,46 +410,20 @@ document.getElementById('select_all_reqs')?.addEventListener('change', function(
   document.querySelectorAll('.req_row_ck').forEach((el)=>{ el.checked = this.checked; });
 });
 
-// 관리자 모드 토글 함수 추가
-async function toggleAdminMode() {
-  const isAdminMode = {{ (request.state.admin_mode | default(false)) | tojson }};
-  
-  if (isAdminMode) {
-    // 관리자 모드 끄기
-    if (confirm('관리자 모드를 끄시겠습니까?')) {
-      const form = document.createElement('form');
-      form.method = 'POST';
-      form.action = '/admin/mode/off';
-      document.body.appendChild(form);
-      form.submit();
-    } else {
-      // 토글을 원래 상태로 되돌리기
-      const toggle = document.getElementById('adminModeToggle');
-      if (toggle) toggle.checked = true;
+// 관리자 모드 토글 기능 제거됨: 관리자 로그인 시 자동 활성/일반 로그인 시 자동 비활성
+// 페이지 우측 상단 토글: 기본 ON, OFF로 전환 시 로그아웃
+document.addEventListener('DOMContentLoaded', function(){
+  const t = document.getElementById('adminLogoutToggle');
+  if(!t) return;
+  t.checked = true;
+  t.addEventListener('change', function(){
+    if(!t.checked){
+      const ok = confirm('로그아웃 하시겠습니까? (관리자/일반 세션 모두 종료)');
+      if(ok){ window.location.href = '/logout-all'; }
+      else { t.checked = true; }
     }
-  } else {
-    // 관리자 모드 켜기 - 비밀번호 요구
-    const password = prompt('관리자 모드를 켜려면 비밀번호를 입력하세요:');
-    if (password) {
-      const form = document.createElement('form');
-      form.method = 'POST';
-      form.action = '/admin/mode/on';
-      
-      const passwordInput = document.createElement('input');
-      passwordInput.type = 'hidden';
-      passwordInput.name = 'password';
-      passwordInput.value = password;
-      
-      form.appendChild(passwordInput);
-      document.body.appendChild(form);
-      form.submit();
-    } else {
-      // 토글을 원래 상태로 되돌리기
-      const toggle = document.getElementById('adminModeToggle');
-      if (toggle) toggle.checked = false;
-    }
-  }
-}
+  });
+});
 </script>
 
 {% endblock %}

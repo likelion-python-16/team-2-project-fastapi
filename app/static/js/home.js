@@ -43,28 +43,12 @@ async function fetchJSON(url, opts = {}) {
   return isJSON ? body : body;
 }
 
-/* ---- Admin 모드 전환 ---- */
+/* ---- Admin 모드 전환 (비활성화) ---- */
 async function enterAdminMode() {
-  try {
-    const response = await fetch('/admin/mode/enable', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${getAccessToken()}`,
-        'Content-Type': 'application/json'
-      }
-    });
-    
-    if (response.ok) {
-      // 관리자 모드 활성화 성공 - 페이지 이동
-      window.location.href = '/admin';
-    } else {
-      const errorData = await response.json();
-      alert(errorData.detail || '관리자 모드 전환에 실패했습니다.');
-    }
-  } catch (error) {
-    console.error('Admin mode error:', error);
-    alert('관리자 모드 전환 중 오류가 발생했습니다.');
-  }
+  // 관리자 모드 토글/강제 전환 기능은 제거되었습니다.
+  // 관리자 전용 로그인(/admin/login)으로 진입해 주세요.
+  alert('관리자 모드 전환 기능이 비활성화되었습니다. 관리자 로그인으로 이용하세요.');
+  return;
 }
 
 /* ---- 전역 상태 ---- */

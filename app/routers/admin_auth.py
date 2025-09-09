@@ -281,6 +281,21 @@ def admin_signup(
         if ident_digits and len(ident_digits) == 13:
             i_fp = id_fingerprint(ident_digits)
             dup_ident = db.query(User.id).filter((User.identification_fingerprint == i_fp)).first() is not None
+            if not dup_ident:
+                # Fallback: decrypt and compare to handle legacy/secret changes
+                try:
+                    from app.security import decrypt_str
+                    rows = db.query(User.identification_number).filter(User.identification_number.isnot(None)).all()
+                    for (enc_val,) in rows:
+                        try:
+                            plain = decrypt_str(enc_val)
+                            if normalize_phone(plain) == ident_digits:
+                                dup_ident = True
+                                break
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
             if dup_ident:
                 return templates.TemplateResponse(
                     "admin_signup.html",
@@ -323,9 +338,9 @@ def admin_signup(
 
     token = _issue_cookie_token(user, admin_mode=True, minutes=min(settings.jwt_access_token_expire_minutes, 30))
     secure_flag = not settings.debug
-    # also_user 체크: 일반 회원 추가 정보 입력 플로우 허용 쿠키 + step2 이동
-    allow_steps = str(also_user or 0) == '1'
-    next_url = "/admin/signup2" if allow_steps else "/admin"
+    # 항상 단계 진행: 체크박스가 없어도 2단계로 이동하도록 고정
+    allow_steps = True
+    next_url = "/admin/signup2"
     resp = RedirectResponse(url=next_url, status_code=303)
     resp.set_cookie(
         key=(settings.auth_access_cookie_name or "access_token"),
@@ -337,18 +352,17 @@ def admin_signup(
         path=(settings.auth_cookie_path or "/"),
         domain=(settings.auth_cookie_domain or None),
     )
-    if allow_steps:
-        # 서버 가드 우회를 위한 한시 쿠키
-        resp.set_cookie(
-            key="allow_signup_steps",
-            value="1",
-            httponly=True,
-            secure=(settings.auth_cookie_secure if settings.auth_cookie_secure is not None else secure_flag),
-            samesite=(settings.auth_cookie_samesite or "lax"),
-            max_age=60 * 30,
-            path=(settings.auth_cookie_path or "/"),
-            domain=(settings.auth_cookie_domain or None),
-        )
+    # 서버 가드 우회를 위한 한시 쿠키 (항상 설정)
+    resp.set_cookie(
+        key="allow_signup_steps",
+        value="1",
+        httponly=True,
+        secure=(settings.auth_cookie_secure if settings.auth_cookie_secure is not None else secure_flag),
+        samesite=(settings.auth_cookie_samesite or "lax"),
+        max_age=60 * 30,
+        path=(settings.auth_cookie_path or "/"),
+        domain=(settings.auth_cookie_domain or None),
+    )
     return resp
 
 
@@ -439,8 +453,9 @@ def admin_request(db: Session = Depends(get_db), request: Request = None):
 
 @router.post("/logout")
 def admin_logout(request: Request):
-    """관리자 로그아웃: 인증 쿠키 제거 후 홈으로 이동."""
-    resp = RedirectResponse(url="/home", status_code=303)
+    """관리자 로그아웃: 인증 쿠키 제거 후 통합 로그아웃 페이지로 이동."""
+    # 통합 로그아웃 페이지에서 localStorage/sessionStorage도 정리
+    resp = RedirectResponse(url="/logout-all", status_code=303)
     cookie_key = settings.auth_access_cookie_name or "access_token"
     refresh_key = settings.auth_refresh_cookie_name or "refresh_token"
     for name in (cookie_key, "session", refresh_key):
@@ -595,7 +610,24 @@ def admin_signup_request(
         if not (ident_digits and len(ident_digits) == 13):
             return templates.TemplateResponse("admin_signup_request2.html", {"request": request, "error": "주민등록번호 형식이 올바르지 않습니다"}, status_code=200)
         i_fp = id_fingerprint(ident_digits)
-        if db.query(User.id).filter(User.identification_fingerprint == i_fp).first() is not None:
+        exists_fp = db.query(User.id).filter(User.identification_fingerprint == i_fp).first() is not None
+        exists_fallback = False
+        if not exists_fp:
+            # Fallback by decrypting stored values to compare normalized number
+            try:
+                from app.security import decrypt_str
+                rows = db.query(User.identification_number).filter(User.identification_number.isnot(None)).all()
+                for (enc_val,) in rows:
+                    try:
+                        plain = decrypt_str(enc_val)
+                        if normalize_phone(plain) == ident_digits:
+                            exists_fallback = True
+                            break
+                    except Exception:
+                        continue
+            except Exception:
+                exists_fallback = False
+        if exists_fp or exists_fallback:
             return templates.TemplateResponse("admin_signup_request2.html", {"request": request, "error": "이미 등록된 주민번호입니다"}, status_code=200)
     except Exception:
         pass

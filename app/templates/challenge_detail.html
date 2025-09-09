@@ -133,6 +133,7 @@
           <div id="chPlaceAddr" class="muted" style="font-size:12px"></div>
           <div style="margin-top:4px; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
             <a id="chPlaceLink" href="#" target="_blank" rel="noopener">네이버 장소 링크</a>
+            <a id="chPlaceLinkApp" href="#" style="display:none" rel="noopener">앱으로 열기</a>
             <button class="btn tiny edit-only" id="btnEditPlace">대표 장소 수정</button>
           </div>
         </td>
@@ -371,7 +372,8 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
 
   function openPaymentModal(challengeName, paymentType, amount) {
     document.getElementById('modalChallengeName').textContent = challengeName;
-    document.getElementById('modalPaymentType').textContent = paymentType === 'entry_fee' ? '입장비' : '월회비';
+    var ptText = (paymentType==='entry_fee')? '참가비' : (paymentType==='monthly_fee')? '월회비' : (paymentType==='both')? '참가비/월회비' : '무료';
+    document.getElementById('modalPaymentType').textContent = ptText;
     document.getElementById('modalPaymentAmount').textContent = amount.toLocaleString() + '원';
     document.getElementById('paymentModal').style.display = 'flex';
   }
@@ -538,6 +540,48 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
     }
   });
 
+  // ===== 지도 링크 생성 유틸 =====
+  function buildNaverWebUrl(name, lat, lon){
+    if (lat != null && lon != null){
+      return `https://map.naver.com/v5/?c=${lon},${lat},15,0,0,0,dh`;
+    }
+    if (name && String(name).trim()){
+      return `https://map.naver.com/v5/search/${encodeURIComponent(name)}`;
+    }
+    return null;
+nmap://map?lat=37.5633352&lng=126.9872743&zoom=15&appname=com.challengers.web  }
+  function buildNaverAppUrl(name, lat, lon, webUrl){
+    if (lat != null && lon != null){
+      return `nmap://place?lat=${lat}&lng=${lon}&name=${encodeURIComponent(name||'장소')}&appname=web.challengers`;
+    }
+    if (name && String(name).trim()){
+      return `nmap://search?query=${encodeURIComponent(name)}&appname=web.challengers`;
+    }
+    return null;
+  }
+
+  // 딥링크 열기 (실패 시 폴백)
+  function openMapAppDeepLink(appUrl, webUrl){
+    var ua = (navigator.userAgent||'').toLowerCase();
+    var isAndroid = ua.indexOf('android') >= 0;
+    var storeUrl = isAndroid
+      ? 'https://play.google.com/store/apps/details?id=com.nhn.android.nmap'
+      : 'https://apps.apple.com/app/id311867728';
+    var timer = setTimeout(function(){
+      if (webUrl) window.location.href = webUrl; else window.location.href = storeUrl;
+    }, 1500);
+    try{
+      if (isAndroid){
+        var intent = appUrl.replace(/^nmap:\/\//, 'intent://') + '#Intent;scheme=nmap;package=com.nhn.android.nmap;end';
+        window.location.href = intent;
+      } else {
+        window.location.href = appUrl;
+      }
+    }catch(_){ /* 폴백 타이머에 맡김 */ }
+    window.addEventListener('pagehide', function(){ clearTimeout(timer); });
+    document.addEventListener('visibilitychange', function(){ if (document.hidden) clearTimeout(timer); });
+  }
+
   // ===== 개요 카드: 표시 토글/편집 권한 처리 =====
   function initVisibilityToggles(){
     const VIS_KEY = `ch_vis_all_${CHALLENGE_ID}`;
@@ -701,15 +745,39 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
     const pn = document.getElementById('chPlaceName'); if (pn) pn.textContent = ch.default_place_name || '';
     const pr = document.getElementById('chPlaceRoad'); if (pr) pr.textContent = ch.default_road_address ? `도로명: ${ch.default_road_address}` : '';
     const pa = document.getElementById('chPlaceAddr'); if (pa) pa.textContent = ch.default_address ? `지번: ${ch.default_address}` : '';
-    const pl = document.getElementById('chPlaceLink'); if (pl) pl.href = ch.default_map_url || '#';
+    const pl = document.getElementById('chPlaceLink');
+    const pla = document.getElementById('chPlaceLinkApp');
+    const webUrl = ch.default_map_url || buildNaverWebUrl(ch.default_place_name, ch.default_latitude, ch.default_longitude);
+    if (pl) pl.href = webUrl || '#';
+    const appUrl = buildNaverAppUrl(ch.default_place_name, ch.default_latitude, ch.default_longitude, webUrl);
+    if (pla){
+      if (appUrl){
+        pla.href = '#';
+        pla.onclick = function(e){ e.preventDefault(); openMapAppDeepLink(appUrl, webUrl); };
+        pla.style.display='inline';
+      } else { pla.style.display='none'; }
+    }
     // 기간
     const fmt = (x)=>{ try{ const d=new Date(x); if(!isNaN(d)) return d.toISOString().slice(0,10); }catch(_){ } return String(x||''); };
     const sEl = document.getElementById('chStart'); if (sEl) sEl.textContent = fmt(ch.start_date);
     const eEl = document.getElementById('chEnd');   if (eEl) eEl.textContent = fmt(ch.end_date);
-    // 금액표
-    const fee = Number(ch.fee||0), pfee = Number(ch.participation_fee||0);
-    const feeBadge = document.getElementById('chFee'); if (feeBadge) feeBadge.textContent = (fee===0&&pfee===0)? '무료' : `회비 ${fee.toLocaleString()}원`;
-    const pBadge = document.getElementById('chPFee'); if (pBadge){ if (fee===0&&pfee===0){ pBadge.style.display='none'; } else { pBadge.textContent = `참가비 ${pfee.toLocaleString()}원`; } }
+    // 금액표 (신규 결제 체계: payment_type/entry_fee/monthly_fee)
+    (function(){
+      const pt = (ch.payment_type||'free');
+      let fee = 0, pfee = 0;
+      if (pt === 'entry_fee') pfee = Number(ch.entry_fee||0);
+      else if (pt === 'monthly_fee') fee = Number(ch.monthly_fee||0);
+      else if (pt === 'both') { fee = Number(ch.monthly_fee||0); pfee = Number(ch.entry_fee||0); }
+      const feeBadge = document.getElementById('chFee');
+      const pBadge = document.getElementById('chPFee');
+      if (pt === 'free' || (fee===0 && pfee===0)){
+        if (feeBadge) feeBadge.textContent = '무료';
+        if (pBadge) pBadge.style.display='none';
+      } else {
+        if (feeBadge) feeBadge.textContent = (fee>0) ? `월회비 ${fee.toLocaleString()}원` : (pfee>0? `참가비 ${pfee.toLocaleString()}원` : '유료');
+        if (pBadge){ if (pt==='both' && pfee>0){ pBadge.style.display='inline'; pBadge.textContent=`참가비 ${pfee.toLocaleString()}원`; } else { pBadge.style.display='none'; } }
+      }
+    })();
     // 방장 계정 (username만)
     try{
       const owner = await safeFetchJSON(`/api/v1/users/${ch.creator_id}`);

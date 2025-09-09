@@ -404,8 +404,11 @@ class ChallengeResponse(BaseModel):
     same_place_for_all_rounds: bool = False
     default_place_name: Optional[str] = None
     default_address: Optional[str] = None  # road_address 통합
+    default_road_address: Optional[str] = None  # 응답에 포함 (호환)
     default_latitude: Optional[float] = None
     default_longitude: Optional[float] = None
+    default_place_id: Optional[str] = None
+    default_map_url: Optional[str] = None  # 웹 지도 링크
 
     # 기본 설정
     require_approval: bool = False

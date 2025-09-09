@@ -194,13 +194,52 @@ document.getElementById('signinForm').addEventListener('submit', async (e)=>{
   }
 
   if (!ok) {
-    const isUnverified =
-      lastStatus === 403 && lastDetail &&
-      (lastDetail.code === 'EMAIL_NOT_VERIFIED' ||
-       lastDetail === '이메일 인증이 필요합니다.' ||
-       (typeof lastDetail === 'string' && lastDetail.includes('이메일 인증')));
+    const isSocial = lastStatus === 403 && lastDetail && typeof lastDetail === 'object' && lastDetail.action === 'social_login_required';
+    const isUnverified = lastStatus === 403 && !!lastDetail && (
+      // 백엔드(detail 객체)에 action 필드가 내려오는 최신 형태
+      (typeof lastDetail === 'object' && (
+        lastDetail.action === 'email_verification_required' ||
+        lastDetail.code === 'EMAIL_NOT_VERIFIED' ||
+        String(lastDetail.message || '').includes('이메일 인증')
+      )) ||
+      // 문자열 메시지 형태(구버전/예외 처리)
+      (typeof lastDetail === 'string' && lastDetail.includes('이메일 인증')) ||
+      // 점(.) 유무 차이 호환
+      lastDetail === '이메일 인증이 필요합니다'
+    );
 
-    if (isUnverified) {
+    if (isSocial) {
+      const alert = document.getElementById('alertContainer');
+      alert.innerHTML = `
+        <div class="kt-alert kt-alert-danger p-3 rounded-lg flex flex-col gap-3">
+          <div class="flex items-center gap-2">
+            <i class="ki-filled ki-information-2"></i>
+            <span class="text-sm">소셜로 가입된 계정입니다.<br>소셜계정 로그인으로 진행해주세요.</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="text-center">
+              <button class="bg-blue-500 text-white px-4 py-2 rounded">
+                일반 로그인으로도 사용하시려면 <br> 비밀번호 세팅이 필요합니다.
+              </button>
+            </div>
+          </div>
+        </div>`;
+      alert.classList.remove('hidden');
+
+      document.getElementById('btnPwResetSocial')?.addEventListener('click', async ()=>{
+        try{
+          // 소셜 계정에 비밀번호를 생성/재설정할 메일 보내기
+          const r = await fetch('/api/v1/auth/request-password-reset-by-login', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ login: username, flow: 'social', return_to: '/login' })
+          });
+          const j = await r.json().catch(()=>({}));
+          if (r.ok) showAlert('비밀번호 설정 링크를 소셜 이메일 계정으로 전송했습니다.<br> 확인해주세요.', 'success');
+          else showAlert(j?.detail||'전송에 실패했습니다. 잠시 후 다시 시도해 주세요.', 'error');
+        }catch(_){ showAlert('전송에 실패했습니다. 잠시 후 다시 시도해 주세요.', 'error'); }
+      });
+
+    } else if (isUnverified) {
       const alert = document.getElementById('alertContainer');
       alert.innerHTML = `
         <div class="kt-alert kt-alert-danger p-3 rounded-lg flex flex-col gap-3">

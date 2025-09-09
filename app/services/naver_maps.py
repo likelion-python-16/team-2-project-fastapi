@@ -63,6 +63,12 @@ def build_naver_map_url(place_name: str | None, lat: float | None, lng: float | 
     - 없으면 검색 URL
     - 좌표 URL 끝에는 ,dh 를 붙여야 바로 이동 가능
     """
+    # placeId가 있으면 POI 엔트리 URL 우선 (마커 보장)
+    if place_id:
+        if lat is not None and lng is not None:
+            return f"https://map.naver.com/v5/entry/place/{quote(str(place_id))}?c={lng},{lat},15,0,0,0,dh"
+        return f"https://map.naver.com/v5/entry/place/{quote(str(place_id))}"
+
     if lat is not None and lng is not None:
         return f"https://map.naver.com/v5/?c={lng},{lat},15,0,0,0,dh"
 

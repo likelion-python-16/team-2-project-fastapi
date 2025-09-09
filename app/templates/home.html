@@ -4,6 +4,7 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Challenge Home</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='assets/final/vendors/keenicons/styles.bundle.css') }}"/>
 
   <style>
     :root{ --brand:#2563EB; --text:#1f2937; --muted:#6b7280; --line:#E5E7EB;
@@ -120,18 +121,20 @@
 
         <div class="spacer"></div>
 
-        <a href="/chat" class="bell" title="채팅" style="margin-left:10px">
-          🔔<span id="chat-dot" class="dot-badge"></span>
+        <!-- 채팅 바로가기 (메시지 아이콘, 파란색) -->
+        <a id="chat-link" href="/chat" class="bell" title="채팅으로 이동" aria-label="채팅으로 이동" style="margin-right:10px;">
+          <i class="ki-duotone ki-messages" style="font-size:18px"></i>
+          <span id="chat-dot" class="dot-badge"></span>
         </a>
 
-        <!-- 비로그인 버튼 (로그인 필요 시 노출) -->
-        <a id="header-login-btn" href="/login" class="btn primary" style="display:none; margin-left:10px;">
-          로그인
-        </a>
+        <!-- 단일 알림 벨로 통합 (채팅/리뷰/신고 등 모두 포함) -->
 
         <!-- 알림 벨 -->
-        <div class="dropdown" id="notifications-dd">
-          <div class="bell-icon" id="notifications-trigger" title="알림">🔔<span id="notif-badge" class="bell-badge" style="display:none">!</span></div>
+        <div class="dropdown" id="notifications-dd" style="margin-right:10px;">
+          <div class="bell-icon" id="notifications-trigger" title="알림">
+            <i class="ki-duotone ki-notification" style="font-size:18px; color:#F59E0B"></i>
+            <span id="notif-badge" class="bell-badge" style="display:none">!</span>
+          </div>
           <div class="dropdown-menu" id="notifications-menu" style="width: 350px;">
             <div class="notification-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px">
               <strong>내 활동 기록</strong>
@@ -142,6 +145,11 @@
             </div>
           </div>
         </div>
+
+        <!-- 비로그인 버튼 (로그인 필요 시 노출) -->
+        <a id="header-login-btn" href="/login" class="btn primary" style="display:none; margin-left:10px;">
+          로그인
+        </a>
 
         <!-- 프로필 드롭다운 -->
         <div class="dropdown" id="profile-dd">
@@ -256,7 +264,9 @@
     // 로그인 여부/만료에 따른 "챌린지 생성" 버튼 보호 + 미로그인/만료 시 버튼 자체 숨김
     document.addEventListener('DOMContentLoaded', () => {
       const btn = document.getElementById('create-challenge-btn');
-      if (!btn) return;
+      const chatLink = document.getElementById('chat-link');
+      const notifDd = document.getElementById('notifications-dd');
+      const loginBtn = document.getElementById('header-login-btn');
 
       function parseJwt(token){
         try{ return JSON.parse(atob(String(token).split('.')[1]||'')); }catch(_){ return {}; }
@@ -275,9 +285,39 @@
           alert('로그인이 필요합니다 🙏');
           location.href = '/login';
         }
-      });
+      }
+
+      // 보호 적용 (버튼이 존재할 때만)
+      try { if (btn) btn.addEventListener('click', guardClick); } catch(_) {}
+
+      // 채팅 링크: 비로그인/만료 시 로그인 유도
+      try {
+        const chatLink = document.getElementById('chat-link');
+        if (chatLink) {
+          chatLink.addEventListener('click', (e) => {
+            const info = tokenInfo();
+            if (!info.exists || info.expired){
+              e.preventDefault();
+              alert('로그인이 필요합니다');
+              location.href = '/login';
+            }
+          });
+        }
+      } catch(_) {}
 
       // 알림 기능 초기화
+      // 로그인 여부에 따라 채팅/알림 아이콘 숨김 처리
+      try{
+        const t = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+        const p = t ? (JSON.parse(atob(String(t).split('.')[1]||''))||{}) : {};
+        const expired = !t || !p.exp || (Date.now() > p.exp*1000);
+        const authed = !!t && !expired;
+        if (chatLink) chatLink.style.display = authed ? 'inline-flex' : 'none';
+        if (notifDd) notifDd.style.display = authed ? 'inline-flex' : 'none';
+        if (loginBtn) loginBtn.style.display = authed ? 'inline-flex' : 'inline-flex';
+        if (loginBtn) loginBtn.style.display = authed ? 'none' : 'inline-flex';
+      }catch(_){ }
+
       initNotifications();
     });
 
@@ -289,8 +329,10 @@
       const notifBadge = document.getElementById('notif-badge');
       const btnMarkAll = document.getElementById('btn-mark-all-read');
 
+      const getToken = () => (localStorage.getItem('access_token') || sessionStorage.getItem('access_token'));
+
       async function refreshBadge(){
-        const token = localStorage.getItem('access_token');
+        const token = getToken();
         if (!token){ if(notifBadge) notifBadge.style.display='none'; return; }
         try{
           const res = await fetch('/api/v1/notifications/my-activities?unread_only=1', { headers: { 'Authorization': 'Bearer '+token, 'Accept':'application/json' }});
@@ -304,6 +346,13 @@
       // 벨 아이콘 클릭 시 드롭다운 토글 및 알림 로드
       notificationsTrigger.addEventListener('click', (e) => {
         e.stopPropagation();
+        // 로그인 필요 안내
+        const token = getToken();
+        if (!token) {
+          alert('로그인이 필요합니다');
+          location.href = '/login';
+          return;
+        }
         
         // 다른 드롭다운들 닫기
         document.querySelectorAll('.dropdown.open').forEach(dd => {
@@ -324,14 +373,25 @@
         notificationsDropdown.classList.remove('open');
       });
 
-      // 드롭다운 메뉴 클릭 시 이벤트 전파 중지
-      document.getElementById('notifications-menu').addEventListener('click', (e) => {
+      // 드롭다운 메뉴 클릭 시 이벤트 전파 중지 + 항목 클릭 처리(읽음 처리 후 이동)
+      document.getElementById('notifications-menu').addEventListener('click', async (e) => {
         e.stopPropagation();
+        const item = e.target.closest('.notification-item');
+        if (!item) return;
+        const id = item.getAttribute('data-id');
+        const ttype = item.getAttribute('data-target-type') || '';
+        const tid = item.getAttribute('data-target-id') || '';
+        const token = getToken();
+        if (id && token) {
+          try { await fetch(`/api/v1/notifications/mark-read/${id}`, { method:'POST', headers:{ 'Authorization': 'Bearer '+token }}); } catch(_) {}
+        }
+        const url = navigateUrlFor(ttype, tid);
+        if (url) window.location.href = url;
       });
 
       // 모두 읽음
       btnMarkAll?.addEventListener('click', async () => {
-        const token = localStorage.getItem('access_token');
+        const token = getToken();
         if (!token) { alert('로그인이 필요합니다'); return; }
         try{
           const r = await fetch('/api/v1/notifications/mark-all-read', { method:'POST', headers:{ 'Authorization':'Bearer '+token }});
@@ -348,7 +408,7 @@
 
     // 알림 목록 로드
     async function loadNotifications() {
-      const token = localStorage.getItem('access_token');
+      const token = (localStorage.getItem('access_token') || sessionStorage.getItem('access_token'));
       if (!token) {
         document.getElementById('notification-list').innerHTML = 
           '<div style="text-align:center; padding:20px; color:#6b7280;">로그인이 필요합니다</div>';
@@ -391,7 +451,7 @@
         const dd = document.getElementById('notifications-dd');
         // 열려있지 않을 때만 폴링(열려있으면 loadNotifications에서 갱신됨)
         if (!dd || !dd.classList.contains('open')) {
-          const token = localStorage.getItem('access_token');
+          const token = (localStorage.getItem('access_token') || sessionStorage.getItem('access_token'));
           if (token) {
             fetch('/api/v1/notifications/my-activities?unread_only=1', { headers: { 'Authorization': 'Bearer '+token, 'Accept':'application/json' }})
               .then(r => r.ok ? r.json() : null)
@@ -417,7 +477,7 @@
       }
 
       const html = activities.map(activity => `
-        <div class="notification-item" data-id="${activity.id}">
+        <div class="notification-item" data-id="${activity.id}" data-target-type="${activity.target_type||''}" data-target-id="${activity.target_id??''}">
           <div class="notification-icon">${activity.icon}</div>
           <div class="notification-content">
             <div class="notification-text">${activity.title}</div>
@@ -428,6 +488,23 @@
       `).join('');
 
       notificationsList.innerHTML = html;
+    }
+
+    // 대상별 이동 경로 매퍼
+    function navigateUrlFor(targetType, targetId){
+      const id = String(targetId||'').trim();
+      switch(String(targetType||'').toLowerCase()){
+        case 'chat_room':
+          return id ? `/chat/rooms/${encodeURIComponent(id)}` : '/chat';
+        case 'review':
+          // 리뷰는 내가 작성한/받은 페이지로 연결. 우선 받은 리뷰 목록으로 이동.
+          return '/api/reviews/received';
+        case 'challenge':
+        case 'challenge_id':
+          return id ? `/pages/challenges/${encodeURIComponent(id)}` : '/home';
+        default:
+          return '';
+      }
     }
   </script>
 

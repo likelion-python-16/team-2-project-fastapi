@@ -56,6 +56,40 @@ function showAlert(msg,type){
   el.classList.remove('hidden');
 }
 
+// Invalidate stale drafts when social session changes
+(async function(){
+  try{
+    let ident=null; try{ const r=await fetch('/api/v1/auth/identity/last', { credentials:'include' }); if(r.ok) ident=await r.json(); }catch(_){ }
+    const ssk = ident && (ident.provider||ident.provider_id||ident.sub)
+      ? `${ident.provider||''}:${ident.provider_id||ident.sub||''}` : '';
+    const prev = localStorage.getItem('social_session_key')||'';
+    if (ssk && ssk !== prev){
+      try{
+        localStorage.removeItem('signupSocialDraft');
+        localStorage.removeItem('signupDraft');
+        localStorage.removeItem('social_prefill');
+        sessionStorage.removeItem('signupSocialDraft');
+        sessionStorage.removeItem('signupDraft');
+        sessionStorage.removeItem('social_prefill');
+      }catch(_){ }
+      try{ localStorage.setItem('social_session_key', ssk); }catch(_){ }
+    }
+    // fresh=1이면 무조건 초기화
+    const qp=new URLSearchParams(location.search);
+    if(qp.get('fresh')==='1'){
+      try{
+        localStorage.removeItem('signupSocialDraft');
+        localStorage.removeItem('signupDraft');
+        localStorage.removeItem('social_prefill');
+        sessionStorage.removeItem('signupSocialDraft');
+        sessionStorage.removeItem('signupDraft');
+        sessionStorage.removeItem('social_prefill');
+      }catch(_){ }
+      const u=new URL(location.href); u.searchParams.delete('fresh'); history.replaceState({},'',u.toString());
+    }
+  }catch(_){ }
+})();
+
 document.getElementById('socialStep2').addEventListener('submit', (e)=>{
   e.preventDefault();
   const patch={ gender: document.getElementById('gender').value||null, region_living: document.getElementById('region_living').value||'', region_active: document.getElementById('region_active').value||'' };

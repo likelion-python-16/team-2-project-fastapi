@@ -137,9 +137,48 @@ async def resolve_place_id(
     lat: Optional[float] = Query(None),
     lng: Optional[float] = Query(None),
 ):
-    """호환용 엔드포인트. 현재 placeId는 사용하지 않으므로 항상 None 반환.
+    """베스트에포트로 네이버 placeId 추정
 
-    프론트 일부 코드(challenge_create.html)가 있으면 호출하지만,
-    실제 동작에는 영향을 주지 않습니다. 콘솔 404를 없애기 위한 더미 구현입니다.
+    - 공식 Local Search에는 placeId가 없으므로, 내부 검색 API의 응답 형태를 이용해
+      후보군을 얻고(lat/lng이 있으면 최근접 우선) id 필드를 반환합니다.
+    - 실패 시 {placeId: None} 반환 (절대 500을 던지지 않음)
     """
-    return {"placeId": None}
+    try:
+        # 내부 API는 공개 스펙이 아니므로 실패해도 조용히 None 반환
+        url = "https://map.naver.com/v5/api/search"
+        params = {"query": query, "type": "all"}
+        headers = {
+            "Referer": "https://map.naver.com/v5/search",
+            "User-Agent": "Mozilla/5.0",
+        }
+        async with httpx.AsyncClient(timeout=5) as client:
+            r = await client.get(url, params=params, headers=headers)
+        if r.status_code != 200:
+            return {"placeId": None}
+        data = r.json()
+        # 예상 구조: {result: {place: {list: [{id, x, y, ...}, ...]}}}
+        items = (
+            data.get("result", {})
+                .get("place", {})
+                .get("list", [])
+        )
+        if not items:
+            return {"placeId": None}
+        # 최근접 선택
+        if lat is not None and lng is not None:
+            import math
+            def dist(it):
+                try:
+                    y = float(it.get("y"))  # 위도
+                    x = float(it.get("x"))  # 경도
+                except Exception:
+                    return 1e9
+                # 간단한 유클리드 거리(근사)
+                return (y - lat) ** 2 + (x - lng) ** 2
+            items.sort(key=dist)
+        pid = items[0].get("id")
+        if pid:
+            return {"placeId": str(pid)}
+        return {"placeId": None}
+    except Exception:
+        return {"placeId": None}

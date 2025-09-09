@@ -64,6 +64,14 @@
 </div>
 
 <script>
+// 일반/이전 사용자 토큰 정리: 관리자 로그인 페이지 진입 시 클라이언트 저장 토큰 제거
+try {
+  localStorage.removeItem('access_token');
+  localStorage.removeItem('refresh_token');
+  sessionStorage.removeItem('access_token');
+  sessionStorage.removeItem('refresh_token');
+} catch(_) {}
+
 // 제출 직전에 관리자 계정 여부 확인: 일반/미존재 계정이면 안내 페이지로 이동
 document.querySelector('form').addEventListener('submit', async function(e) {
   const loginField = document.querySelector('input[name="login"]');

@@ -205,6 +205,10 @@ function showResults(items){
       picked.placeName = title || "선택 위치";
       picked.mapUrl = makeNaverMapUrl(lat, lng, picked.placeName);
       picked.placeId = null;
+      try{
+        const rp = await fetch(`/naver/resolve-place-id?query=${encodeURIComponent(picked.placeName)}&lat=${lat}&lng=${lng}`);
+        if (rp.ok){ const j = await rp.json(); if (j && j.placeId){ picked.placeId = j.placeId; } }
+      }catch(_){ }
       renderPicked();
       hideResults();
 
@@ -236,6 +240,10 @@ async function smartSearch(q){
       picked.placeName = q.trim();
       picked.mapUrl = makeNaverMapUrl(lat, lng, picked.placeName);
       picked.placeId = null;
+      try{
+        const rp = await fetch(`/naver/resolve-place-id?query=${encodeURIComponent(picked.placeName)}&lat=${lat}&lng=${lng}`);
+        if (rp.ok){ const j = await rp.json(); if (j && j.placeId){ picked.placeId = j.placeId; } }
+      }catch(_){ }
       renderPicked();
 
       fetchNearby(lat, lng, picked.placeName || picked.roadAddress || picked.jibunAddress || "");
@@ -326,7 +334,8 @@ function initMap(){
         address: picked.jibunAddress || null,
         map_url: picked.mapUrl || null,
         lat: picked.lat,
-        lon: picked.lng
+        lon: picked.lng,
+        placeId: picked.placeId || null
       }
     }, window.location.origin);
 

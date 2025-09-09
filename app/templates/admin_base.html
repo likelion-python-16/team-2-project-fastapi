@@ -30,7 +30,7 @@
         {% elif cu.is_admin and not on_login and not on_signup %}
           <a href="/admin/login" class="kt-link text-sm text-muted-foreground">관리자 로그인</a>
         {% endif %}
-        <form method="post" action="/api/v1/auth/logout" class="inline">
+        <form method="get" action="/logout-all" class="inline">
           <button class="kt-link" type="submit">로그아웃</button>
         </form>
       {% else %}
@@ -47,6 +47,23 @@
   <script src="{{ url_for('static', path='assets/final/js/core.bundle.js') }}"></script>
   <script src="{{ url_for('static', path='assets/final/vendors/ktui/ktui.min.js') }}"></script>
   <script src="{{ url_for('static', path='assets/final/vendors/apexcharts/apexcharts.min.js') }}"></script>
+  <script>
+  // Admin idle-logout: redirect to /logout-all after 5 minutes of no activity
+  (function(){
+    var IDLE_MS = 5 * 60 * 1000;
+    var t;
+    function arm(){
+      clearTimeout(t);
+      t = setTimeout(function(){
+        try { window.location.replace('/logout-all'); } catch(_) { window.location.href='/logout-all'; }
+      }, IDLE_MS);
+    }
+    ['click','mousemove','keydown','scroll','touchstart','visibilitychange'].forEach(function(ev){
+      document.addEventListener(ev, arm, {passive:true});
+    });
+    arm();
+  })();
+  </script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

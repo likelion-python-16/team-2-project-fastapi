@@ -22,6 +22,8 @@ class ChallengeRound(Base):
     finish_time = Column(Time, nullable=False, comment="종료 시간")
     description = Column(Text, nullable=False, comment="회차 설명")
     url = Column(Text, comment="안내/참고 URL")   # 안내/참고 URL
+    # 온라인(Zoom) URL 저장(조합 없이 바로 사용)
+    zoom_url = Column(Text, nullable=True)
     
     # Timestamps
     created_at = Column(DateTime, default=func.now())
@@ -45,6 +47,8 @@ class ChallengeRound(Base):
     # 🆕 회차별 리워드
     from sqlalchemy import Boolean
     reward_enabled = Column(Boolean, default=False, nullable=False, comment="리워드 사용 여부")
+    reward_points = Column(Integer, default=0, nullable=False, comment="회차 리워드 포인트")
+    reward_note = Column(Text, nullable=True, comment="회차 리워드 설명")
     # reward_text = Column(Text, nullable=True, comment="회차 리워드 내용")  # DB에 없음
     
     # 관계

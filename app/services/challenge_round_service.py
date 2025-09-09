@@ -119,7 +119,10 @@ async def auto_create_rounds_on_challenge_create(db: Session, challenge: Challen
 
         # 온라인 → 기본 링크
         if challenge.mode == ChallengeMode.online:
-            r.url = getattr(challenge, "default_zoom_link", None) or None
+            z = getattr(challenge, "default_zoom_link", None) or None
+            r.zoom_url = z
+            # 호환: 기존 필드도 채워 둠
+            r.url = z
 
         # 오프라인 + 동일 장소 → 계산된 장소/좌표 일괄 복사
         elif challenge.mode == ChallengeMode.offline and same_all and (lat is not None and lon is not None):

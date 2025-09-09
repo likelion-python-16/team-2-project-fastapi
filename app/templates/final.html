@@ -41,6 +41,25 @@
         
         {# Admin 페이지에서는 별도의 admin 프로필 드롭다운 표시 #}
         {% if on_admin and cu and cu.is_admin %}
+          <!-- Admin Logout Toggle (Blue box on the right) -->
+          <style>
+            .logout-box{display:flex;align-items:center;gap:8px;background:#2563eb;color:#fff;border-radius:12px;padding:6px 10px;box-shadow:0 4px 12px rgba(37,99,235,.15)}
+            .logout-label{font-weight:600}
+            .switch{position:relative;display:inline-block;width:38px;height:20px}
+            .switch input{display:none}
+            .switch .slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,.35);border-radius:999px;transition:.2s}
+            .switch .slider:before{content:"";position:absolute;height:16px;width:16px;left:2px;top:2px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+            .switch input:checked + .slider{background:#1d4ed8}
+            .switch input:checked + .slider:before{transform:translateX(18px)}
+          </style>
+          <div class="logout-box" title="토글을 켜면 로그아웃됩니다">
+            <span class="logout-label">관리자 로그아웃</span>
+            <label class="switch">
+              <input type="checkbox" id="logoutToggle">
+              <span class="slider"></span>
+            </label>
+          </div>
+
           <div class="admin-profile-dropdown" id="admin-profile-dropdown">
             <div class="admin-profile-avatar" id="admin-profile-trigger">
               {% set profile_img = cu.profile_image or '/static/pictures/defaultprofile.svg' %}
@@ -101,12 +120,26 @@
   document.addEventListener('DOMContentLoaded', function() {
     const adminProfileDropdown = document.getElementById('admin-profile-dropdown');
     const adminProfileTrigger = document.getElementById('admin-profile-trigger');
+    const logoutToggle = document.getElementById('logoutToggle');
     
     if (adminProfileTrigger) {
       adminProfileTrigger.addEventListener('click', function(e) {
         e.preventDefault();
         e.stopPropagation();
         adminProfileDropdown.classList.toggle('open');
+      });
+    }
+    if (logoutToggle) {
+      logoutToggle.checked = false;
+      logoutToggle.addEventListener('change', function(e){
+        if (logoutToggle.checked) {
+          const ok = confirm('관리자 및 일반회원 세션에서 모두 로그아웃할까요?');
+          if (ok) {
+            window.location.href = '/logout-all';
+          } else {
+            logoutToggle.checked = false;
+          }
+        }
       });
     }
     
@@ -121,11 +154,7 @@
   // 관리자 로그아웃 함수
   function adminLogout() {
     if (confirm('로그아웃 하시겠습니까?')) {
-      const form = document.createElement('form');
-      form.method = 'POST';
-      form.action = '/admin/logout';
-      document.body.appendChild(form);
-      form.submit();
+      window.location.href = '/logout-all';
     }
   }
   </script>

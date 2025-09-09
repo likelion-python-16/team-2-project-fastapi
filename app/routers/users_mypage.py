@@ -368,8 +368,12 @@ def update_my_profile(
         me.name = payload.name.strip()
         changed = True
     if payload.phone is not None:
-        me.phone = payload.phone
-        changed = True
+        # 전화번호는 항상 암호화 저장(+fingerprint). 레거시 평문은 비움
+        try:
+            me.set_phone(payload.phone)
+            changed = True
+        except Exception:
+            raise HTTPException(400, "전화번호 형식을 확인해 주세요")
     if payload.home_region is not None:
         me.region_living = payload.home_region.strip()
         changed = True
@@ -579,11 +583,18 @@ def get_phone_masked(
     me: User = Depends(get_current_user)
 ):
     """마스킹된 전화번호 조회"""
-    if not me.phone:
+    # 우선 암호화 저장된 번호 복호화 시도, 없으면 레거시 평문 사용
+    phone = None
+    try:
+        phone = me.get_phone()
+    except Exception:
+        phone = None
+    if not phone:
+        phone = getattr(me, "phone", None)
+    if not phone:
         return {"phone_masked": None}
-    
+
     # 전화번호 마스킹: 010-1234-5678 -> 010-***4-5678
-    phone = me.phone
     if len(phone) >= 7:
         masked = phone[:3] + "-***" + phone[-4:]
     else:
@@ -676,9 +687,11 @@ def update_phone(
         if existing:
             raise HTTPException(409, "이미 등록된 전화번호입니다")
     
-    # 업데이트
-    me.phone = normalized_phone
-    me.phone_fingerprint = phone_fp
+    # 업데이트: 암호화 저장 + fingerprint. 레거시 평문 컬럼은 비움
+    try:
+        me.set_phone(normalized_phone)
+    except Exception:
+        raise HTTPException(400, "전화번호 업데이트 중 오류가 발생했습니다")
     db.commit()
     
     return {"message": "전화번호가 변경되었습니다"}
@@ -716,3 +729,124 @@ def change_password(
     db.commit()
     
     return {"message": "비밀번호가 변경되었습니다"}
+
+# ========================
+# Social onboarding helpers
+# ========================
+@router.get("/me/needs-onboarding")
+def needs_onboarding(me: User = Depends(get_current_user)):
+    phone_missing = not bool(getattr(me, 'phone_fingerprint', None) or getattr(me, 'phone_encrypted', None) or getattr(me, 'phone', None))
+    ident_missing = not bool(getattr(me, 'identification_fingerprint', None))
+    return {
+        "username": me.username,
+        "name": me.name,
+        "email": me.email,
+        "phone_missing": phone_missing,
+        "ident_missing": ident_missing,
+    }
+
+class OnboardingIn(BaseModel):
+    phone: Optional[str] = None
+    identification_number: Optional[str] = None
+    name: Optional[str] = None
+    gender: Optional[str] = None
+    region_living: Optional[str] = None
+    region_active: Optional[str] = None
+    profile_image: Optional[str] = None
+    introduction: Optional[str] = None
+    selected_tags: Optional[list[str]] = None
+
+@router.post("/me/onboarding")
+def complete_onboarding(
+    payload: OnboardingIn,
+    db: Session = Depends(get_db),
+    me: User = Depends(get_current_user),
+):
+    from app.core.config import settings
+    changed = False
+    if payload.name is not None:
+        me.name = (payload.name or '').strip()
+        changed = True
+    if payload.gender:
+        try:
+            me.gender = payload.gender
+            changed = True
+        except Exception:
+            pass
+    if payload.region_living is not None:
+        me.region_living = (payload.region_living or '').strip()
+        changed = True
+    if payload.region_active is not None:
+        me.region_active = (payload.region_active or '').strip()
+        changed = True
+    if payload.profile_image is not None:
+        me.profile_image = (payload.profile_image or '').strip()
+        changed = True
+
+    if payload.phone:
+        try:
+            me.set_phone(payload.phone)
+            changed = True
+        except Exception as e:
+            raise HTTPException(400, f"전화번호 형식이 올바르지 않습니다: {str(e)}")
+    if payload.identification_number:
+        try:
+            me.set_identification_number(payload.identification_number)
+            changed = True
+        except Exception as e:
+            raise HTTPException(400, f"주민등록번호 형식이 올바르지 않습니다: {str(e)}")
+
+    # Introduction parse (JSON or plain)
+    final_intro = None
+    intro_keywords: list[str] = []
+    intro_raw = payload.introduction or None
+    if intro_raw and isinstance(intro_raw, str) and intro_raw.strip().startswith('{'):
+        try:
+            import json
+            parsed = json.loads(intro_raw)
+            if isinstance(parsed, dict):
+                final_intro = (parsed.get('bio') or '').strip()
+                interests = parsed.get('interests') or {}
+                kws = interests.get('keywords') or []
+                if isinstance(kws, list):
+                    intro_keywords = [str(k).strip() for k in kws if isinstance(k, str) and k.strip()]
+        except Exception:
+            final_intro = None
+    else:
+        final_intro = (intro_raw or '').strip() if intro_raw else None
+    if final_intro is not None:
+        me.introduction = final_intro
+        changed = True
+
+    # Tag linking
+    selected = list(payload.selected_tags or [])
+    for k in intro_keywords:
+        if k and k not in selected:
+            selected.append(k)
+    if selected:
+        from app.models.tag import Tag, UserTag
+        allow_dynamic = bool(getattr(settings, 'allow_dynamic_tag_create', False))
+        for tag_name in selected:
+            if not tag_name or not isinstance(tag_name, str):
+                continue
+            name = tag_name.strip()
+            if not name:
+                continue
+            tag = db.query(Tag).filter(Tag.tag == name).first()
+            if not tag:
+                if not allow_dynamic:
+                    continue
+                tag = Tag(tag=name, is_active=True)
+                db.add(tag)
+                db.flush()
+            exists = db.query(UserTag).filter(UserTag.user_id == me.id, UserTag.tag_id == tag.id).first()
+            if not exists:
+                db.add(UserTag(user_id=me.id, tag_id=tag.id))
+                changed = True
+
+    if changed:
+        db.add(me)
+        db.commit()
+        db.refresh(me)
+
+    return {"ok": True}

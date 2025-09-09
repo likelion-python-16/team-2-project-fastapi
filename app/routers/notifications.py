@@ -27,10 +27,13 @@ def get_my_activities(
     
     activities = []
     for notification in notifications:
+        # 아이콘 결정: 이벤트 타입 우선, 없으면 대상 타입 기반 (예: 채팅)
         icon = get_activity_icon(notification.event_type)
+        if not icon and getattr(notification, 'target_type', None) == 'chat_room':
+            icon = '💬'
         activities.append({
             "id": notification.id,
-            "icon": icon,
+            "icon": icon or '📄',
             "title": notification.title,
             "content": notification.content,
             "event_type": notification.event_type,

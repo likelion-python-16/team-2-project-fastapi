@@ -13,7 +13,7 @@ from app.utils.logging import logger
 # Models
 from app.models.user import User
 from app.models.challenge import Challenge, ChallengeStatus, ChallengeMode, PaymentType
-from app.models.participation import Participation, ParticipationRole
+from app.models.participation import Participation, ParticipationRole, ParticipationStatus
 from app.models.challenge_round import ChallengeRound
 from app.models.round_manager import RoundManager
 from app.models.attendance import RoundAttendance
@@ -567,9 +567,12 @@ async def create_challenge(
         default_zoom_link=getattr(challenge_data, 'default_zoom_link', None),
         default_place_name=getattr(challenge_data, 'default_place_name', None),
         default_address=getattr(challenge_data, 'default_address', None),  # road_address 통합
+        default_road_address=getattr(challenge_data, 'default_road_address', None),
         default_latitude=getattr(challenge_data, 'default_latitude', None),
         default_longitude=getattr(challenge_data, 'default_longitude', None),
-        # ❌ default_road_address, default_map_url 제거됨
+        default_place_id=getattr(challenge_data, 'default_place_id', None),
+        # default_map_url도 허용 (웹 지도 링크 수동 지정용)
+        default_map_url=getattr(challenge_data, 'default_map_url', None),
         
         # ✅ 리워드 시스템 (reward → reward_description)
         use_reward=getattr(challenge_data, 'use_reward', False),
@@ -823,8 +826,8 @@ def update_challenge(
     data = challenge_update.model_dump(exclude_unset=True)
     
     # ❌ 제거된 필드들 필터링
-    removed_fields = {'fee', 'participation_fee', 'max_participation_rate', 'is_closed', 
-                      'reward', 'default_road_address', 'default_map_url'}
+    removed_fields = {'fee', 'participation_fee', 'max_participation_rate', 'is_closed', \
+                      'reward'}
     data = {k: v for k, v in data.items() if k not in removed_fields}
     
     # 업데이트 적용
@@ -1211,10 +1214,14 @@ def create_challenge_round(
         finish_time=round_data.finish_time,
         description=round_data.description,
         url=round_data.url,
+        zoom_url=round_data.zoom_url,
         lat=round_data.lat,
         lon=round_data.lon,
         geofence_radius_m=round_data.geofence_radius_m,
         zoom_meeting_id=round_data.zoom_meeting_id,
+        reward_enabled=(round_data.reward_enabled if hasattr(round_data, 'reward_enabled') else None) or False,
+        reward_points=(round_data.reward_points if hasattr(round_data, 'reward_points') and round_data.reward_points is not None else 0),
+        reward_note=(round_data.reward_note if hasattr(round_data, 'reward_note') else None),
     )
     db.add(new_round)
     db.commit()
@@ -1274,14 +1281,19 @@ def update_challenge_round(
             raise HTTPException(400, "mode는 hybrid일 때만 변경 가능")
 
     # 공백 문자열은 None으로 정리
-    for key in ("url", "map_url", "place_name", "road_address", "address", "description", "zoom_meeting_id"):
+    for key in ("url", "zoom_url", "map_url", "place_name", "road_address", "address", "description", "zoom_meeting_id", "reward_note"):
         if key in data and isinstance(data[key], str) and data[key].strip() == "":
             data[key] = None
 
-    # 안전장치: 온라인 모드 + map_url만 온 경우 → url로 저장
+    # 안전장치: 온라인 모드 + 호환 변환
     eff_mode = data.get("mode") or r.mode
-    if eff_mode == "online" and "map_url" in data and data.get("map_url") and "url" not in data:
-        data["url"] = data["map_url"]
+    if eff_mode == "online":
+        # map_url만 오면 url로 저장(구버전 호환)
+        if "map_url" in data and data.get("map_url") and "url" not in data and "zoom_url" not in data:
+            data["url"] = data["map_url"]
+        # zoom_url만 오면 url도 채워 호환 보장
+        if "zoom_url" in data and data.get("zoom_url") and "url" not in data:
+            data["url"] = data["zoom_url"]
 
     # 실제 반영
     for k, v in data.items():

@@ -747,6 +747,49 @@ def admin_demote_admin_page(
         "target_user": target
     })
 
+
+# -----------------------------
+# Data Migrations (admin-only)
+# -----------------------------
+@router.post("/api/v1/admin/migrate/phones")
+def migrate_encrypt_phones(
+    db: Session = Depends(get_db),
+    current_user = Depends(require_master_admin),
+):
+    """
+    백필: 레거시 평문 `users.phone` 값을 암호화 필드(`phone_encrypted`)로 이전하고
+    fingerprint를 생성합니다. 실행 후 평문 컬럼은 비웁니다.
+    """
+    from app.models.user import User
+
+    updated = 0
+    cleared_only = 0
+
+    # 1) 평문만 있고 암호화가 없는 사용자 처리
+    candidates = db.query(User).filter(User.phone_encrypted.is_(None), User.phone.isnot(None)).all()
+    for u in candidates:
+        try:
+            u.set_phone(u.phone)
+            updated += 1
+        except Exception:
+            continue
+
+    # 2) 암호화는 있으나 평문도 남아있는 사용자 → 평문 제거
+    leftovers = db.query(User).filter(User.phone_encrypted.isnot(None), User.phone.isnot(None)).all()
+    for u in leftovers:
+        try:
+            u.phone = None
+            cleared_only += 1
+        except Exception:
+            continue
+
+    db.commit()
+
+    return {
+        "migrated": updated,
+        "cleared_plain_only": cleared_only,
+    }
+
 @router.post("/admin/demote-admin")
 def admin_demote_admin_form(
     request: Request,

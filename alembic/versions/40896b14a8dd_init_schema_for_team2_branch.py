@@ -1,8 +1,8 @@
-"""변경사항 설명
+"""init schema for team2_branch
 
-Revision ID: f6fcb2a96ef7
+Revision ID: 40896b14a8dd
 Revises: 
-Create Date: 2025-08-25 02:50:59.914575
+Create Date: 2025-09-09 07:18:13.058781
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'f6fcb2a96ef7'
+revision: str = '40896b14a8dd'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -43,6 +43,8 @@ def upgrade() -> None:
     sa.Column('email', sa.String(length=120), nullable=False),
     sa.Column('password_hash', sa.String(length=255), nullable=False),
     sa.Column('name', sa.String(length=100), nullable=False),
+    sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
     sa.Column('phone', sa.String(length=20), nullable=True),
     sa.Column('phone_encrypted', sa.String(length=255), nullable=True),
     sa.Column('phone_fingerprint', sa.String(length=64), nullable=True),
@@ -56,13 +58,19 @@ def upgrade() -> None:
     sa.Column('manner_score', sa.Float(), nullable=False),
     sa.Column('total_points', sa.Integer(), nullable=False),
     sa.Column('penalty_total', sa.Integer(), nullable=False),
+    sa.Column('warning_count', sa.Integer(), nullable=False),
+    sa.Column('is_review_banned', sa.Boolean(), nullable=False),
     sa.Column('is_admin', sa.Boolean(), nullable=False),
+    sa.Column('is_superadmin', sa.Boolean(), nullable=False),
     sa.Column('is_active', sa.Boolean(), nullable=False),
     sa.Column('email_verified', sa.Boolean(), nullable=False),
+    sa.Column('is_deleted', sa.Boolean(), server_default='0', nullable=False),
+    sa.Column('deleted_at', sa.DateTime(), nullable=True),
     sa.Column('token_version', sa.Integer(), server_default='0', nullable=False),
-    sa.Column('created_at', sa.DateTime(), nullable=False),
-    sa.Column('updated_at', sa.DateTime(), nullable=False),
-    sa.PrimaryKeyConstraint('id')
+    sa.Column('provider', sa.String(length=50), nullable=True),
+    sa.Column('provider_id', sa.String(length=100), nullable=True),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('provider', 'provider_id', name='uq_user_provider_pid')
     )
     op.create_index('idx_user_active_points', 'users', ['is_active', 'total_points'], unique=False)
     op.create_index('idx_user_email_active', 'users', ['email', 'is_active'], unique=False)
@@ -72,12 +80,25 @@ def upgrade() -> None:
     op.create_index(op.f('ix_users_id'), 'users', ['id'], unique=False)
     op.create_index(op.f('ix_users_identification_fingerprint'), 'users', ['identification_fingerprint'], unique=True)
     op.create_index(op.f('ix_users_is_active'), 'users', ['is_active'], unique=False)
+    op.create_index(op.f('ix_users_is_deleted'), 'users', ['is_deleted'], unique=False)
     op.create_index(op.f('ix_users_manner_score'), 'users', ['manner_score'], unique=False)
     op.create_index(op.f('ix_users_phone'), 'users', ['phone'], unique=True)
     op.create_index(op.f('ix_users_phone_fingerprint'), 'users', ['phone_fingerprint'], unique=True)
     op.create_index(op.f('ix_users_region_active'), 'users', ['region_active'], unique=False)
     op.create_index(op.f('ix_users_total_points'), 'users', ['total_points'], unique=False)
     op.create_index(op.f('ix_users_username'), 'users', ['username'], unique=True)
+    op.create_table('admin_audit_logs',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('user_id', sa.Integer(), nullable=False),
+    sa.Column('action', sa.String(length=50), nullable=False),
+    sa.Column('note', sa.String(length=255), nullable=True),
+    sa.Column('actor_id', sa.Integer(), nullable=True),
+    sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
+    sa.ForeignKeyConstraint(['actor_id'], ['users.id'], ondelete='SET NULL'),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_admin_audit_logs_user_id'), 'admin_audit_logs', ['user_id'], unique=False)
     op.create_table('admin_notices',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('author_id', sa.Integer(), nullable=True, comment='작성한 관리자 ID'),
@@ -93,6 +114,19 @@ def upgrade() -> None:
     op.create_index('ix_admin_notice_author', 'admin_notices', ['author_id'], unique=False)
     op.create_index('ix_admin_notice_updated', 'admin_notices', ['updated_at'], unique=False)
     op.create_index(op.f('ix_admin_notices_id'), 'admin_notices', ['id'], unique=False)
+    op.create_table('admin_requests',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('user_id', sa.Integer(), nullable=False),
+    sa.Column('status', sa.Enum('pending', 'approved', 'rejected', 'revoked', name='admin_request_status'), server_default='pending', nullable=False),
+    sa.Column('note', sa.String(length=255), nullable=True),
+    sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
+    sa.Column('reviewed_by', sa.Integer(), nullable=True),
+    sa.Column('reviewed_at', sa.DateTime(), nullable=True),
+    sa.ForeignKeyConstraint(['reviewed_by'], ['users.id'], ondelete='SET NULL'),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_admin_requests_user_id'), 'admin_requests', ['user_id'], unique=False)
     op.create_table('challenges',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('title', sa.String(length=200), nullable=False),
@@ -116,8 +150,10 @@ def upgrade() -> None:
     sa.Column('default_latitude', sa.Float(), nullable=True),
     sa.Column('default_longitude', sa.Float(), nullable=True),
     sa.Column('same_place_for_all_rounds', sa.Boolean(), nullable=False),
+    sa.Column('default_map_url', sa.String(length=512), nullable=True),
     sa.Column('use_reward', sa.Boolean(), nullable=False),
     sa.Column('reward_description', sa.Text(), nullable=True),
+    sa.Column('cover_image_url', sa.Text(), nullable=True),
     sa.Column('require_approval', sa.Boolean(), nullable=True, comment='참가 승인 필요'),
     sa.Column('is_public', sa.Boolean(), nullable=False),
     sa.Column('completed_at', sa.DateTime(), nullable=True),
@@ -150,6 +186,19 @@ def upgrade() -> None:
     op.create_index(op.f('ix_challenges_start_date'), 'challenges', ['start_date'], unique=False)
     op.create_index(op.f('ix_challenges_status'), 'challenges', ['status'], unique=False)
     op.create_index(op.f('ix_challenges_title'), 'challenges', ['title'], unique=False)
+    op.create_table('email_verifications',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('user_id', sa.Integer(), nullable=False),
+    sa.Column('token', sa.String(length=128), nullable=False),
+    sa.Column('sent_to', sa.String(length=120), nullable=False),
+    sa.Column('expires_at', sa.DateTime(), nullable=False),
+    sa.Column('used_at', sa.DateTime(), nullable=True),
+    sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_email_verifications_token'), 'email_verifications', ['token'], unique=True)
+    op.create_index(op.f('ix_email_verifications_user_id'), 'email_verifications', ['user_id'], unique=False)
     op.create_table('followings',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('follower_id', sa.Integer(), nullable=False),
@@ -169,19 +218,18 @@ def upgrade() -> None:
     sa.Column('user_id', sa.Integer(), nullable=False),
     sa.Column('title', sa.String(length=100), nullable=False),
     sa.Column('content', sa.Text(), nullable=True),
-    sa.Column('target_type', sa.String(length=30), nullable=True),
-    sa.Column('target_id', sa.Integer(), nullable=True),
     sa.Column('is_read', sa.Boolean(), nullable=False),
-    sa.Column('event_type', sa.Enum('challenge_deleted', 'creator_delegated', 'review_created', 'review_updated', 'refund_succeeded', 'refund_failed', 'point_awarded', 'notice_posted', 'join_completed', name='notification_event_enum'), nullable=True),
+    sa.Column('event_type', sa.Enum('challenge_deleted', 'creator_delegated', 'review_created', 'review_updated', 'review_received', 'refund_succeeded', 'refund_failed', 'point_awarded', 'notice_posted', 'join_completed', 'challenge_created', 'challenge_joined', 'report_received', 'warning_received', name='notification_event_enum'), nullable=True),
+    sa.Column('type', sa.Enum('challenge_deleted', 'creator_delegated', 'review_created', 'review_updated', 'review_received', 'refund_succeeded', 'refund_failed', 'point_awarded', 'notice_posted', 'join_completed', 'challenge_created', 'challenge_joined', 'report_received', 'warning_received', name='notification_type_enum'), nullable=True),
+    sa.Column('target_type', sa.String(length=50), nullable=True, comment='대상 타입 (review, challenge 등)'),
+    sa.Column('target_id', sa.Integer(), nullable=True, comment='대상 객체 ID'),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index('ix_notification_created', 'notifications', ['created_at'], unique=False)
-    op.create_index('ix_notification_event', 'notifications', ['event_type'], unique=False)
     op.create_index('ix_notification_is_read', 'notifications', ['is_read'], unique=False)
-    op.create_index('ix_notification_target', 'notifications', ['target_type', 'target_id'], unique=False)
     op.create_index('ix_notification_user', 'notifications', ['user_id'], unique=False)
     op.create_index('ix_notification_user_read', 'notifications', ['user_id', 'is_read'], unique=False)
     op.create_index(op.f('ix_notifications_id'), 'notifications', ['id'], unique=False)
@@ -199,6 +247,36 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_payment_methods_id'), 'payment_methods', ['id'], unique=False)
     op.create_index(op.f('ix_payment_methods_user_id'), 'payment_methods', ['user_id'], unique=False)
+    op.create_table('point_withdrawals',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('user_id', sa.Integer(), nullable=False),
+    sa.Column('point_amount', sa.Integer(), nullable=False),
+    sa.Column('withdrawal_amount', sa.Integer(), nullable=False),
+    sa.Column('fee_amount', sa.Integer(), nullable=False),
+    sa.Column('method', sa.Enum('bank_transfer', 'toss_pay', 'kakao_pay', name='withdrawal_method_enum'), nullable=False),
+    sa.Column('bank_name', sa.String(length=50), nullable=True),
+    sa.Column('account_number', sa.String(length=100), nullable=True),
+    sa.Column('account_holder', sa.String(length=50), nullable=True),
+    sa.Column('status', sa.Enum('pending', 'reviewing', 'approved', 'completed', 'rejected', 'cancelled', name='withdrawal_status_enum'), nullable=False),
+    sa.Column('requested_at', sa.DateTime(), nullable=False),
+    sa.Column('reviewed_at', sa.DateTime(), nullable=True),
+    sa.Column('completed_at', sa.DateTime(), nullable=True),
+    sa.Column('reviewed_by', sa.Integer(), nullable=True),
+    sa.Column('rejection_reason', sa.Text(), nullable=True),
+    sa.Column('admin_memo', sa.Text(), nullable=True),
+    sa.Column('transaction_id', sa.String(length=100), nullable=True),
+    sa.Column('created_at', sa.DateTime(), nullable=False),
+    sa.Column('updated_at', sa.DateTime(), nullable=False),
+    sa.CheckConstraint('fee_amount >= 0', name='ck_fee_amount_positive'),
+    sa.CheckConstraint('point_amount >= 10000', name='ck_withdrawal_min_points'),
+    sa.CheckConstraint('withdrawal_amount > 0', name='ck_withdrawal_amount_positive'),
+    sa.ForeignKeyConstraint(['reviewed_by'], ['users.id'], ),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_point_withdrawals_id'), 'point_withdrawals', ['id'], unique=False)
+    op.create_index('ix_withdrawal_status_date', 'point_withdrawals', ['status', 'requested_at'], unique=False)
+    op.create_index('ix_withdrawal_user_status', 'point_withdrawals', ['user_id', 'status'], unique=False)
     op.create_table('user_tags',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('tag_id', sa.Integer(), nullable=False),
@@ -246,6 +324,7 @@ def upgrade() -> None:
     sa.Column('map_url', sa.Text(), nullable=True, comment='네이버 지도 링크(참여자 노출용)'),
     sa.Column('zoom_meeting_id', sa.String(length=255), nullable=True, comment='줌 미팅 ID'),
     sa.Column('address', sa.String(length=255), nullable=True, comment='지번 주소'),
+    sa.Column('reward_enabled', sa.Boolean(), nullable=False, comment='리워드 사용 여부'),
     sa.ForeignKeyConstraint(['challenge_id'], ['challenges.id'], ),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('challenge_id', 'round', name='uq_challenge_roundnum'),
@@ -270,7 +349,7 @@ def upgrade() -> None:
     op.create_index(op.f('ix_challenge_tags_id'), 'challenge_tags', ['id'], unique=False)
     op.create_table('chat_rooms',
     sa.Column('id', sa.Integer(), nullable=False),
-    sa.Column('challenge_id', sa.Integer(), nullable=False),
+    sa.Column('challenge_id', sa.Integer(), nullable=True),
     sa.Column('creator_id', sa.Integer(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
@@ -309,45 +388,22 @@ def upgrade() -> None:
     op.create_table('participations',
     sa.Column('user_id', sa.Integer(), nullable=False),
     sa.Column('challenge_id', sa.Integer(), nullable=False),
-    sa.Column('role', sa.Enum('creator', 'participant', 'manager', 'moderator', name='participation_role_enum'), nullable=False),
+    sa.Column('role', sa.Enum('creator', 'participant', 'manager', name='participation_role_enum'), nullable=False),
     sa.Column('status', sa.Enum('pending', 'payment_pending', 'active', 'paused', 'completed', 'cancelled', 'expelled', 'payment_failed', name='participation_status_enum'), nullable=False),
     sa.Column('joined_at', sa.DateTime(), nullable=False, comment='참가 신청 시간'),
-    sa.Column('activated_at', sa.DateTime(), nullable=True, comment='실제 참가 시작 시간 (결제 완료 후)'),
-    sa.Column('completed_at', sa.DateTime(), nullable=True, comment='완료 시간'),
-    sa.Column('left_at', sa.DateTime(), nullable=True, comment='탈퇴 시간'),
-    sa.Column('payment_cycle', sa.Enum('entry_fee', 'monthly', 'free', name='payment_cycle_enum'), nullable=True, comment='선택한 결제 방식 (챌린지가 multiple 옵션일 때)'),
-    sa.Column('next_payment_date', sa.Date(), nullable=True, comment='다음 결제 예정일 (월회비용)'),
-    sa.Column('payment_failed_count', sa.Integer(), nullable=False, comment='연속 결제 실패 횟수'),
-    sa.Column('total_paid_amount', sa.Integer(), nullable=False, comment='총 결제 금액'),
-    sa.Column('progress_rate', sa.Float(), nullable=False, comment='진행률 (0-100%)'),
-    sa.Column('attendance_count', sa.Integer(), nullable=False, comment='총 출석 횟수'),
-    sa.Column('total_rounds', sa.Integer(), nullable=True, comment='참가한 시점의 총 회차 수 (변경 추적용)'),
-    sa.Column('leave_type', sa.Enum('voluntary', 'kicked', 'payment_failure', 'rule_violation', 'inactivity', name='leave_type_enum'), nullable=True, comment='탈퇴 사유'),
-    sa.Column('leave_reason', sa.Text(), nullable=True, comment='상세 탈퇴 사유'),
-    sa.Column('kicked_by', sa.Integer(), nullable=True, comment='퇴출 처리한 관리자 ID'),
-    sa.Column('is_notification_enabled', sa.Boolean(), nullable=False, comment='알림 수신 여부'),
-    sa.Column('auto_payment_enabled', sa.Boolean(), nullable=False, comment='자동 결제 활성화 여부'),
-    sa.Column('join_motivation', sa.Text(), nullable=True, comment='참가 동기/목표'),
+    sa.Column('is_active', sa.Boolean(), nullable=False, comment='참여 레코드 활성 여부'),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
-    sa.CheckConstraint('attendance_count >= 0', name='ck_participation_attendance_positive'),
-    sa.CheckConstraint('payment_failed_count >= 0', name='ck_participation_payment_failed_positive'),
-    sa.CheckConstraint('progress_rate >= 0 AND progress_rate <= 100', name='ck_participation_progress_range'),
-    sa.CheckConstraint('total_paid_amount >= 0', name='ck_participation_total_paid_positive'),
     sa.ForeignKeyConstraint(['challenge_id'], ['challenges.id'], ),
-    sa.ForeignKeyConstraint(['kicked_by'], ['users.id'], ),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('user_id', 'challenge_id'),
     sa.UniqueConstraint('user_id', 'challenge_id', name='uq_participation_user_challenge')
     )
     op.create_index('ix_participation_challenge', 'participations', ['challenge_id'], unique=False)
     op.create_index('ix_participation_joined_status', 'participations', ['joined_at', 'status'], unique=False)
-    op.create_index('ix_participation_next_payment', 'participations', ['next_payment_date'], unique=False)
-    op.create_index('ix_participation_progress', 'participations', ['progress_rate'], unique=False)
     op.create_index('ix_participation_status_role', 'participations', ['status', 'role'], unique=False)
     op.create_index('ix_participation_user', 'participations', ['user_id'], unique=False)
     op.create_index(op.f('ix_participations_joined_at'), 'participations', ['joined_at'], unique=False)
-    op.create_index(op.f('ix_participations_next_payment_date'), 'participations', ['next_payment_date'], unique=False)
     op.create_index(op.f('ix_participations_role'), 'participations', ['role'], unique=False)
     op.create_index(op.f('ix_participations_status'), 'participations', ['status'], unique=False)
     op.create_table('payments',
@@ -357,7 +413,7 @@ def upgrade() -> None:
     sa.Column('method', sa.Enum('card', 'bank_transfer', 'toss_pay', 'kakao_pay', 'point', name='payment_method_type_enum'), nullable=False),
     sa.Column('transaction_type', sa.Enum('entry_fee', 'monthly_fee', 'penalty', 'etc', name='payment_transaction_type_enum'), nullable=False),
     sa.Column('amount', sa.Integer(), nullable=False),
-    sa.Column('status', sa.Enum('pending', 'success', 'failed', 'cancelled', 'refunded', 'partial_refunded', name='payment_status_enum'), nullable=False),
+    sa.Column('status', sa.Enum('pending', 'success', 'completed', 'failed', 'cancelled', 'refunded', 'partial_refunded', name='payment_status_enum'), nullable=False),
     sa.Column('order_id', sa.String(length=100), nullable=False),
     sa.Column('order_name', sa.String(length=200), nullable=True),
     sa.Column('payment_key', sa.String(length=255), nullable=True),
@@ -408,7 +464,7 @@ def upgrade() -> None:
     sa.Column('challenge_id', sa.Integer(), nullable=True),
     sa.Column('description', sa.String(length=255), nullable=False),
     sa.Column('point_amount', sa.Integer(), nullable=False),
-    sa.Column('type', sa.Enum('gain', 'use', 'refund', name='point_history_type_enum'), nullable=False),
+    sa.Column('type', sa.Enum('gain', 'use', 'refund', 'challenge_reward', 'withdrawal', name='point_history_type_enum'), nullable=False),
     sa.Column('total_earned_point', sa.Integer(), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
@@ -534,12 +590,12 @@ def upgrade() -> None:
     sa.Column('challenge_id', sa.Integer(), nullable=True),
     sa.Column('refund_amount', sa.Integer(), nullable=False),
     sa.Column('refund_reason', sa.Text(), nullable=True),
-    sa.Column('status', sa.Enum('pending', 'success', 'failed', 'cancelled', 'refunded', 'partial_refunded', name='refund_status_enum'), nullable=False),
+    sa.Column('status', sa.Enum('pending', 'success', 'completed', 'failed', 'cancelled', 'refunded', 'partial_refunded', name='refund_status_enum'), nullable=False),
     sa.Column('requested_at', sa.DateTime(), nullable=False),
     sa.Column('processed_at', sa.DateTime(), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
-    sa.CheckConstraint('refund_amount > 0', name='ck_refund_amount_positive'),
+    sa.CheckConstraint('refund_amount >= 0', name='ck_refund_amount_positive'),
     sa.ForeignKeyConstraint(['challenge_id'], ['challenges.id'], ),
     sa.ForeignKeyConstraint(['payment_id'], ['payments.id'], ),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
@@ -550,6 +606,26 @@ def upgrade() -> None:
     op.create_index(op.f('ix_refunds_id'), 'refunds', ['id'], unique=False)
     op.create_index(op.f('ix_refunds_payment_id'), 'refunds', ['payment_id'], unique=False)
     op.create_index(op.f('ix_refunds_user_id'), 'refunds', ['user_id'], unique=False)
+    op.create_table('report_auto_evals',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('report_id', sa.Integer(), nullable=False),
+    sa.Column('comment_text', sa.Text(), nullable=False),
+    sa.Column('comment_hash', sa.String(length=64), nullable=False),
+    sa.Column('toxic_score', sa.Integer(), nullable=False),
+    sa.Column('rule_flag', sa.Boolean(), nullable=False),
+    sa.Column('reporter_trust', sa.Integer(), nullable=False),
+    sa.Column('multi_report_count', sa.Integer(), nullable=False),
+    sa.Column('auto_decision', sa.Enum('true', 'false', 'review', name='report_auto_decision_enum'), nullable=False),
+    sa.Column('auto_confidence', sa.Integer(), nullable=False),
+    sa.Column('decided_at', sa.DateTime(), nullable=False),
+    sa.ForeignKeyConstraint(['report_id'], ['reports.id'], ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index('ix_report_auto_eval_decided_at', 'report_auto_evals', ['decided_at'], unique=False)
+    op.create_index('ix_report_auto_eval_decision', 'report_auto_evals', ['auto_decision'], unique=False)
+    op.create_index('ix_report_auto_eval_report', 'report_auto_evals', ['report_id'], unique=False)
+    op.create_index(op.f('ix_report_auto_evals_comment_hash'), 'report_auto_evals', ['comment_hash'], unique=False)
+    op.create_index(op.f('ix_report_auto_evals_id'), 'report_auto_evals', ['id'], unique=False)
     op.create_table('report_proofs',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('report_id', sa.Integer(), nullable=False),
@@ -564,6 +640,7 @@ def upgrade() -> None:
     op.create_table('reviews',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('user_id', sa.Integer(), nullable=False),
+    sa.Column('target_user_id', sa.Integer(), nullable=True),
     sa.Column('challenge_id', sa.Integer(), nullable=False),
     sa.Column('round_id', sa.Integer(), nullable=True),
     sa.Column('comment', sa.Text(), nullable=True),
@@ -575,6 +652,7 @@ def upgrade() -> None:
     sa.Column('updated_at', sa.DateTime(), nullable=False),
     sa.ForeignKeyConstraint(['challenge_id'], ['challenges.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['round_id'], ['challenge_rounds.id'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['target_user_id'], ['users.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('user_id', 'challenge_id', name='uq_review_user_challenge'),
@@ -735,6 +813,12 @@ def downgrade() -> None:
     op.drop_index('ix_reportproof_report', table_name='report_proofs')
     op.drop_index(op.f('ix_report_proofs_id'), table_name='report_proofs')
     op.drop_table('report_proofs')
+    op.drop_index(op.f('ix_report_auto_evals_id'), table_name='report_auto_evals')
+    op.drop_index(op.f('ix_report_auto_evals_comment_hash'), table_name='report_auto_evals')
+    op.drop_index('ix_report_auto_eval_report', table_name='report_auto_evals')
+    op.drop_index('ix_report_auto_eval_decision', table_name='report_auto_evals')
+    op.drop_index('ix_report_auto_eval_decided_at', table_name='report_auto_evals')
+    op.drop_table('report_auto_evals')
     op.drop_index(op.f('ix_refunds_user_id'), table_name='refunds')
     op.drop_index(op.f('ix_refunds_payment_id'), table_name='refunds')
     op.drop_index(op.f('ix_refunds_id'), table_name='refunds')
@@ -790,12 +874,9 @@ def downgrade() -> None:
     op.drop_table('payments')
     op.drop_index(op.f('ix_participations_status'), table_name='participations')
     op.drop_index(op.f('ix_participations_role'), table_name='participations')
-    op.drop_index(op.f('ix_participations_next_payment_date'), table_name='participations')
     op.drop_index(op.f('ix_participations_joined_at'), table_name='participations')
     op.drop_index('ix_participation_user', table_name='participations')
     op.drop_index('ix_participation_status_role', table_name='participations')
-    op.drop_index('ix_participation_progress', table_name='participations')
-    op.drop_index('ix_participation_next_payment', table_name='participations')
     op.drop_index('ix_participation_joined_status', table_name='participations')
     op.drop_index('ix_participation_challenge', table_name='participations')
     op.drop_table('participations')
@@ -829,15 +910,17 @@ def downgrade() -> None:
     op.drop_index('ix_user_tag_user', table_name='user_tags')
     op.drop_index('ix_user_tag_tag', table_name='user_tags')
     op.drop_table('user_tags')
+    op.drop_index('ix_withdrawal_user_status', table_name='point_withdrawals')
+    op.drop_index('ix_withdrawal_status_date', table_name='point_withdrawals')
+    op.drop_index(op.f('ix_point_withdrawals_id'), table_name='point_withdrawals')
+    op.drop_table('point_withdrawals')
     op.drop_index(op.f('ix_payment_methods_user_id'), table_name='payment_methods')
     op.drop_index(op.f('ix_payment_methods_id'), table_name='payment_methods')
     op.drop_table('payment_methods')
     op.drop_index(op.f('ix_notifications_id'), table_name='notifications')
     op.drop_index('ix_notification_user_read', table_name='notifications')
     op.drop_index('ix_notification_user', table_name='notifications')
-    op.drop_index('ix_notification_target', table_name='notifications')
     op.drop_index('ix_notification_is_read', table_name='notifications')
-    op.drop_index('ix_notification_event', table_name='notifications')
     op.drop_index('ix_notification_created', table_name='notifications')
     op.drop_table('notifications')
     op.drop_index(op.f('ix_followings_id'), table_name='followings')
@@ -845,6 +928,9 @@ def downgrade() -> None:
     op.drop_index('ix_follow_follower', table_name='followings')
     op.drop_index('ix_follow_created', table_name='followings')
     op.drop_table('followings')
+    op.drop_index(op.f('ix_email_verifications_user_id'), table_name='email_verifications')
+    op.drop_index(op.f('ix_email_verifications_token'), table_name='email_verifications')
+    op.drop_table('email_verifications')
     op.drop_index(op.f('ix_challenges_title'), table_name='challenges')
     op.drop_index(op.f('ix_challenges_status'), table_name='challenges')
     op.drop_index(op.f('ix_challenges_start_date'), table_name='challenges')
@@ -857,17 +943,22 @@ def downgrade() -> None:
     op.drop_index('ix_challenge_participants', table_name='challenges')
     op.drop_index('ix_challenge_creator_status', table_name='challenges')
     op.drop_table('challenges')
+    op.drop_index(op.f('ix_admin_requests_user_id'), table_name='admin_requests')
+    op.drop_table('admin_requests')
     op.drop_index(op.f('ix_admin_notices_id'), table_name='admin_notices')
     op.drop_index('ix_admin_notice_updated', table_name='admin_notices')
     op.drop_index('ix_admin_notice_author', table_name='admin_notices')
     op.drop_index('ix_admin_notice_active', table_name='admin_notices')
     op.drop_table('admin_notices')
+    op.drop_index(op.f('ix_admin_audit_logs_user_id'), table_name='admin_audit_logs')
+    op.drop_table('admin_audit_logs')
     op.drop_index(op.f('ix_users_username'), table_name='users')
     op.drop_index(op.f('ix_users_total_points'), table_name='users')
     op.drop_index(op.f('ix_users_region_active'), table_name='users')
     op.drop_index(op.f('ix_users_phone_fingerprint'), table_name='users')
     op.drop_index(op.f('ix_users_phone'), table_name='users')
     op.drop_index(op.f('ix_users_manner_score'), table_name='users')
+    op.drop_index(op.f('ix_users_is_deleted'), table_name='users')
     op.drop_index(op.f('ix_users_is_active'), table_name='users')
     op.drop_index(op.f('ix_users_identification_fingerprint'), table_name='users')
     op.drop_index(op.f('ix_users_id'), table_name='users')

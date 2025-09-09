@@ -68,9 +68,24 @@ def check_duplicates(
             ident_norm = None
         if ident_norm:
             fp = id_fingerprint(ident_norm)
-            taken["identification_number"] = (
-                db.query(User.id).filter(User.identification_fingerprint == fp).first() is not None
-            )
+            exists_fp = db.query(User.id).filter(User.identification_fingerprint == fp).first() is not None
+            exists_fallback = False
+            if not exists_fp:
+                # Fallback: decrypt existing values to compare in case fingerprint secret changed
+                try:
+                    from app.security import decrypt_str
+                    rows = db.query(User.identification_number).filter(User.identification_number.isnot(None)).all()
+                    for (enc_val,) in rows:
+                        try:
+                            plain = decrypt_str(enc_val)
+                            if normalize_phone(plain) == ident_norm:
+                                exists_fallback = True
+                                break
+                        except Exception:
+                            continue
+                except Exception:
+                    exists_fallback = False
+            taken["identification_number"] = bool(exists_fp or exists_fallback)
 
     return {"taken": taken}
 
@@ -241,8 +256,24 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
         or_(User.username == payload.login, User.email == payload.login)
     ).first()
 
-    if not user or not user.verify_password(payload.password):
-        logger.warning(f"로그인 실패 시도: login={payload.login}")
+    if not user:
+        logger.warning(f"로그인 실패 시도(존재하지 않는 사용자): login={payload.login}")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "아이디 또는 비밀번호가 올바르지 않습니다")
+    if not user.verify_password(payload.password):
+        # 소셜 연동/생성 계정인지 힌트 제공 (일반 계정은 기존 메시지 유지)
+        try:
+            if getattr(user, 'provider', None):
+                raise HTTPException(
+                    status.HTTP_403_FORBIDDEN,
+                    detail={
+                        "message": "소셜 계정으로 가입된 사용자입니다. 소셜 로그인으로 진행해 주세요.",
+                        "action": "social_login_required",
+                        "provider": user.provider,
+                    },
+                )
+        except HTTPException:
+            raise
+        logger.warning(f"로그인 실패 시도(비밀번호 불일치): login={payload.login}")
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "아이디 또는 비밀번호가 올바르지 않습니다")
 
     if not user.is_active:
@@ -500,6 +531,74 @@ def verify_email_api(
     
     db.commit()
     return {"message": "이메일 인증이 완료되었습니다"}
+
+
+@router.post("/update-email")
+def update_email(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    """이메일 변경 + 인증 메일 발송
+
+    Body: { login, current_password, new_email }
+    login은 사용자명 또는 현재 이메일을 받습니다.
+    """
+    login = (payload.get("login") or "").strip().lower()
+    current_password = payload.get("current_password") or ""
+    new_email = (payload.get("new_email") or "").strip().lower()
+
+    if not login or not current_password or not new_email:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "login, current_password, new_email 모두 필요합니다")
+
+    user = db.query(User).filter(or_(User.username == login, User.email == login)).first()
+    if not user or not user.verify_password(current_password):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "아이디/비밀번호가 올바르지 않습니다")
+
+    if user.email and user.email.lower() == new_email:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "현재 이메일과 동일합니다")
+
+    # 이메일 중복 검사
+    exists = db.query(User.id).filter(User.email == new_email).first()
+    if exists:
+        raise HTTPException(status.HTTP_409_CONFLICT, "이미 사용 중인 이메일입니다")
+
+    # 변경 및 인증 상태 초기화
+    user.email = new_email
+    user.email_verified = False
+
+    try:
+        db.commit()
+        db.refresh(user)
+    except Exception as e:
+        db.rollback()
+        logger.error(f"이메일 변경 실패: {e}")
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "이메일 변경에 실패했습니다")
+
+    # 인증 메일 발송 (실패해도 변경 자체는 유지)
+    try:
+        EmailService.send_verification_email(db, user)
+    except Exception as e:
+        logger.error(f"이메일 인증 발송 실패(변경 후): {e}")
+
+    def _mask_email(addr: str) -> str:
+        try:
+            local, dom = addr.split('@', 1)
+            def m(s: str) -> str:
+                if len(s) <= 2:
+                    return s[0] + '*'
+                return s[:2] + '*' * max(1, len(s)-3) + s[-1]
+            parts = dom.split('.')
+            head = parts[0]
+            tail = '.' + '.'.join(parts[1:]) if len(parts) > 1 else ''
+            return f"{m(local)}@{m(head)}{tail}"
+        except Exception:
+            return addr
+
+    return {
+        "message": "이메일이 변경되었고 인증 메일을 발송했습니다",
+        "sent_to": new_email,
+        "sent_to_masked": _mask_email(new_email)
+    }
 
 
 # ========================

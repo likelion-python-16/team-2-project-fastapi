@@ -15,7 +15,7 @@
       <div id="socialInfoBox" class="rounded-lg p-3 border border-muted bg-muted/20 text-xs text-muted-foreground">
         <div class="flex items-center gap-3">
           <div class="relative w-12 h-12">
-            <img id="prefAvatar" class="w-12 h-12 rounded-full border border-border object-cover" alt="avatar"/>
+            <img id="prefAvatar" class="w-12 h-12 rounded-full border border-border object-cover" alt="avatar" referrerpolicy="no-referrer"/>
             <div id="prefInitial" class="absolute inset-0 rounded-full hidden flex items-center justify-center text-white text-sm font-semibold" style="background:#EF4444"></div>
           </div>
           <div class="flex-1">
@@ -108,6 +108,12 @@
       <div class="flex gap-3">
         <button type="submit" id="btnNext" class="kt-btn kt-btn-primary grow">다음 단계</button>
       </div>
+      
+      <!-- 약관 동의 (일반 회원가입과 동일한 UX) -->
+      <label class="kt-label">
+        <input class="kt-checkbox kt-checkbox-sm" id="agreeTermsSocial" name="agreeTermsSocial" type="checkbox" required />
+        <span class="kt-checkbox-label"><a href="#" class="text-blue-600 hover:text-blue-800 underline" onclick="showTerms()">이용약관</a> 및 <a href="#" class="text-blue-600 hover:text-blue-800 underline" onclick="showPrivacy()">개인정보처리방침</a>에 동의합니다</span>
+      </label>
     </form>
   </div>
   </div>
@@ -190,13 +196,74 @@ function maskEmail(e){
 }
 
 document.addEventListener('DOMContentLoaded', async ()=>{
+  // Step1는 항상 클린 스타트: 남아있던 초안/프리필 제거
+  try{
+    localStorage.removeItem('signupSocialDraft');
+    sessionStorage.removeItem('signupSocialDraft');
+    // provider가 바뀌지 않았더라도 과거 프리필이 개입하지 않도록 제거
+    localStorage.removeItem('signupDraft');
+    sessionStorage.removeItem('signupDraft');
+    localStorage.removeItem('social_prefill');
+    sessionStorage.removeItem('social_prefill');
+  }catch(_){ }
+  // fresh=1이면 초안/프리필 초기화 (보안/청결)
+  try{
+    const qp=new URLSearchParams(location.search);
+    if(qp.get('fresh')==='1'){
+      try{
+        localStorage.removeItem('signupSocialDraft');
+        localStorage.removeItem('signupDraft');
+        localStorage.removeItem('social_prefill');
+        sessionStorage.removeItem('signupSocialDraft');
+        sessionStorage.removeItem('signupDraft');
+        sessionStorage.removeItem('social_prefill');
+      }catch(_){ }
+      // URL 정리
+      const u=new URL(location.href); u.searchParams.delete('fresh'); history.replaceState({},'',u.toString());
+    }
+  }catch(_){ }
+  // --- Social session key guard: invalidate stale drafts when provider/account changes ---
+  try{
+    let ident=null;
+    try{ const r=await fetch('/api/v1/auth/identity/last', { credentials:'include' }); if(r.ok) ident=await r.json(); }catch(_){ }
+    const ssk = ident && (ident.provider||ident.provider_id||ident.sub)
+      ? `${ident.provider||''}:${ident.provider_id||ident.sub||''}` : '';
+    const prev = localStorage.getItem('social_session_key')||'';
+    if (ssk && ssk !== prev){
+      // clear any previous social/signup drafts and prefill
+      try{
+        localStorage.removeItem('signupSocialDraft');
+        localStorage.removeItem('signupDraft');
+        localStorage.removeItem('social_prefill');
+        sessionStorage.removeItem('signupSocialDraft');
+        sessionStorage.removeItem('signupDraft');
+        sessionStorage.removeItem('social_prefill');
+      }catch(_){ }
+      try{ localStorage.setItem('social_session_key', ssk); }catch(_){ }
+    }
+  }catch(_){ }
   const nameEl=document.getElementById('socialName');
   const emailEl=document.getElementById('socialEmail');
   let identity=null;
-  try{ const r=await fetch('/api/v1/auth/identity/last', { credentials:'include' }); if(r.ok) identity=await r.json(); }catch(_){ }
+  try{
+    const r=await fetch('/api/v1/auth/identity/last', { credentials:'include' });
+    if(r.ok) identity=await r.json();
+  }catch(_){ }
   const meToken=(localStorage.getItem('access_token')||sessionStorage.getItem('access_token')||'');
+  // Fallback: 현재 로그인 사용자 정보에도 프로필 이미지가 있다면 가져와서 사용
   if(!identity){
-    try{ const rr=await fetch('/api/v1/users/me',{headers:{Authorization:'Bearer '+meToken}}); if(rr.ok){ const mj=await rr.json(); identity={name:mj.name,email:mj.email}; } }catch(_){ }
+    try{
+      const rr=await fetch('/api/v1/users/me',{headers:{Authorization:'Bearer '+meToken}});
+      if(rr.ok){
+        const mj=await rr.json();
+        identity={
+          name: mj.name,
+          email: mj.email,
+          // 이미지 우선순위: profile_image > avatar_url
+          profile_image: (mj.profile_image || mj.avatar_url || ''),
+        };
+      }
+    }catch(_){ }
   }
   // 폴백 데이터: social_prefill, draft, 쿼리스트링
   let pf=null; try{ const raw=localStorage.getItem('social_prefill'); if(raw) pf=JSON.parse(raw); }catch(_){ pf=null; }
@@ -243,8 +310,9 @@ document.addEventListener('DOMContentLoaded', async ()=>{
       }catch(_){ }
       showInitial();
     }
+    imgEl.referrerPolicy = 'no-referrer';
     imgEl.onerror = nextTry;
-    imgEl.onload = ()=>{ iniEl.classList.add('hidden'); };
+    imgEl.onload = ()=>{ iniEl.classList.add('hidden'); imgEl.style.display='block'; };
     imgEl.src = url;
   }
   if (pic){ tryGooglePicture(pic); } else { showInitial(); }
@@ -490,6 +558,9 @@ document.addEventListener('DOMContentLoaded', async ()=>{
 
   document.getElementById('socialStep1').addEventListener('submit', async (e)=>{
     e.preventDefault();
+    // 약관 동의 체크
+    const agree = document.getElementById('agreeTermsSocial');
+    if (!agree || !agree.checked){ showAlert('이용약관 및 개인정보처리방침에 동의해 주세요.','error'); return; }
     const ph=normalizePhone(phone.value); const idRaw=String(idn.value||'').replace(/\D/g,'');
     if(ph.length!==11||!ph.startsWith('010')){ showAlert('전화번호를 정확히 입력해 주세요.','error'); return; }
     if(idRaw.length!==13 || !isValidRRN13(idRaw)){ showAlert('주민등록번호 형식이 올바르지 않습니다. (13자리, 7번째=1–8, 생년월일 유효)','error'); return; }
@@ -525,5 +596,21 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     window.location.href = '/signup/social/step2';
   });
 });
+
+// 약관/개인정보 안내(일반 회원가입과 동일한 간단 모달 대체)
+function showTerms(){
+  alert(`📜 이용약관 (예시)
+본 약관은 회원이 본 서비스를 이용함에 있어 필요한 권리, 의무 및 책임사항을 규정함을 목적으로 합니다.
+제3조 약관의 효력 및 변경: 공지 후 효력 발생, 동의하지 않을 경우 탈퇴 가능.
+제4조 회원 가입: 회사가 정한 양식에 따라 정보 기입 및 본 약관 동의로 신청합니다.
+제5조 회원의 의무: 관계 법령/본 약관/공지 준수 및 타인의 권리 침해 금지.
+기타 자세한 내용은 별도 고지에 따릅니다.`);
+}
+function showPrivacy(){
+  alert(`🔒 개인정보처리방침 (예시)
+회사는 개인정보 보호법에 따라 이용자의 개인정보를 보호하고 권익을 보장합니다.
+수집 항목/이용 목적/보유기간/제3자 제공/처리 위탁/안전성 확보 조치/이용자 권리 등을 고지합니다.
+개인정보 보호책임자: privacy@challengers.com`);
+}
 </script>
 {% endblock %}

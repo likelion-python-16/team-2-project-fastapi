@@ -11,6 +11,16 @@
   <script>
   (async function(){
     try{
+      // Clear any previous social/signup drafts to avoid stale prefill
+      try {
+        localStorage.removeItem('signupSocialDraft');
+        localStorage.removeItem('signupDraft');
+        localStorage.removeItem('social_prefill');
+        sessionStorage.removeItem('signupSocialDraft');
+        sessionStorage.removeItem('signupDraft');
+        sessionStorage.removeItem('social_prefill');
+      } catch(_) {}
+
       const p = new URLSearchParams(location.search);
       const access = p.get('access');
       const refresh = p.get('refresh');

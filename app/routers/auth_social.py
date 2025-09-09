@@ -264,8 +264,7 @@ async def callback_naver(request: Request, db: Session = Depends(get_db)):
         existing_email_user.provider_id = naver_id
         if profile_image:
             existing_email_user.profile_image = profile_image
-        if birth_year:
-            existing_email_user.birth_year = birth_year
+        # birth_year 필드는 User 모델에 존재하지 않으므로 저장하지 않음
             
         existing_email_user.token_version = (existing_email_user.token_version or 0) + 1
         db.commit()
@@ -284,7 +283,7 @@ async def callback_naver(request: Request, db: Session = Depends(get_db)):
         'email': email,
         'name': name,
         'profile_image': profile_image,
-        'birth_year': birth_year
+        # 'birth_year': birth_year  # User 모델에 컬럼이 없어 세션에는 보관만 하더라도 사용하지 않음
     }
     
     frontend_url = f"{_front_base(request)}/social/onboarding"
@@ -303,7 +302,7 @@ async def get_pending_social_info(request: Request):
         'email': pending.get('email'),
         'name': pending.get('name'),
         'profile_image': pending.get('profile_image') or pending.get('picture'),
-        'birth_year': pending.get('birth_year')
+        # 'birth_year': pending.get('birth_year')
     }
 
 
@@ -449,38 +448,30 @@ async def complete_social_signup(request: Request, payload: dict, db: Session = 
     if db.query(User).filter(User.username == username).first():
         raise HTTPException(400, '이미 사용중인 사용자명입니다')
     
-    # 새 사용자 생성
-    from app.security import id_fingerprint, normalize_phone, encrypt_str
-    
-    # 전화번호 암호화 및 지문 생성
-    phone_encrypted = encrypt_str(phone) if phone else None
-    phone_fingerprint = id_fingerprint(phone) if phone else None
-    
-    # 주민번호 암호화 및 지문 생성  
-    identification_encrypted = encrypt_str(identification_number) if identification_number else None
-    identification_fingerprint = id_fingerprint(identification_number) if identification_number else None
-    
+    # 새 사용자 생성: 전화/주민번호는 모델 setter를 사용해 암호화/지문 처리
     new_user = User(
         username=username,
         email=pending['email'],
         password_hash='',  # 소셜 로그인은 비밀번호 없음
         name=pending['name'],
-        phone=normalize_phone(phone) if phone else None,
-        phone_encrypted=phone_encrypted,
-        phone_fingerprint=phone_fingerprint,
-        identification_number=identification_encrypted,
-        identification_fingerprint=identification_fingerprint,
         region_living=region_living,
         region_active=region_active,
         profile_image=pending.get('profile_image', pending.get('picture', '')),
         provider=pending['provider'],
         provider_id=pending['provider_id'],
-        birth_year=pending.get('birth_year', ''),
+        # birth_year=pending.get('birth_year', ''),
         email_verified=True,  # 소셜 로그인은 이메일 인증 완료로 간주
         is_active=True,
         introduction='',  # 필수 필드이므로 빈 문자열
         gender='other'  # 기본값
     )
+    try:
+        if phone:
+            new_user.set_phone(phone)
+        if identification_number:
+            new_user.set_identification_number(identification_number)
+    except Exception:
+        pass
     
     db.add(new_user)
     db.commit()
@@ -658,11 +649,24 @@ async def social_finalize(request: Request, payload: dict = Body(...), db: Sessi
         region_active=payload.get('region_active') or '',
         profile_image=payload.get('profile_image') or ident.get('picture') or '/static/pictures/defaultprofile.svg',
         introduction=introduction_text,
-        birth_year=ident.get('birth_year', ''),
+        # birth_year=ident.get('birth_year', ''),
     )
     
-    # 비밀번호 설정 (소셜 로그인이므로 랜덤)
-    user.set_password(secrets.token_urlsafe(12))
+    # 비밀번호 설정: 전달된 비밀번호가 있으면 강도 검증 후 사용, 없으면 랜덤 생성
+    try:
+        from app.security import validate_password_strength
+        raw_pw = (payload.get('password') or '').strip()
+        if raw_pw:
+            if not validate_password_strength(raw_pw):
+                raise HTTPException(400, '비밀번호가 요구사항을 충족하지 않습니다')
+            user.set_password(raw_pw)
+        else:
+            user.set_password(secrets.token_urlsafe(12))
+    except HTTPException:
+        raise
+    except Exception:
+        # 예외 시 안전하게 랜덤 비밀번호로 진행
+        user.set_password(secrets.token_urlsafe(12))
     
     # 전화번호 설정
     try:
@@ -676,9 +680,16 @@ async def social_finalize(request: Request, payload: dict = Body(...), db: Sessi
     except Exception as e:
         raise HTTPException(400, f'주민등록번호 형식이 올바르지 않습니다: {str(e)}')
     
+    # 안전한 커밋: 중복(무결성) 오류를 500 대신 400/409로 안내
+    from sqlalchemy.exc import IntegrityError
     db.add(user)
-    db.commit()
-    db.refresh(user)
+    try:
+        db.commit()
+        db.refresh(user)
+    except IntegrityError as ie:
+        db.rollback()
+        # 이메일/사용자명 유니크 충돌 가능성 안내
+        raise HTTPException(409, '이미 사용 중인 이메일/사용자명이 있습니다. 기존 계정으로 로그인하거나 연동해 주세요.')
     
     # 태그 연결 처리: (1) selected_tags, (2) introduction JSON의 interests.keywords
     selected_tags = list(payload.get('selected_tags', []) or [])

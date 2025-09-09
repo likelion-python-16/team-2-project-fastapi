@@ -22,7 +22,7 @@ async def auto_create_rounds_on_challenge_create(db: Session, challenge: Challen
             lat, lon = geo["lat"], geo["lng"]
             addr = addr or geo.get("address")
             road = geo.get("road_address") or road
-            map_url = build_naver_map_url(pname, lat, lon, None)
+            map_url = build_naver_map_url(pname, lat, lon, getattr(challenge, 'default_place_id', None))
 
     for i in range(1, n + 1):
         r = ChallengeRound(

@@ -29,7 +29,7 @@ from .utils.logging import logger
 # 라우터들
 from .routers import (
     users, health, system, challenges, auth, homepage, follow,
-    naver_maps, map, files, tags_categories, places, naver_local, pages, tags,
+    naver_maps, map, files, places, naver_local, pages, tags,
     users_mypage, users_mypage_chat, users_mypage_more, point_management,
     reviews, reviews_api, notifications, reports
 )
@@ -161,12 +161,66 @@ async def login_page_post(request: Request):
                     path=(settings.auth_cookie_path or "/"),
                     domain=(settings.auth_cookie_domain or None),
                 )
+        else:
+            # 관리자 모드 등 남아있을 수 있는 서버측 쿠키를 정리해 역할 전이 방지
+            try:
+                resp.delete_cookie(key=access_cookie, path=(settings.auth_cookie_path or "/"), domain=(settings.auth_cookie_domain or None))
+            except Exception:
+                resp.delete_cookie(key=access_cookie, path="/")
+            try:
+                resp.delete_cookie(key=refresh_cookie, path=(settings.auth_cookie_path or "/"), domain=(settings.auth_cookie_domain or None))
+            except Exception:
+                resp.delete_cookie(key=refresh_cookie, path="/")
         return resp
     except HTTPException as exc:
         msg = exc.detail if isinstance(exc.detail, str) else "로그인에 실패했습니다."
         return templates.TemplateResponse("login.html", {"request": request, "error": msg}, status_code=exc.status_code)
     except Exception:
         return templates.TemplateResponse("login.html", {"request": request, "error": "로그인 처리 중 오류가 발생했습니다"}, status_code=500)
+
+@app.get("/logout-all", response_class=HTMLResponse, tags=["Pages"])
+async def logout_all_page():
+    """Clear all client-side tokens and server cookies, then redirect.
+
+    Ensures strict separation between admin and user sessions.
+    """
+    access_cookie = settings.auth_access_cookie_name or "access_token"
+    refresh_cookie = settings.auth_refresh_cookie_name or "refresh_token"
+    secure_flag = (settings.auth_cookie_secure if settings.auth_cookie_secure is not None else not settings.debug)
+    html = f"""
+    <!doctype html><html><head><meta charset=\"utf-8\"><title>Logging out...</title></head>
+    <body><script>
+    try {{
+      // Wipe storage tokens in all places we use
+      ['access_token','refresh_token','remember_login'].forEach(function(k){{
+        try{{ localStorage.removeItem(k); }}catch(_){{}}
+        try{{ sessionStorage.removeItem(k); }}catch(_){{}}
+      }});
+    }} catch(_){{}}
+    // Navigate home; no session remains
+    window.location.replace('/home');
+    </script></body></html>
+    """
+    resp = HTMLResponse(content=html, status_code=200)
+    # Proactively clear server cookies as well
+    try:
+        resp.delete_cookie(key=access_cookie, path=(settings.auth_cookie_path or "/"), domain=(settings.auth_cookie_domain or None))
+    except Exception:
+        resp.delete_cookie(key=access_cookie, path="/")
+    try:
+        resp.delete_cookie(key=refresh_cookie, path=(settings.auth_cookie_path or "/"), domain=(settings.auth_cookie_domain or None))
+    except Exception:
+        resp.delete_cookie(key=refresh_cookie, path="/")
+    # Clean any legacy/aux cookies
+    try:
+        resp.delete_cookie(key="session", path="/")
+    except Exception:
+        pass
+    try:
+        resp.delete_cookie(key="allow_signup_steps", path="/")
+    except Exception:
+        pass
+    return resp
 
 @app.get("/signup", response_class=HTMLResponse, tags=["Pages"])
 async def signup_page():
@@ -426,7 +480,6 @@ app.include_router(homepage.router)  # 내부 prefix: /api/v1/home
 app.include_router(map.router)
 app.include_router(files.router, prefix="/api/v1")
 app.include_router(pages.router)
-app.include_router(tags_categories.router, prefix="/api/v1")
 app.include_router(tags.router, prefix="/api/v1")  # AI 태그 검색 기능
 app.include_router(challengecreating_router)
 app.include_router(challengedetail_router)

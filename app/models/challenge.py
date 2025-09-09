@@ -84,10 +84,15 @@ class Challenge(Base, TimestampMixin):
     # 오프라인
     default_place_name = Column(String(200), nullable=True)
     default_address = Column(String(300), nullable=True)
+    # 도로명 주소 보강 (Round의 road_address와 스키마를 맞추기 위함)
+    default_road_address = Column(String(300), nullable=True)
     default_latitude = Column(Float, nullable=True)
     default_longitude = Column(Float, nullable=True)
     
     same_place_for_all_rounds = Column(Boolean, default=False, nullable=False)
+
+    # Optional: Naver placeId for precise web links
+    default_place_id = Column(String(64), nullable=True)
 
     default_map_url = Column(String(512), nullable=True)
 

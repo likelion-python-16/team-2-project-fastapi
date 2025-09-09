@@ -182,9 +182,11 @@
               <div id="pv_road" class="muted" style="font-size:12px"></div>
               <div id="pv_addr" class="muted" style="font-size:12px"></div>
               <div class="muted" style="font-size:12px;margin-top:4px">위도 <span id="pv_lat">-</span> / 경도 <span id="pv_lng">-</span></div>
-              <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap; align-items:center">
-                <a id="pv_link" href="#" target="_blank" rel="noopener">네이버 장소 링크(웹에서 열기)</a>
-                <a id="pv_link_app" href="#">앱에서 열기</a>
+              <style>.pill-btn{display:inline-block;padding:4px 10px;border:1px solid #e5e7eb;border-radius:9999px;background:#fff;color:#374151;font-size:11px;line-height:1;} .pill-btn:hover{background:#f9fafb}</style>
+              <div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap; align-items:center">
+                <a id="pv_map_web" class="pill-btn" href="#" target="_blank" rel="noopener" style="display:none">웹사이트</a>
+                <a id="pv_map_android" class="pill-btn" href="#" style="display:none">Android 앱</a>
+                <a id="pv_map_ios" class="pill-btn" href="#" style="display:none">iOS 앱</a>
               </div>
               <div class="muted" style="font-size:12px;margin-top:4px" id="pv_link_hint"></div>
               <div id="pv_confirm_row" style="margin-top:8px; display:flex; gap:8px; align-items:center">
@@ -218,6 +220,24 @@
 
 <!-- 인증 -->
 <script>
+  // 링크 빌더/딥링크 헬퍼 (detail 페이지와 동일 정책)
+  function buildNaverWebUrl(name, lat, lon){
+    if (lat != null && lon != null){ return `https://map.naver.com/v5/?c=${lon},${lat},15,0,0,0,dh`; }
+    if (name && String(name).trim()){ return `https://map.naver.com/v5/search/${encodeURIComponent(name)}`; }
+    return null;
+  }
+  function buildNaverAppUrl(name, lat, lon){
+    if (lat != null && lon != null){ return `nmap://map?lat=${lat}&lng=${lon}&zoom=15&appname=com.challengers.web`; }
+    if (name && String(name).trim()){ return `nmap://search?query=${encodeURIComponent(name)}&appname=com.challengers.web`; }
+    return null;
+  }
+  function openAndroidDeepLink(appUrl, webUrl){
+    var storeUrl='https://play.google.com/store/apps/details?id=com.nhn.android.nmap';
+    var t=setTimeout(function(){ location.href=webUrl||storeUrl; },1500);
+    try{ var intent=appUrl.replace(/^nmap:\/\//,'intent://')+'#Intent;scheme=nmap;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;package=com.nhn.android.nmap;end'; location.href=intent; }catch(_){ }
+    window.addEventListener('pagehide', function(){ clearTimeout(t); }); document.addEventListener('visibilitychange', function(){ if(document.hidden) clearTimeout(t); });
+  }
+  function openIOSDeepLink(appUrl, webUrl){ var storeUrl='http://itunes.apple.com/app/id311867728?mt=8'; var c=Date.now(); location.href=appUrl; setTimeout(function(){ if(Date.now()-c<2000){ location.href=webUrl||storeUrl; } },1500); }
 function parseJwt(token) {
   const base64Url = token.split('.')[1];
   const base64 = base64Url.replace(/-/g,'+').replace(/_/g,'/');
@@ -291,10 +311,29 @@ function removeCategory(name){
 }
 async function loadCategories(){
   try{
-    const data = await apiGet('/api/v1/tags/categories');
-    categories = Array.isArray(data) ? data : [];
+    // 1) 우선: 활성 카테고리 레이블(고정 12~17개) 로드
+    let url = '/api/v1/tags?active_only=true&categories_only=true';
+    let res = await fetch(url, { credentials:'include' });
+    let arr = [];
+    if (res.ok){
+      const j = await res.json().catch(()=>[]);
+      arr = Array.isArray(j) ? j : [];
+    }
+    // 2) 폴백: 일반 태그에서 최대 17개
+    if (!Array.isArray(arr) || arr.length === 0){
+      const r2 = await fetch('/api/v1/tags?categories_only=false&limit=17', { credentials:'include' });
+      if (r2.ok){
+        const j2 = await r2.json().catch(()=>[]);
+        arr = Array.isArray(j2) ? j2 : [];
+      }
+    }
+    // 3) 최종 세팅/렌더
+    categories = (arr||[]).map(x => (x && (x.tag || x.name || x.label)) ? (x.tag || x.name || x.label) : '').filter(Boolean);
     renderCategories();
-  }catch(e){ console.error(e); }
+    // 패널 표시 보장
+    const panel = document.getElementById('catGrid')?.closest('.panel');
+    if (panel) panel.style.display = '';
+  }catch(_){ }
 }
 </script>
 
@@ -420,8 +459,16 @@ async function selectPlace(i){
   document.getElementById('pv_addr').innerText  = addr ? `지번: ${addr}` : '';
   document.getElementById('pv_lat').innerText   = lat ?? '-';
   document.getElementById('pv_lng').innerText   = lng ?? '-';
-  document.getElementById('pv_link').href = link;
-  document.getElementById('pv_link_app').href = appLink;
+  // 링크 버튼 업데이트
+  (function(){
+    const webEl = document.getElementById('pv_map_web');
+    const andEl = document.getElementById('pv_map_android');
+    const iosEl = document.getElementById('pv_map_ios');
+    if (webEl){ if (link){ webEl.href = link; webEl.style.display='inline-block'; } else { webEl.style.display='none'; } }
+    const appUrl = buildNaverAppUrl(title, lat, lng);
+    if (andEl){ if (appUrl){ andEl.onclick=(e)=>{e.preventDefault(); openAndroidDeepLink(appUrl, link);}; andEl.style.display='inline-block'; } else { andEl.style.display='none'; } }
+    if (iosEl){ if (appUrl){ iosEl.onclick=(e)=>{e.preventDefault(); openIOSDeepLink(appUrl, link);}; iosEl.style.display='inline-block'; } else { iosEl.style.display='none'; } }
+  })();
   document.getElementById('pv_link_hint').innerText = placeId
     ? '🔵 이 링크는 해당 장소에 마커가 표시됩니다.'
     : '🔵 검색결과 화면으로 이동합니다(좌표 기준으로 센터 고정)';
@@ -486,8 +533,16 @@ window.addEventListener('message', async (e)=>{
     document.getElementById('pv_addr').innerText  = addr ? `지번: ${addr}` : '';
     document.getElementById('pv_lat').innerText   = lat ?? '-';
     document.getElementById('pv_lng').innerText   = lng ?? '-';
-    document.getElementById('pv_link').href       = link;
-    document.getElementById('pv_link_app').href   = appLink;
+    // 링크 버튼 업데이트
+    (function(){
+      const webEl = document.getElementById('pv_map_web');
+      const andEl = document.getElementById('pv_map_android');
+      const iosEl = document.getElementById('pv_map_ios');
+      if (webEl){ if (link){ webEl.href = link; webEl.style.display='inline-block'; } else { webEl.style.display='none'; } }
+      const appUrl = buildNaverAppUrl(title, lat, lng);
+      if (andEl){ if (appUrl){ andEl.onclick=(e)=>{e.preventDefault(); openAndroidDeepLink(appUrl, link);}; andEl.style.display='inline-block'; } else { andEl.style.display='none'; } }
+      if (iosEl){ if (appUrl){ iosEl.onclick=(e)=>{e.preventDefault(); openIOSDeepLink(appUrl, link);}; iosEl.style.display='inline-block'; } else { iosEl.style.display='none'; } }
+    })();
     document.getElementById('pv_link_hint').innerText = placeId
       ? '🔵 이 링크는 해당 장소에 마커가 표시됩니다.'
       : '🔵 검색결과 화면으로 이동합니다(좌표 기준으로 센터 고정)';

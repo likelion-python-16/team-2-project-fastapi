@@ -59,14 +59,15 @@
           <input class="kt-input" id="identification" disabled value="*************"/>
         </div>
 
-        <!-- 전화번호 -->
+        <!-- 전화번호 (비밀번호와 동일 UX: 기본은 입력칸 숨김) -->
         <div class="flex flex-col gap-1">
           <div class="flex items-center justify-between">
             <label class="kt-form-label">전화번호</label>
             <button type="button" class="kt-btn kt-btn-sm" data-edit="phone">수정</button>
           </div>
-          <input class="kt-input" id="phone" disabled placeholder="010-1234-5678"/>
-          <div id="phoneMsg" class="text-xs text-muted-foreground"></div>
+          <div id="phoneField" class="grid grid-cols-1 gap-2" hidden>
+            <input class="kt-input" id="phone" placeholder="010-1234-5678"/>
+          </div>
         </div>
 
         <!-- 비밀번호 변경 -->
@@ -207,14 +208,15 @@ document.addEventListener('DOMContentLoaded', async ()=>{
       // 전화번호는 모든 소셜 연동 계정에서 수정 가능 (제한 제거)
     }
   }
-  // 마스킹된 전화번호 표시
-  try{
+  // 마스킹된 전화번호는 기본 화면에 표시하지 않음 (요청사항)
+  // 필요 시 편집을 열었을 때만 플레이스홀더로 사용
+  let maskedPhone = '';
+  try {
     const pm = await api('/api/v1/users/me/phone-masked');
-    if(pm.ok && pm.json && pm.json.phone_masked){
-      const el = document.getElementById('phone');
-      el.value = pm.json.phone_masked;
+    if (pm.ok && pm.json && pm.json.phone_masked) {
+      maskedPhone = pm.json.phone_masked;
     }
-  }catch(_){ }
+  } catch (_) {}
 
   // 비밀번호 확인
   document.getElementById('btnGate').addEventListener('click', async ()=>{
@@ -234,10 +236,14 @@ document.addEventListener('DOMContentLoaded', async ()=>{
       const key = btn.getAttribute('data-edit');
       if(key==='username'){ const el=document.getElementById('username'); el.disabled = !el.disabled; el.focus(); }
       if(key==='phone'){
+        const wrap=document.getElementById('phoneField');
         const el=document.getElementById('phone');
-        el.disabled = !el.disabled;
-        if(!el.disabled){ el.value = ''; el.placeholder = '010-1234-5678'; }
-        el.focus();
+        wrap.hidden = !wrap.hidden;
+        if(!wrap.hidden){
+          el.value = '';
+          el.placeholder = '010-1234-5678';
+          el.focus();
+        }
       }
       if(key==='password'){ const f=document.getElementById('pwFields'); f.hidden = !f.hidden; document.getElementById('newPassword').focus(); }
     });
@@ -271,8 +277,8 @@ document.addEventListener('DOMContentLoaded', async ()=>{
       }
     }
 
-    // phone
-    if(!document.getElementById('phone').disabled){
+    // phone (편집 영역이 열려 있을 때만 적용)
+    if(!document.getElementById('phoneField').hidden){
       const raw = normalizePhone(document.getElementById('phone').value);
       if(!(raw && raw.length===11 && raw.startsWith('010'))){ 
         showFieldError('phone', '전화번호 형식을 확인해 주세요.'); 
