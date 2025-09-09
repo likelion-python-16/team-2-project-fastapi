@@ -21,7 +21,7 @@ services:
 
   # FastAPI 애플리케이션 (프로덕션)
   api:
-    build: 
+    build:
       context: .
       dockerfile: Dockerfile.prod
       args:
@@ -32,74 +32,82 @@ services:
       - ENVIRONMENT=production
       - DEBUG=False
 
+      # 외부 API 키
       - NAVER_SEARCH_CLIENT_ID=${NAVER_SEARCH_CLIENT_ID}
       - NAVER_SEARCH_CLIENT_SECRET=${NAVER_SEARCH_CLIENT_SECRET}
       - NAVER_MAPS_CLIENT_ID=${NAVER_MAPS_CLIENT_ID}
       - NAVER_MAPS_CLIENT_SECRET=${NAVER_MAPS_CLIENT_SECRET}
-      
+
       # MySQL 설정
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
       - MYSQL_USER=${MYSQL_USER}
       - MYSQL_PASSWORD=${MYSQL_PASSWORD}
       - MYSQL_DATABASE=${MYSQL_DATABASE}
-      
+
       # 보안 관련
       - JWT_SECRET=${JWT_SECRET}
       - FERNET_KEY=${FERNET_KEY}
-      - SESSION_SECRET=${SESSION_SECRET:-prod-session-secret}
-      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-prod-refresh-secret}
-      
+      - SESSION_SECRET=${SESSION_SECRET}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+
       # 소셜 로그인 설정
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-      - GOOGLE_REDIRECT_PATH=${GOOGLE_REDIRECT_PATH:-/api/v1/auth/callback/google}
+      - GOOGLE_REDIRECT_PATH=${GOOGLE_REDIRECT_PATH}
       - NAVER_CLIENT_ID=${NAVER_CLIENT_ID}
       - NAVER_CLIENT_SECRET=${NAVER_CLIENT_SECRET}
-      - NAVER_REDIRECT_PATH=${NAVER_REDIRECT_PATH:-/api/v1/auth/callback/naver}
-      
-      # URL 설정 (프로덕션용)
-      - FRONT_BASE_URL=${FRONT_BASE_URL:-http://13.209.147.11}
-      - API_BASE_URL=${API_BASE_URL:-http://13.209.147.11/api/v1}
-      - VERIFICATION_LINK_BASE=${VERIFICATION_LINK_BASE:-http://13.209.147.11/api/v1}
-      - VERIFY_SUCCESS_URL=${VERIFY_SUCCESS_URL:-http://13.209.147.11/verify/success}
-      - VERIFY_FAIL_URL=${VERIFY_FAIL_URL:-http://localhost/verify/fail}
-      
+      - NAVER_REDIRECT_PATH=${NAVER_REDIRECT_PATH}
+
+      # URL 설정 (기본값 제거)
+      - FRONT_BASE_URL=${FRONT_BASE_URL}
+      - API_BASE_URL=${API_BASE_URL}
+      - VERIFICATION_LINK_BASE=${VERIFICATION_LINK_BASE}
+      - VERIFY_SUCCESS_URL=${VERIFY_SUCCESS_URL}
+      - VERIFY_FAIL_URL=${VERIFY_FAIL_URL}
+
       # AWS 설정
       - AWS_REGION=${AWS_REGION}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - S3_BUCKET=${S3_BUCKET}
-      
+
       # 토스 결제 설정
       - TOSS_SECRET_KEY=${TOSS_SECRET_KEY}
       - TOSS_CLIENT_KEY=${TOSS_CLIENT_KEY}
-      
+
       # 초기 관리자 설정
-      - INITIAL_ADMIN_USERNAME=${INITIAL_ADMIN_USERNAME:-admin}
-      - INITIAL_ADMIN_EMAIL=${INITIAL_ADMIN_EMAIL:-admin@fastteam.com}
-      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-admin123!@#}
-      - INITIAL_ADMIN_NAME=${INITIAL_ADMIN_NAME:-FastTeam Admin}
+      - INITIAL_ADMIN_USERNAME=${INITIAL_ADMIN_USERNAME}
+      - INITIAL_ADMIN_EMAIL=${INITIAL_ADMIN_EMAIL}
+      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD}
+      - INITIAL_ADMIN_NAME=${INITIAL_ADMIN_NAME}
+
     env_file:
       - .env.production
+
     command: >
       python -m uvicorn app.main:app
       --host 0.0.0.0 --port 8000
       --workers 1
       --proxy-headers
       --forwarded-allow-ips="*"
+
     depends_on:
       mysql:
         condition: service_healthy
+
     networks:
       - fastteam-network
+
     restart: unless-stopped
+
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/'); print('ok')"]
       interval: 20s
       timeout: 5s
       retries: 3
       start_period: 30s
+
     deploy:
       resources:
         limits:
@@ -142,7 +150,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: fastteam-redis
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_password_123}
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
     volumes:
       - redis_data:/data
     networks:
@@ -178,7 +186,7 @@ services:
     image: grafana/grafana:latest
     container_name: fastteam-grafana
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin123}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana_data:/var/lib/grafana
@@ -191,7 +199,6 @@ services:
     restart: unless-stopped
     depends_on:
       - prometheus
-
 
 volumes:
   mysql_prod_data:
