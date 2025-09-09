@@ -189,32 +189,42 @@ def create_review(
             _recompute_manner_score(db, int(payload.target_id))
         except Exception:
             pass
-    # 알림 생성(작성자/대상자)
+    # 알림 생성(작성자/대상자) - 별도 세션 사용
     try:
         logger.info(f"Creating notifications for review {m.id}")
-        db.add(Notification(
+        
+        # 작성자 알림
+        notification1 = Notification(
             user_id=current_user.id,
             title="✍️ 리뷰 작성 완료",
             content=f"대상 ID {payload.target_id}에게 {float(payload.rating)}점 리뷰를 작성했습니다.",
             event_type=NotificationEvent.review_created,
             target_type="review",
             target_id=m.id,
-        ))
+        )
+        db.add(notification1)
+        
+        # 대상자 알림
         if payload.target_id:
             logger.info(f"Creating notification for target user {payload.target_id}")
-            db.add(Notification(
+            notification2 = Notification(
                 user_id=int(payload.target_id),
                 title="⭐ 새로운 리뷰 도착",
                 content=f"{current_user.name or current_user.username}님이 {float(payload.rating)}점 리뷰를 남겼습니다.",
                 event_type=NotificationEvent.review_received,
                 target_type="review",
                 target_id=m.id,
-            ))
+            )
+            db.add(notification2)
+        
         db.commit()
         logger.info("Notifications created successfully")
     except Exception as e:
-        logger.error(f"Failed to create notifications: {e}")
-        db.rollback()
+        logger.error(f"Failed to create notifications: {str(e)}")
+        try:
+            db.rollback()
+        except:
+            pass  # 이미 롤백된 경우 무시
     
     return _to_review_out(m)
 
@@ -484,9 +494,12 @@ def received_reviews(
     current_user: User = Depends(get_current_user),
 ):
     """내가 받은 리뷰들 조회"""
+    logger.info(f"Received reviews request for user {current_user.id} ({current_user.username})")
     q = db.query(Review).filter(Review.target_user_id == current_user.id, Review.status == ReviewStatus.visible)
     if challenge_id:
         q = q.filter(Review.challenge_id == challenge_id)
+        logger.info(f"Filtering by challenge_id: {challenge_id}")
     total = q.count()
+    logger.info(f"Found {total} received reviews for user {current_user.id}")
     items = q.order_by(Review.id.desc()).limit(size).offset((page-1)*size).all()
     return ReviewList(total=int(total), items=[_to_review_out(m) for m in items])

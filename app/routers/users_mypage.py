@@ -555,16 +555,71 @@ def update_user_interests(
 
 @router.get("/me/reviews")
 def get_user_reviews(
+    review_type: str = Query("received", description="received 또는 written"),
     skip: int = Query(0, ge=0),
     limit: int = Query(10, ge=1, le=100),
     db: Session = Depends(get_db),
     me: User = Depends(get_current_user)
 ):
-    """사용자 리뷰 내역 조회"""
-    # TODO: 실제 리뷰 데이터 조회 로직 구현
+    """사용자 리뷰 내역 조회 - 받은 리뷰 또는 쓴 리뷰"""
+    from app.models.review import Review, ReviewStatus
+    from app.utils.logging import logger
+    
+    logger.info(f"Getting {review_type} reviews for user {me.id} ({me.username})")
+    
+    if review_type == "received":
+        # 내가 받은 리뷰들
+        q = db.query(Review).filter(
+            Review.target_user_id == me.id, 
+            Review.status == ReviewStatus.visible
+        )
+    else:
+        # 내가 쓴 리뷰들 
+        q = db.query(Review).filter(
+            Review.user_id == me.id,
+            Review.status == ReviewStatus.visible
+        )
+    
+    total = q.count()
+    logger.info(f"Found {total} {review_type} reviews for user {me.id}")
+    
+    items = q.order_by(Review.id.desc()).limit(limit).offset(skip).all()
+    
+    review_items = []
+    for review in items:
+        review_data = {
+            "id": review.id,
+            "rating": float(review.rating) if review.rating else 0,
+            "comment": review.comment or "",
+            "created_at": review.created_at.isoformat() if review.created_at else None,
+            "challenge_id": review.challenge_id
+        }
+        
+        if review_type == "received":
+            # 받은 리뷰인 경우 작성자 정보 추가
+            writer = db.query(User).filter(User.id == review.user_id).first()
+            if writer:
+                review_data["writer"] = {
+                    "id": writer.id,
+                    "username": writer.username,
+                    "name": writer.name
+                }
+        else:
+            # 쓴 리뷰인 경우 대상자 정보 추가
+            if review.target_user_id:
+                target = db.query(User).filter(User.id == review.target_user_id).first()
+                if target:
+                    review_data["target"] = {
+                        "id": target.id,
+                        "username": target.username,
+                        "name": target.name
+                    }
+        
+        review_items.append(review_data)
+    
     return {
-        "items": [],
-        "total": 0,
+        "items": review_items,
+        "total": total,
         "skip": skip,
         "limit": limit
     }

@@ -463,7 +463,7 @@
       }
     }
 
-    /* ===== 리뷰 내역: 내가 받은 리뷰 표시 ===== */
+    /* ===== 리뷰 내역: 받은 리뷰 표시 ===== */
     async function loadReviews(){
       const tbody = qs('reviews_body'); if(!tbody) return;
       const render = (arr)=>{
@@ -480,11 +480,21 @@
       };
 
       try{
-        // 1) 기본: 내가 받은 리뷰 API
-        const res = await jget('/api/v1/reviews/received?size=20');
+        // 1) 기본: 받은 리뷰 API (새로 구현된 버전)
+        const res = await jget('/api/v1/users/me/reviews?review_type=received&limit=20');
         const items = Array.isArray(res?.items) ? res.items : [];
         if (render(items)) return;
-      }catch(e){ console.warn('[mypage] received reviews error', e); }
+      }catch(e){ 
+        console.warn('[mypage] received reviews error', e); 
+        // 2) 백업: 기존 API 시도
+        try {
+          const res = await jget('/api/v1/reviews/received?size=20');
+          const items = Array.isArray(res?.items) ? res.items : [];
+          if (render(items)) return;
+        } catch(e2) {
+          console.warn('[mypage] backup reviews API error', e2);
+        }
+      }
 
       // 2) 보조: 내가 참여/완료한 챌린지에서 대상이 나(me.id)인 리뷰 수집
       try{
