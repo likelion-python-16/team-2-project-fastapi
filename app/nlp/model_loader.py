@@ -5,7 +5,7 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 
 # 멀티언어 짧은 쿼리/고유명사에 강한 베이스
-MODEL_ID = "sentence-transformers/paraphrase-multilingual-MiniLM-L6-v2"
+MODEL_ID = "paraphrase-multilingual-MiniLM-L12-v2"
 
 # 글로벌 변수로 모델 캐시
 _model_cache = None
