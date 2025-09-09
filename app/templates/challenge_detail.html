@@ -553,13 +553,14 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
       return `https://map.naver.com/v5/search/${encodeURIComponent(name)}`;
     }
     return null;
-nmap://map?lat=37.5633352&lng=126.9872743&zoom=15&appname=com.challengers.web  }
-  function buildNaverAppUrl(name, lat, lon, webUrl){
+  }
+  function buildNaverAppUrl(name, lat, lon){
+    // 좌표가 있으면 지도 이동 스킴, 없으면 검색 스킴
     if (lat != null && lon != null){
-      return `nmap://place?lat=${lat}&lng=${lon}&name=${encodeURIComponent(name||'장소')}&appname=web.challengers`;
+      return `nmap://map?lat=${lat}&lng=${lon}&zoom=15&appname=com.challengers.web`;
     }
     if (name && String(name).trim()){
-      return `nmap://search?query=${encodeURIComponent(name)}&appname=web.challengers`;
+      return `nmap://search?query=${encodeURIComponent(name)}&appname=com.challengers.web`;
     }
     return null;
   }
@@ -570,13 +571,13 @@ nmap://map?lat=37.5633352&lng=126.9872743&zoom=15&appname=com.challengers.web  }
     var isAndroid = ua.indexOf('android') >= 0;
     var storeUrl = isAndroid
       ? 'https://play.google.com/store/apps/details?id=com.nhn.android.nmap'
-      : 'https://apps.apple.com/app/id311867728';
+      : 'http://itunes.apple.com/app/id311867728?mt=8';
     var timer = setTimeout(function(){
       if (webUrl) window.location.href = webUrl; else window.location.href = storeUrl;
     }, 1500);
     try{
       if (isAndroid){
-        var intent = appUrl.replace(/^nmap:\/\//, 'intent://') + '#Intent;scheme=nmap;package=com.nhn.android.nmap;end';
+        var intent = appUrl.replace(/^nmap:\/\//, 'intent://') + '#Intent;scheme=nmap;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;package=com.nhn.android.nmap;end';
         window.location.href = intent;
       } else {
         window.location.href = appUrl;
@@ -584,6 +585,24 @@ nmap://map?lat=37.5633352&lng=126.9872743&zoom=15&appname=com.challengers.web  }
     }catch(_){ /* 폴백 타이머에 맡김 */ }
     window.addEventListener('pagehide', function(){ clearTimeout(timer); });
     document.addEventListener('visibilitychange', function(){ if (document.hidden) clearTimeout(timer); });
+  }
+
+  // 플랫폼 강제 버전 (pill 버튼용)
+  function openAndroidDeepLink(appUrl, webUrl){
+    var storeUrl='https://play.google.com/store/apps/details?id=com.nhn.android.nmap';
+    var t=setTimeout(function(){ window.location.href = webUrl || storeUrl; },1500);
+    try{
+      var intent = appUrl.replace(/^nmap:\/\//,'intent://') + '#Intent;scheme=nmap;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;package=com.nhn.android.nmap;end';
+      window.location.href = intent;
+    }catch(_){ }
+    window.addEventListener('pagehide', function(){ clearTimeout(t); });
+    document.addEventListener('visibilitychange', function(){ if (document.hidden) clearTimeout(t); });
+  }
+  function openIOSDeepLink(appUrl, webUrl){
+    var storeUrl='http://itunes.apple.com/app/id311867728?mt=8';
+    var clickAt=Date.now();
+    window.location.href = appUrl;
+    setTimeout(function(){ if (Date.now()-clickAt<2000){ window.location.href = webUrl || storeUrl; } },1500);
   }
 
   // ===== 개요 카드: 표시 토글/편집 권한 처리 =====
@@ -749,18 +768,14 @@ nmap://map?lat=37.5633352&lng=126.9872743&zoom=15&appname=com.challengers.web  }
     const pn = document.getElementById('chPlaceName'); if (pn) pn.textContent = ch.default_place_name || '';
     const pr = document.getElementById('chPlaceRoad'); if (pr) pr.textContent = ch.default_road_address ? `도로명: ${ch.default_road_address}` : '';
     const pa = document.getElementById('chPlaceAddr'); if (pa) pa.textContent = ch.default_address ? `지번: ${ch.default_address}` : '';
-    const pl = document.getElementById('chPlaceLink');
-    const pla = document.getElementById('chPlaceLinkApp');
+    const aWeb = document.getElementById('chMapWeb');
+    const aAnd = document.getElementById('chMapAndroid');
+    const aIOS = document.getElementById('chMapIOS');
     const webUrl = ch.default_map_url || buildNaverWebUrl(ch.default_place_name, ch.default_latitude, ch.default_longitude);
-    if (pl) pl.href = webUrl || '#';
-    const appUrl = buildNaverAppUrl(ch.default_place_name, ch.default_latitude, ch.default_longitude, webUrl);
-    if (pla){
-      if (appUrl){
-        pla.href = '#';
-        pla.onclick = function(e){ e.preventDefault(); openMapAppDeepLink(appUrl, webUrl); };
-        pla.style.display='inline';
-      } else { pla.style.display='none'; }
-    }
+    if (aWeb && webUrl){ aWeb.href = webUrl; aWeb.style.display='inline-block'; } else if (aWeb) { aWeb.style.display='none'; }
+    const appUrl = buildNaverAppUrl(ch.default_place_name, ch.default_latitude, ch.default_longitude);
+    if (aAnd && appUrl){ aAnd.onclick = function(e){ e.preventDefault(); openAndroidDeepLink(appUrl, webUrl); }; aAnd.style.display='inline-block'; } else if (aAnd){ aAnd.style.display='none'; }
+    if (aIOS && appUrl){ aIOS.onclick = function(e){ e.preventDefault(); openIOSDeepLink(appUrl, webUrl); }; aIOS.style.display='inline-block'; } else if (aIOS){ aIOS.style.display='none'; }
     // 기간
     const fmt = (x)=>{ try{ const d=new Date(x); if(!isNaN(d)) return d.toISOString().slice(0,10); }catch(_){ } return String(x||''); };
     const sEl = document.getElementById('chStart'); if (sEl) sEl.textContent = fmt(ch.start_date);
