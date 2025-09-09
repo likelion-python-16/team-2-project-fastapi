@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Dict, List
 import numpy as np
-from app.nlp.model_loader import embed_texts
+from app.nlp.model_loader_dummy import embed_texts
 
 # 카테고리 키워드 사전 경로 (필수)
 DATA_PATH = Path("data/category_keywords.json")
