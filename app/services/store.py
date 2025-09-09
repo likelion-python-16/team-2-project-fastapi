@@ -22,11 +22,11 @@ class KeywordStore:
         self.categories: Dict[str, List[str]] = {}
 
         self._centroid_labels: list[str] = []
-        self._centroids: np.ndarray = np.empty((0, 384), dtype="float32")
+        self._centroids: np.ndarray = np.empty((0, 512), dtype="float32")
 
         self._flat_terms: list[str] = []
         self._flat_labels: list[str] = []
-        self._flat_vecs: np.ndarray = np.empty((0, 384), dtype="float32")
+        self._flat_vecs: np.ndarray = np.empty((0, 512), dtype="float32")
 
         self.term_to_cat: dict[str, str] = {}
 
@@ -36,26 +36,48 @@ class KeywordStore:
         with open(self.path, "r", encoding="utf-8") as f:
             self.categories = json.load(f)
 
-        # AI 임베딩 없이 키워드 매칭만 사용 (메모리 절약)
+        labels: list[str] = []
+        cents: list[np.ndarray] = []
+
+        flat_terms: list[str] = []
+        flat_labels: list[str] = []
         term_to_cat: dict[str, str] = {}
-        
+
+        # 카테고리 순회
         for cat, terms in self.categories.items():
+            # 문자열만 남기고 공백 정리
             terms = [t.strip() for t in terms if isinstance(t, str) and t.strip()]
             if not terms:
                 continue
-            
+
             # 역맵 (정확 매칭용, 소문자 키)
             for t in terms:
                 term_to_cat[t.lower()] = cat
 
+            # 개별 키워드 임베딩 (작은 모델 사용)
+            vecs = embed_texts(terms)  # (n_i, d)
+            # 카테고리 센트로이드
+            centroid = vecs.mean(axis=0)
+            norm = np.linalg.norm(centroid)
+            if norm > 0:
+                centroid = (centroid / norm).astype("float32")
+            else:
+                centroid = np.zeros((vecs.shape[1],), dtype="float32")
+
+            labels.append(cat)
+            cents.append(centroid)
+
+            flat_terms.extend(terms)
+            flat_labels.extend([cat] * len(terms))
+
+        self._centroid_labels = labels
+        self._centroids = np.vstack(cents) if cents else np.empty((0, 512), dtype="float32")
+
+        self._flat_terms = flat_terms
+        self._flat_labels = flat_labels
+        self._flat_vecs = embed_texts(flat_terms) if flat_terms else np.empty((0, 512), dtype="float32")
+
         self.term_to_cat = term_to_cat
-        
-        # AI 관련 속성들은 빈 값으로 초기화
-        self._centroid_labels = []
-        self._centroids = np.empty((0, 384), dtype="float32")
-        self._flat_terms = []
-        self._flat_labels = []
-        self._flat_vecs = np.empty((0, 384), dtype="float32")
 
     # 노출 프로퍼티
     @property
