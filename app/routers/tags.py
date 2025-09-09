@@ -1,6 +1,6 @@
 from ..schemas.tags import TagAIRequest, TagAIResponse, TagCreate, TagResponse, TagUpdate
 from fastapi import APIRouter, Query, Depends, HTTPException
-from app.services.predictor import predict_category
+from app.services.predictor_dummy import predict_category
 from ..core.database import get_db
 from app.models import Tag
 from sqlalchemy.orm import Session

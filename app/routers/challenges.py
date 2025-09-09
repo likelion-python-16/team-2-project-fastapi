@@ -29,7 +29,7 @@ from app.schemas.challenge_round import (
 )
 
 # Services & AuthZ
-from app.services.predictor import predict_category
+from app.services.predictor_dummy import predict_category
 from app.services.challenge_round_service import auto_create_rounds_on_challenge_create
 from app.services.challenge_recommender import get_challenge_recommender
 from app.services.enhanced_challenge_search import get_enhanced_challenge_search
@@ -1654,7 +1654,7 @@ def auto_tag_challenge(
     _: User = Depends(get_current_user)
 ):
     """챌린지에 AI 기반 자동 태그 매칭"""
-    from app.services.predictor import predict_category
+    from app.services.predictor_dummy import predict_category
     
     # 챌린지 존재 확인
     challenge = db.query(Challenge).filter(Challenge.id == challenge_id).first()

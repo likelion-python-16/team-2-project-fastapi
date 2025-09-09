@@ -1,6 +1,6 @@
 from __future__ import annotations
 from pydantic import BaseModel
-from app.services.predictor import predict_category
+from app.services.predictor_dummy import predict_category
 from typing import Optional
 
 class TagAIRequest(BaseModel):
