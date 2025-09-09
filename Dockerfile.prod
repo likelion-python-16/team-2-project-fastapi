@@ -32,6 +32,7 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 
 # 애플리케이션 코드 복사
 COPY ./app ./app
+COPY ./app/static ./app/static
 COPY alembic.ini ./
 COPY alembic ./alembic
 
