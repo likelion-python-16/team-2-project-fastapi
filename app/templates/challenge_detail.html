@@ -136,8 +136,11 @@
           <div id="chPlaceAddr" class="muted" style="font-size:12px"></div>
           <div style="margin-top:6px; display:flex; gap:6px; align-items:center; flex-wrap:wrap">
             <a id="chMapWeb" class="pill-btn" href="#" target="_blank" rel="noopener" style="display:none">웹사이트</a>
+            <button id="chCopyWeb" class="pill-btn" type="button" style="display:none">복사</button>
             <a id="chMapAndroid" class="pill-btn" href="#" style="display:none">Android 앱</a>
+            <button id="chCopyAndroid" class="pill-btn" type="button" style="display:none">복사</button>
             <a id="chMapIOS" class="pill-btn" href="#" style="display:none">iOS 앱</a>
+            <button id="chCopyIOS" class="pill-btn" type="button" style="display:none">복사</button>
             <button class="btn tiny edit-only" id="btnEditPlace">대표 장소 수정</button>
           </div>
         </td>
@@ -554,11 +557,20 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
     }
     return null;
   }
-  function buildNaverAppUrl(name, lat, lon){
-    // 좌표가 있으면 지도 이동 스킴, 없으면 검색 스킴
+  function buildNaverWebUrlFromPlaceId(placeId, lat, lon){
+    if (!placeId) return null;
     if (lat != null && lon != null){
-      return `nmap://map?lat=${lat}&lng=${lon}&zoom=15&appname=com.challengers.web`;
+      return `https://map.naver.com/v5/entry/place/${encodeURIComponent(String(placeId))}?c=${lon},${lat},15,0,0,0,dh`;
     }
+    return `https://map.naver.com/v5/entry/place/${encodeURIComponent(String(placeId))}`;
+  }
+  function buildNaverAppUrl(name, lat, lon){
+    // 좌표가 있을 때는 place 스킴으로 마커를 표시
+    if (lat != null && lon != null){
+      const label = (name && String(name).trim()) ? encodeURIComponent(name) : encodeURIComponent('선택 위치');
+      return `nmap://place?lat=${lat}&lng=${lon}&name=${label}&appname=com.challengers.web`;
+    }
+    // 좌표가 없으면 검색 스킴으로 폴백
     if (name && String(name).trim()){
       return `nmap://search?query=${encodeURIComponent(name)}&appname=com.challengers.web`;
     }
@@ -585,6 +597,12 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
     }catch(_){ /* 폴백 타이머에 맡김 */ }
     window.addEventListener('pagehide', function(){ clearTimeout(timer); });
     document.addEventListener('visibilitychange', function(){ if (document.hidden) clearTimeout(timer); });
+  }
+  function buildAndroidIntent(appUrl){
+    return appUrl.replace(/^nmap:\/\//,'intent://') + '#Intent;scheme=nmap;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;package=com.nhn.android.nmap;end';
+  }
+  async function copyText(t){
+    try{ await navigator.clipboard.writeText(t||''); alert('복사되었습니다'); }catch(_){ try{ const ta=document.createElement('textarea'); ta.value=t||''; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); alert('복사되었습니다'); }catch(e){ alert('복사 실패'); } }
   }
 
   // 플랫폼 강제 버전 (pill 버튼용)
@@ -771,11 +789,20 @@ const API_PIC = ''; // round_pictures 라우터가 루트에 있으면 '' 유지
     const aWeb = document.getElementById('chMapWeb');
     const aAnd = document.getElementById('chMapAndroid');
     const aIOS = document.getElementById('chMapIOS');
-    const webUrl = ch.default_map_url || buildNaverWebUrl(ch.default_place_name, ch.default_latitude, ch.default_longitude);
-    if (aWeb && webUrl){ aWeb.href = webUrl; aWeb.style.display='inline-block'; } else if (aWeb) { aWeb.style.display='none'; }
+    const bWeb = document.getElementById('chCopyWeb');
+    const bAnd = document.getElementById('chCopyAndroid');
+    const bIOS = document.getElementById('chCopyIOS');
+    // placeId가 있으면 entry/place 우선
+    let webUrl = null;
+    if (ch.default_place_id){ webUrl = buildNaverWebUrlFromPlaceId(ch.default_place_id, ch.default_latitude, ch.default_longitude); }
+    if (!webUrl){ webUrl = ch.default_map_url || buildNaverWebUrl(ch.default_place_name, ch.default_latitude, ch.default_longitude); }
+    if (aWeb && webUrl){ aWeb.href = webUrl; aWeb.style.display='inline-block'; if (bWeb){ bWeb.style.display='inline-block'; bWeb.onclick=()=>copyText(webUrl); } }
+    else { if (aWeb) aWeb.style.display='none'; if (bWeb) bWeb.style.display='none'; }
     const appUrl = buildNaverAppUrl(ch.default_place_name, ch.default_latitude, ch.default_longitude);
-    if (aAnd && appUrl){ aAnd.onclick = function(e){ e.preventDefault(); openAndroidDeepLink(appUrl, webUrl); }; aAnd.style.display='inline-block'; } else if (aAnd){ aAnd.style.display='none'; }
-    if (aIOS && appUrl){ aIOS.onclick = function(e){ e.preventDefault(); openIOSDeepLink(appUrl, webUrl); }; aIOS.style.display='inline-block'; } else if (aIOS){ aIOS.style.display='none'; }
+    if (aAnd && appUrl){ aAnd.onclick = function(e){ e.preventDefault(); openAndroidDeepLink(appUrl, webUrl); }; aAnd.style.display='inline-block'; if (bAnd){ bAnd.style.display='inline-block'; bAnd.onclick=()=>copyText(buildAndroidIntent(appUrl)); } }
+    else { if (aAnd) aAnd.style.display='none'; if (bAnd) bAnd.style.display='none'; }
+    if (aIOS && appUrl){ aIOS.onclick = function(e){ e.preventDefault(); openIOSDeepLink(appUrl, webUrl); }; aIOS.style.display='inline-block'; if (bIOS){ bIOS.style.display='inline-block'; bIOS.onclick=()=>copyText(appUrl); } }
+    else { if (aIOS) aIOS.style.display='none'; if (bIOS) bIOS.style.display='none'; }
     // 기간
     const fmt = (x)=>{ try{ const d=new Date(x); if(!isNaN(d)) return d.toISOString().slice(0,10); }catch(_){ } return String(x||''); };
     const sEl = document.getElementById('chStart'); if (sEl) sEl.textContent = fmt(ch.start_date);
