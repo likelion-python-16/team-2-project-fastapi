@@ -72,7 +72,8 @@ app.add_middleware(
 )
 
 # 정적 파일 (한 번만)
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
+static_dir = "app/static" if os.path.exists("app/static") else "/app/app/static"
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 BASE_DIR = Path(__file__).parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
