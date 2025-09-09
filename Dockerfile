@@ -1,4 +1,4 @@
-# 개선된 Dockerfile
+# Improved Dockerfile
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -24,9 +24,9 @@ COPY ./data ./data
 
 # 🔥 환경별 설정
 # 개발환경에서만 .env 파일 복사
+# 프로덕션에서는 docker compose가 환경변수를 주입하므로 파일을 복사할 필요가 없습니다.
 ARG ENV=development
-COPY .env* ./
-# 프로덕션에서는 환경변수로 직접 주입 권장
+# COPY .env* ./
 
 # 🆕 환경변수 검증 스크립트 추가
 COPY <<EOF /app/check_env.py
