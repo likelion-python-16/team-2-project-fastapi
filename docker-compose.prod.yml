@@ -59,10 +59,10 @@ services:
       - NAVER_REDIRECT_PATH=${NAVER_REDIRECT_PATH:-/api/v1/auth/callback/naver}
       
       # URL 설정 (프로덕션용)
-      - FRONT_BASE_URL=${FRONT_BASE_URL:-http://localhost}
-      - API_BASE_URL=${API_BASE_URL:-http://localhost/api/v1}
-      - VERIFICATION_LINK_BASE=${VERIFICATION_LINK_BASE:-http://localhost/api/v1}
-      - VERIFY_SUCCESS_URL=${VERIFY_SUCCESS_URL:-http://localhost/verify/success}
+      - FRONT_BASE_URL=${FRONT_BASE_URL:-http://13.209.147.11}
+      - API_BASE_URL=${API_BASE_URL:-http://13.209.147.11/api/v1}
+      - VERIFICATION_LINK_BASE=${VERIFICATION_LINK_BASE:-http://13.209.147.11/api/v1}
+      - VERIFY_SUCCESS_URL=${VERIFY_SUCCESS_URL:-http://13.209.147.11/verify/success}
       - VERIFY_FAIL_URL=${VERIFY_FAIL_URL:-http://localhost/verify/fail}
       
       # AWS 설정
@@ -82,6 +82,12 @@ services:
       - INITIAL_ADMIN_NAME=${INITIAL_ADMIN_NAME:-FastTeam Admin}
     env_file:
       - .env.production
+    command: >
+      python -m uvicorn app.main:app
+      --host 0.0.0.0 --port 8000
+      --workers 1
+      --proxy-headers
+      --forwarded-allow-ips="*"
     depends_on:
       mysql:
         condition: service_healthy
@@ -89,11 +95,11 @@ services:
       - fastteam-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/'); print('ok')"]
+      interval: 20s
+      timeout: 5s
       retries: 3
-      start_period: 40s
+      start_period: 30s
     deploy:
       resources:
         limits:
