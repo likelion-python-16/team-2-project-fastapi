@@ -122,7 +122,7 @@ function showPasswordResetForm(token) {
     const confirmPassword = document.getElementById("confirmPassword").value;
 
     if (!newPassword || !confirmPassword) {
-      showAlert("비밀번호와 확인 비밀번호를 모두 입력해 주세요.");
+      showAlert("모든 필드를 입력해 주세요.");
       return;
     }
 

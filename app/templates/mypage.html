@@ -7,7 +7,7 @@
   <!-- Inter -->
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/mypage.css?v=7" />
+  <link rel="stylesheet" href="/static/css/mypage.css?v=8" />
   <style>
     .clickable-points {
       cursor: pointer !important;
@@ -59,7 +59,7 @@
   <header class="header">
     <div class="brand">
       <a class="brand-badge" href="/" title="홈으로">H</a>
-      <div>MyPage</div>
+      <div>Challengers</div>
     </div>
     <div class="header-actions">
       <a href="/home" class="btn btn-outline" title="홈으로 이동">🏠 홈</a>
@@ -72,25 +72,7 @@
   </header>
 
   <div class="layout">
-    <!-- 좌측 네비 -->
-    <aside class="nav" id="sidenav">
-      <div class="toggle"><button class="btn" id="btn_nav_toggle">≡</button></div>
-      <div class="group">
-        <div class="group-title">Overview</div>
-        <div class="item" data-jump="#my_sec_profile">My Profile</div>
-      </div>
-      <div class="divider"></div>
-        <div class="group">
-          <div class="group-title">Data</div>
-          <div class="item" data-jump="#my_sec_notifications">📢 알림</div>
-          <div class="item" onclick="goToPoints()" style="cursor: pointer;" title="포인트 관리 페이지로 이동">💰 포인트 관리</div>
-          <div class="item" data-jump="#my_sec_follow">팔로워/팔로잉</div>
-          <div class="item" data-jump="#my_sec_challenges">참여 챌린지</div>
-          <div class="item" data-jump="#my_sec_tags">관심 태그</div>
-          <div class="item" data-jump="#my_sec_reviews">리뷰 내역</div>
-          <div class="item" data-jump="#my_sec_payments">결제 요약</div>
-        </div>
-    </aside>
+    
 
     <!-- 메인 -->
     <main class="container">
@@ -304,6 +286,6 @@
     });
   </script>
   
-  <script type="module" src="/static/js/mypage.bundle.js?v=3" defer></script>
+  <script type="module" src="/static/js/mypage.bundle.js?v=4" defer></script>
 </body>
 </html>

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <title>포인트 관리 - 관리자</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link href="/static/assets/full/css/styles.css" rel="stylesheet">
+  <link href="/static/assets/final/css/styles.css" rel="stylesheet">
   <style>
     :root{--card-bg:#fff;--muted:#777;--br:#eee;--primary:#007bff;--success:#28a745;--warning:#ffc107;--danger:#dc3545}
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Noto Sans KR,Apple SD Gothic Neo,Helvetica,Arial,sans-serif;margin:16px}

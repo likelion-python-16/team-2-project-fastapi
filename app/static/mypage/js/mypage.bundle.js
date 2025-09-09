@@ -86,8 +86,9 @@
       return await r.json();
     }
 
-    /* ===== 좌측 네비 ===== */
-    qs("btn_nav_toggle").onclick = () => qs("sidenav").classList.toggle("collapsed");
+    /* ===== 좌측 네비 (없을 수 있음) ===== */
+    const _navToggle = qs("btn_nav_toggle");
+    if(_navToggle){ _navToggle.onclick = () => { const nv = qs("sidenav"); if(nv) nv.classList.toggle("collapsed"); }; }
     $$(".nav .item").forEach(it=> it.onclick = () => {
       const anchor = it.getAttribute("data-jump");
       if(anchor){ document.querySelector(anchor)?.scrollIntoView({behavior:"smooth", block:"start"}); }
@@ -548,13 +549,31 @@
       st.skip = Math.max(0, nextSkip ?? st.skip);
       const q = new URLSearchParams({ skip:String(st.skip), limit:String(st.limit) });
       const base = isOtherView ? `/api/v1/users/${VIEW_USER_ID}` : "/api/v1/users/me";
-      const data = await jget(`${base}/${drawerMode}?`+q.toString()).catch(()=>null);
       const tbody = qs("drawer_body"); tbody.innerHTML = "";
-      (data?.items||[]).forEach(u=>{
-        tbody.insertAdjacentHTML("beforeend",
-          `<tr><td class="mono">${u.id??"-"}</td><td>${u.username||u.nickname||u.email||"-"}</td><td>${u.is_active===false?"inactive":"active"}</td></tr>`
-        );
-      });
+      let data = null;
+      try {
+        data = await jget(`${base}/${drawerMode}?`+q.toString());
+      } catch(e) {
+        tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;color:#9aa4b2;">목록을 불러오지 못했습니다.</td></tr>`;
+        toast(e?.message || '조회 실패');
+        qs("drawer_info").textContent = `0-0 / 0`;
+        qs("drawer_prev").disabled = true;
+        qs("drawer_next").disabled = true;
+        return;
+      }
+      const items = Array.isArray(data?.items) ? data.items : [];
+      if (!items.length) {
+        tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;color:#9aa4b2;">표시할 사용자가 없습니다.</td></tr>`;
+      } else {
+        items.forEach(u=>{
+          const uid = u.id ?? "-";
+          const name = (u.name || u.username || u.nickname || u.email || "-");
+          const link = (uid && uid !== "-") ? `<a href="/mypage/${uid}" class="user-link" title="프로필로 이동">${name}</a>` : name;
+          tbody.insertAdjacentHTML("beforeend",
+            `<tr><td class="mono">${uid}</td><td>${link}</td><td>${u.is_active===false?"inactive":"active"}</td></tr>`
+          );
+        });
+      }
       const total = data?.total || 0;
       const start = total? st.skip+1:0;
       const end = Math.min(st.skip+st.limit, total);
@@ -562,12 +581,12 @@
       qs("drawer_prev").disabled = st.skip<=0;
       qs("drawer_next").disabled = st.skip+st.limit>=total;
     }
-    qs("drawer_prev").onclick = ()=> loadDrawerPage((drawerMode==="followers"?state.followers:state.following).skip - 10);
-    qs("drawer_next").onclick = ()=> loadDrawerPage((drawerMode==="followers"?state.followers:state.following).skip + 10);
-    qs("btn_my_followers").onclick   = ()=> openDrawer("followers");
-    qs("btn_my_following").onclick   = ()=> openDrawer("following");
-    if(qs('ch_prev')) qs('ch_prev').onclick = ()=> renderChallengesPage(state.challenges.page-1);
-    if(qs('ch_next')) qs('ch_next').onclick = ()=> renderChallengesPage(state.challenges.page+1);
+    const _dp = qs("drawer_prev"); if(_dp) _dp.onclick = ()=> loadDrawerPage((drawerMode==="followers"?state.followers:state.following).skip - 10);
+    const _dn = qs("drawer_next"); if(_dn) _dn.onclick = ()=> loadDrawerPage((drawerMode==="followers"?state.followers:state.following).skip + 10);
+    const _bf = qs("btn_my_followers"); if(_bf) _bf.onclick   = ()=> openDrawer("followers");
+    const _bg = qs("btn_my_following"); if(_bg) _bg.onclick   = ()=> openDrawer("following");
+    const _cp = qs('ch_prev'); if(_cp) _cp.onclick = ()=> renderChallengesPage(state.challenges.page-1);
+    const _cn = qs('ch_next'); if(_cn) _cn.onclick = ()=> renderChallengesPage(state.challenges.page+1);
 
     /* 프로필 편집 모달 */
     const modalProfile = qs("modal_profile");

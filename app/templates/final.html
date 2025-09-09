@@ -4,22 +4,23 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="bg10" content="{{ url_for('static', path='assets/full/media/images/2600x1200/bg-10.png') }}"/>
   <title>{% block title %}Team Project{% endblock %}</title>
-  <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', path='assets/final/media/app/apple-touch-icon.png') }}"/>
-  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', path='assets/final/media/app/favicon-32x32.png') }}"/>
-  <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', path='assets/final/media/app/favicon-16x16.png') }}"/>
-  <link rel="shortcut icon" href="{{ url_for('static', path='assets/final/media/app/favicon.ico') }}"/>
+  <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', path='assets/full/media/app/apple-touch-icon.png') }}"/>
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', path='assets/full/media/app/favicon-32x32.png') }}"/>
+  <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', path='assets/full/media/app/favicon-16x16.png') }}"/>
+  <link rel="shortcut icon" href="{{ url_for('static', path='assets/full/media/app/favicon.ico') }}"/>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"/>
-  <link rel="stylesheet" href="{{ url_for('static', path='assets/final/vendors/apexcharts/apexcharts.css') }}"/>
-  <link rel="stylesheet" href="{{ url_for('static', path='assets/final/vendors/keenicons/styles.bundle.css') }}"/>
-  <link rel="stylesheet" href="{{ url_for('static', path='assets/final/css/styles.css') }}"/>
+  <link rel="stylesheet" href="{{ url_for('static', path='assets/full/vendors/apexcharts/apexcharts.css') }}"/>
+  <link rel="stylesheet" href="{{ url_for('static', path='assets/full/vendors/keenicons/styles.bundle.css') }}"/>
+  <link rel="stylesheet" href="{{ url_for('static', path='assets/full/css/styles.css') }}"/>
 </head>
 <body class="antialiased flex h-full text-base text-foreground bg-background">
   {% block content %}{% endblock %}
 
-  <script src="{{ url_for('static', path='assets/final/js/core.bundle.js') }}"></script>
-  <script src="{{ url_for('static', path='assets/final/vendors/ktui/ktui.min.js') }}"></script>
-  <script src="{{ url_for('static', path='assets/final/vendors/apexcharts/apexcharts.min.js') }}"></script>
+  <script src="{{ url_for('static', path='assets/full/js/core.bundle.js') }}"></script>
+  <script src="{{ url_for('static', path='assets/full/vendors/ktui/ktui.min.js') }}"></script>
+  <script src="{{ url_for('static', path='assets/full/vendors/apexcharts/apexcharts.min.js') }}"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

@@ -40,3 +40,4 @@ jinja2
 httpx==0.28.1
 pydantic[email]==2.6.4
 prometheus_client==0.21.0
+itsdangerous>=2.1.2

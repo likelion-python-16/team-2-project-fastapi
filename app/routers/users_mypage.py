@@ -308,6 +308,81 @@ def my_followers(
     return FollowListOut(items=users, total=int(total or 0), skip=pg["skip"], limit=pg["limit"])
 
 # -----------------------------
+# 타 사용자 팔로잉/팔로워 조회
+# -----------------------------
+@router.get("/{user_id}/following", response_model=FollowListOut)
+def user_following(
+    user_id: int,
+    only_active: bool = Query(True, description="활성 사용자만"),
+    db: Session = Depends(get_db),
+    me: User = Depends(get_current_user),
+    pg: dict = Depends(pagination_params),
+):
+    # 사용자 존재 여부 확인 (404)
+    target = db.get(User, user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    active_cond = (User.is_active == True) if only_active else literal(True)  # noqa: E712
+
+    total = db.execute(
+        select(func.count())
+        .select_from(Following)
+        .join(User, User.id == Following.following_id)
+        .where(and_(Following.follower_id == user_id, active_cond))
+    ).scalar_one()
+
+    users = []
+    if total:
+        rows = db.execute(
+            select(User)
+            .join(Following, Following.following_id == User.id)
+            .where(and_(Following.follower_id == user_id, active_cond))
+            .order_by(desc(Following.created_at), desc(User.id))
+            .offset(pg["skip"])
+            .limit(pg["limit"])
+        ).scalars().all()
+        users = [UserBrief.model_validate(u, from_attributes=True) for u in rows]
+
+    return FollowListOut(items=users, total=int(total or 0), skip=pg["skip"], limit=pg["limit"])
+
+@router.get("/{user_id}/followers", response_model=FollowListOut)
+def user_followers(
+    user_id: int,
+    only_active: bool = Query(True, description="활성 사용자만"),
+    db: Session = Depends(get_db),
+    me: User = Depends(get_current_user),
+    pg: dict = Depends(pagination_params),
+):
+    # 사용자 존재 여부 확인 (404)
+    target = db.get(User, user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    active_cond = (User.is_active == True) if only_active else literal(True)  # noqa: E712
+
+    total = db.execute(
+        select(func.count())
+        .select_from(Following)
+        .join(User, User.id == Following.follower_id)
+        .where(and_(Following.following_id == user_id, active_cond))
+    ).scalar_one()
+
+    users = []
+    if total:
+        rows = db.execute(
+            select(User)
+            .join(Following, Following.follower_id == User.id)
+            .where(and_(Following.following_id == user_id, active_cond))
+            .order_by(desc(Following.created_at), desc(User.id))
+            .offset(pg["skip"])
+            .limit(pg["limit"])
+        ).scalars().all()
+        users = [UserBrief.model_validate(u, from_attributes=True) for u in rows]
+
+    return FollowListOut(items=users, total=int(total or 0), skip=pg["skip"], limit=pg["limit"])
+
+# -----------------------------
 # ✅ 내 프로필 읽기 (충돌 방지를 위해 /me/profile 권장)
 # -----------------------------
 @router.get("/me/profile")
@@ -668,5 +743,4 @@ def change_password(
     db.commit()
     
     return {"message": "비밀번호가 변경되었습니다"}
-
 
