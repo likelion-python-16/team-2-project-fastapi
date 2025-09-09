@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>소셜 회원가입 - Challengers</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .kt-btn {
+            @apply px-4 py-2 rounded-lg font-medium transition-colors;
+        }
+        .kt-btn-primary {
+            @apply bg-blue-600 text-white hover:bg-blue-700;
+        }
+        .kt-btn-outline {
+            @apply border border-gray-300 text-gray-700 hover:bg-gray-50;
+        }
+        .kt-input {
+            @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500;
+        }
+        .kt-card {
+            @apply bg-white rounded-lg shadow-lg;
+        }
+        .kt-alert-danger {
+            @apply bg-red-50 border border-red-200 text-red-700;
+        }
+        .kt-alert-success {
+            @apply bg-green-50 border border-green-200 text-green-700;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen flex items-center justify-center p-4">
+    <div class="kt-card w-full max-w-md">
+        <div class="p-6">
+            <div class="text-center mb-6">
+                <h1 class="text-2xl font-bold text-gray-900 mb-2">소셜 회원가입</h1>
+                <p class="text-gray-600 text-sm">추가 정보를 입력해 주세요</p>
+            </div>
+
+            <div id="alertContainer" class="hidden mb-4"></div>
+
+            <div id="socialInfo" class="mb-6 p-4 bg-gray-50 rounded-lg">
+                <div class="flex items-center gap-3">
+                    <div id="providerIcon" class="w-8 h-8"></div>
+                    <div>
+                        <div id="socialName" class="font-medium text-gray-900"></div>
+                        <div id="socialEmail" class="text-sm text-gray-600"></div>
+                    </div>
+                </div>
+            </div>
+
+            <form id="socialSignupForm" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">사용자명</label>
+                    <input type="text" id="username" class="kt-input" placeholder="영문, 숫자 포함 3-20자" required>
+                    <div id="usernameCheck" class="text-xs mt-1 hidden"></div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">전화번호</label>
+                    <input type="tel" id="phone" class="kt-input" placeholder="010-1234-5678" required>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">주민번호</label>
+                    <input type="text" id="identification" class="kt-input" placeholder="123456-1234567" required>
+                    <p class="text-xs text-gray-500 mt-1">실명 인증을 위해 필요합니다</p>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">거주지역</label>
+                    <input type="text" id="regionLiving" class="kt-input" placeholder="예: 서울특별시" required>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">활동지역</label>
+                    <input type="text" id="regionActive" class="kt-input" placeholder="예: 강남구" required>
+                </div>
+
+                <button type="submit" id="btnSubmit" class="kt-btn kt-btn-primary w-full">
+                    <span id="btnText">회원가입 완료</span>
+                    <span id="btnLoading" class="hidden">
+                        <svg class="animate-spin -ml-1 mr-3 h-4 w-4 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        가입 중...
+                    </span>
+                </button>
+            </form>
+
+            <div class="text-center mt-4">
+                <a href="/login" class="text-sm text-blue-600 hover:text-blue-800">로그인으로 돌아가기</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showAlert(message, type = "error") {
+            const el = document.getElementById("alertContainer");
+            const css = type === "error" ? "kt-alert-danger" : "kt-alert-success";
+            el.innerHTML = `
+                <div class="${css} p-3 rounded-lg">
+                    <div class="text-sm">${message}</div>
+                </div>`;
+            el.classList.remove("hidden");
+        }
+
+        async function loadSocialInfo() {
+            try {
+                const response = await fetch('/api/v1/auth/social/pending');
+                if (!response.ok) {
+                    throw new Error('소셜 로그인 정보를 찾을 수 없습니다');
+                }
+                
+                const data = await response.json();
+                
+                // 소셜 정보 표시
+                document.getElementById('socialName').textContent = data.name || '사용자';
+                document.getElementById('socialEmail').textContent = data.email || '';
+                
+                // 프로바이더 아이콘 설정
+                const icon = document.getElementById('providerIcon');
+                if (data.provider === 'google') {
+                    icon.innerHTML = `
+                        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" class="w-full h-full">
+                            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                        </svg>`;
+                } else if (data.provider === 'naver') {
+                    icon.innerHTML = `
+                        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" class="w-full h-full">
+                            <path fill="#03C75A" d="M16.273 12.845L7.376 0H0v24h7.727V11.155L16.624 24H24V0h-7.727v12.845z"/>
+                        </svg>`;
+                }
+                
+            } catch (error) {
+                showAlert(error.message);
+                setTimeout(() => {
+                    window.location.href = '/login';
+                }, 2000);
+            }
+        }
+
+        // 사용자명 중복 체크
+        let usernameTimeout;
+        document.getElementById('username').addEventListener('input', function() {
+            clearTimeout(usernameTimeout);
+            const username = this.value.trim();
+            const checkEl = document.getElementById('usernameCheck');
+            
+            if (username.length < 3) {
+                checkEl.textContent = '';
+                checkEl.classList.add('hidden');
+                return;
+            }
+            
+            usernameTimeout = setTimeout(async () => {
+                try {
+                    const response = await fetch(`/api/v1/auth/check-duplicates?username=${username}`);
+                    const data = await response.json();
+                    
+                    if (data.taken.username) {
+                        checkEl.textContent = '이미 사용중인 사용자명입니다';
+                        checkEl.className = 'text-xs mt-1 text-red-600';
+                        checkEl.classList.remove('hidden');
+                    } else {
+                        checkEl.textContent = '사용 가능한 사용자명입니다';
+                        checkEl.className = 'text-xs mt-1 text-green-600';
+                        checkEl.classList.remove('hidden');
+                    }
+                } catch (error) {
+                    console.error('Username check failed:', error);
+                }
+            }, 500);
+        });
+
+        // 폼 제출
+        document.getElementById('socialSignupForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const btnSubmit = document.getElementById('btnSubmit');
+            const btnText = document.getElementById('btnText');
+            const btnLoading = document.getElementById('btnLoading');
+            
+            const username = document.getElementById('username').value.trim();
+            const phone = document.getElementById('phone').value.trim();
+            const identification = document.getElementById('identification').value.trim();
+            const regionLiving = document.getElementById('regionLiving').value.trim();
+            const regionActive = document.getElementById('regionActive').value.trim();
+            
+            if (!username || !phone || !identification || !regionLiving || !regionActive) {
+                showAlert('모든 필드를 입력해 주세요');
+                return;
+            }
+            
+            btnSubmit.disabled = true;
+            btnText.classList.add('hidden');
+            btnLoading.classList.remove('hidden');
+            
+            try {
+                const response = await fetch('/api/v1/auth/social/complete-signup', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        username,
+                        phone,
+                        identification_number: identification,
+                        region_living: regionLiving,
+                        region_active: regionActive
+                    })
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || '회원가입에 실패했습니다');
+                }
+                
+                const data = await response.json();
+                
+                // 토큰 저장
+                localStorage.setItem('access_token', data.access_token);
+                localStorage.setItem('refresh_token', data.refresh_token);
+                
+                showAlert('회원가입이 완료되었습니다!', 'success');
+                
+                setTimeout(() => {
+                    window.location.href = '/home';
+                }, 1500);
+                
+            } catch (error) {
+                showAlert(error.message);
+            } finally {
+                btnSubmit.disabled = false;
+                btnText.classList.remove('hidden');
+                btnLoading.classList.add('hidden');
+            }
+        });
+
+        // 페이지 로드 시 소셜 정보 로드
+        document.addEventListener('DOMContentLoaded', loadSocialInfo);
+    </script>
+</body>
+</html>

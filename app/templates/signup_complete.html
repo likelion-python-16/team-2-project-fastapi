@@ -1,119 +1,119 @@
 {% extends "final.html" %}
-{% block title %}회원가입 완료 - Team Project{% endblock %}
+{% block title %}계정 생성 완료 - 이메일 인증 필요{% endblock %}
 
 {% block content %}
-<div class="flex items-center justify-center grow bg-center bg-no-repeat page-bg"
-     style="background-image:url(&quot;{{ url_for('static', path='assets/final/media/images/2600x1200/bg-10.png') }}&quot;);">
-  <div class="kt-card max-w-[500px] w-full">
-    <div class="kt-card-content flex flex-col gap-6 p-10 text-center">
+<style> body { flex-direction: column; } </style>
+<div class="flex items-start justify-center overflow-y-auto min-h-[100dvh] w-full py-8">
+  <!-- 폭 고정 래퍼 -->
+  <div class="w-full max-w-[500px] mx-auto px-4">
+    <div class="kt-card w-full">
+      <div class="kt-card-content flex flex-col gap-6 p-10 text-center">
 
-      <div class="flex justify-center mb-4">
-        <div class="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center">
-          <i class="ki-filled ki-check text-3xl text-white"></i>
+        <!-- 초록 체크 아이콘 -->
+        <div class="flex justify-center">
+          <div class="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center">
+            <i class="ki-filled ki-check text-3xl text-white"></i>
+          </div>
         </div>
-      </div>
 
-      <div>
-        <h3 class="text-2xl font-bold text-mono mb-3">🎉 회원가입 완료!</h3>
-        <p class="text-muted-foreground text-lg mb-4">
-          <strong>Team Project</strong>에 오신 것을 환영합니다!
-        </p>
-      </div>
-
-      <div class="bg-muted/20 rounded-lg p-4 mb-4">
-        <div class="text-sm text-muted-foreground mb-3">완료된 단계</div>
-        <div class="flex justify-center gap-2">
-          <span class="inline-flex items-center gap-2">
-            <span class="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-xs font-bold">✓</span>
-            <span class="text-sm">기본 정보</span>
-          </span>
-          <span class="mx-2">→</span>
-          <span class="inline-flex items-center gap-2">
-            <span class="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-xs font-bold">✓</span>
-            <span class="text-sm">개인 정보</span>
-          </span>
-          <span class="mx-2">→</span>
-          <span class="inline-flex items-center gap-2">
-            <span class="w-6 h-6 bg-green-500 text-white rounded-full flex items-center justify-center text-xs font-bold">✓</span>
-            <span class="text-sm">프로필 설정</span>
-          </span>
+        <!-- 헤더 -->
+        <div>
+          <h1 class="text-3xl font-bold text-mono leading-snug mb-1">계정 생성 완료</h1>
+          <h2 class="text-lg font-medium text-foreground/90">이메일 인증만 남았어요</h2>
         </div>
-      </div>
 
-      <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-        <h4 class="font-medium text-blue-800 mb-2">이제 무엇을 할 수 있나요?</h4>
-        <ul class="text-sm text-blue-700 space-y-1">
-          <li>✨ 대시보드에서 프로젝트 현황 확인</li>
-          <li>👥 다른 팀원들과 협업 시작</li>
-          <li>🚀 새로운 챌린지에 참여</li>
-          <li>📊 진행 상황 추적 및 분석</li>
-        </ul>
-      </div>
-
-      <div class="flex flex-col gap-3">
-        <button class="kt-btn kt-btn-primary kt-btn-lg w-full" onclick="goToDashboard()">
-          <i class="ki-filled ki-home-2 me-2"></i>
-          홈으로 이동
-        </button>
-
-        <div class="flex gap-3">
-          <button class="kt-btn kt-btn-light flex-1" onclick="goToProfile()">
-            <i class="ki-filled ki-user me-2"></i>
-            프로필 보기
-          </button>
-          <button class="kt-btn kt-btn-light flex-1" onclick="exploreFeatures()">
-            <i class="ki-filled ki-rocket me-2"></i>
-            기능 둘러보기
-          </button>
+        <!-- 완료된 단계 -->
+        <div class="bg-muted/20 rounded-lg p-4">
+          <div class="text-sm text-muted-foreground mb-3">완료된 단계</div>
+          <div class="flex justify-center gap-2 text-sm">
+            <span class="inline-flex items-center gap-2 whitespace-nowrap">
+              <span class="w-7 h-7 inline-flex items-center justify-center rounded-full bg-green-500 text-white font-bold leading-none">✓</span>기본 정보
+            </span>
+            <span>→</span>
+            <span class="inline-flex items-center gap-2 whitespace-nowrap">
+              <span class="w-7 h-7 inline-flex items-center justify-center rounded-full bg-green-500 text-white font-bold leading-none">✓</span>개인 정보
+            </span>
+            <span>→</span>
+            <span class="inline-flex items-center gap-2 whitespace-nowrap">
+              <span class="w-7 h-7 inline-flex items-center justify-center rounded-full bg-green-500 text-white font-bold leading-none">✓</span>프로필 설정
+            </span>
+          </div>
         </div>
-      </div>
 
-      <div class="text-xs text-muted-foreground mt-4 space-y-1">
-        <p>💡 <strong>팁:</strong> 프로필을 완성하면 더 많은 기능을 이용할 수 있어요</p>
-        <p>🔒 회원 정보는 언제든지 프로필에서 수정할 수 있습니다</p>
-        <p>❓ 도움이 필요하시면 <a href="#" class="link">고객센터</a>에 문의하세요</p>
-      </div>
+        <!-- 인증 안내 패널(본문만 남기고 버튼 제거) -->
+        <div class="rounded-lg text-left border border-amber-200 bg-amber-50">
+          <div class="p-5 flex flex-col gap-4">
+            <div class="text-sm text-muted-foreground">
+              가입 이메일로 전송된 메일의 <b>‘인증하기’</b> 버튼을 눌러 주세요.
+              <span id="expireHint"></span>
+            </div>
 
-      <div class="border-t border-border pt-4 mt-4">
-        <p class="text-xs text-muted-foreground mb-3">Team Project에 가입했어요! 🎉</p>
-        <div class="flex justify-center gap-2">
-          <button class="kt-btn kt-btn-sm kt-btn-light" onclick="shareToSocial('twitter')">
-            <i class="ki-filled ki-twitter me-1"></i>
-            트위터
-          </button>
-          <button class="kt-btn kt-btn-sm kt-btn-light" onclick="shareToSocial('facebook')">
-            <i class="ki-filled ki-facebook me-1"></i>
-            페이스북
-          </button>
-          <button class="kt-btn kt-btn-sm kt-btn-light" onclick="copyInviteLink()">
-            <i class="ki-filled ki-copy me-1"></i>
-            링크 복사
-          </button>
+            <!-- 인증 후 가능 -->
+            <div class="rounded-md p-4 border border-muted bg-muted/20">
+              <h4 class="text-sm font-medium text-foreground mb-2">이메일 인증 후 가능해져요</h4>
+              <ul class="text-sm text-muted-foreground space-y-1">
+                <li>✨ 새로운 챌린지를 직접 만들기</li>
+                <li>👥 참여 신청 및 포인트 적립/환전</li>
+                <li>📝 리뷰 작성 및 ‘도움돼요’ 교류</li>
+                <li>🔔 알림/초대/환급 등 중요 메일 수신</li>
+              </ul>
+            </div>
+
+            <!-- 단일 버튼: 홈 화면 -->
+            <div class="flex">
+              <button id="btnHome" class="kt-btn kt-btn-primary w-full">
+                <i class="ki-filled ki-home-2 me-2"></i> 홈 화면
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
 
+        <!-- 하단 공유 -->
+        <div class="border-t border-border pt-4">
+          <p class="text-xs text-muted-foreground mb-3">challengers 를 통해 친구와 함께 성장하세요</p>
+          <div class="flex justify-center">
+            <button class="kt-btn kt-btn-sm kt-btn-light" onclick="copyInviteLink()">
+              <i class="ki-filled ki-copy me-1"></i> 링크 복사
+            </button>
+          </div>
+        </div>
+
+      </div>
     </div>
   </div>
 </div>
 
 <script>
-document.addEventListener('DOMContentLoaded',function(){
-  const checkIcon=document.querySelector('.ki-check');
-  if(checkIcon){checkIcon.style.transform='scale(0)';setTimeout(()=>{checkIcon.style.transition='transform .5s ease-out';checkIcon.style.transform='scale(1)';},500);}
-  const card=document.querySelector('.kt-card');
-  if(card){card.style.opacity='0';card.style.transform='translateY(20px)';setTimeout(()=>{card.style.transition='all .6s ease-out';card.style.opacity='1';card.style.transform='translateY(0)';},200);}
+  // 배경 이미지는 사용하지 않습니다
 
-  setTimeout(()=>{const msg=document.createElement('div');msg.className='text-xs text-muted-foreground mt-2';msg.textContent='10초 후 자동으로 홈으로 이동합니다...';
-    document.querySelector('.kt-card-content').appendChild(msg);
-    setTimeout(()=>goToDashboard(),10000);
-  },5000);
-});
+  // ===== 설정 값 =====
+  const VERIFY_EXPIRE_MIN = Number('{{ verify_expire_min|default(30) }}'); // 없으면 30
 
-function goToDashboard(){window.location.href='/home';}
-function goToProfile(){window.location.href='/profile';}
-function exploreFeatures(){window.location.href='/tutorial';}
-function shareToSocial(p){const text='Team Project에 가입했어요! 🎉';const url=window.location.origin;let u='';if(p==='twitter')u=`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`;if(p==='facebook')u=`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`;if(u)window.open(u,'_blank','width=600,height=400');}
-function copyInviteLink(){const invite=window.location.origin+'/signup';if(navigator.clipboard){navigator.clipboard.writeText(invite).then(()=>showToast('초대 링크가 복사되었습니다! 📋'));}else{const ta=document.createElement('textarea');ta.value=invite;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);showToast('초대 링크가 복사되었습니다! 📋');}}
-function showToast(m){const t=document.createElement('div');t.className='fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';t.textContent=m;document.body.appendChild(t);setTimeout(()=>{t.style.transition='opacity .3s ease-out';t.style.opacity='0';setTimeout(()=>document.body.removeChild(t),300);},3000);}
+  // 라우팅/유틸
+  function goToDashboard(){ window.location.href = '/home'; }
+  function copyInviteLink(){
+    const invite = 'http://localhost/home';
+    if(navigator.clipboard){
+      navigator.clipboard.writeText(invite).then(()=>showToast('링크가 복사되었습니다! 📋'));
+    }else{
+      const ta=document.createElement('textarea'); ta.value=invite; document.body.appendChild(ta);
+      ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+      showToast('링크가 복사되었습니다! 📋');
+    }
+  }
+  function showToast(msg, isErr=false){
+    const t=document.createElement('div');
+    t.className=`fixed top-4 right-4 ${isErr?'bg-red-500':'bg-green-500'} text-white px-4 py-2 rounded-lg shadow-lg z-50`;
+    t.textContent=msg;
+    document.body.appendChild(t);
+    setTimeout(()=>{ t.style.transition='opacity .3s'; t.style.opacity='0'; setTimeout(()=>t.remove(),300); }, 2500);
+  }
+
+  // 초기 바인딩
+  document.addEventListener('DOMContentLoaded', ()=>{
+    const exp = document.getElementById('expireHint');
+    if(exp) exp.textContent = ` (유효시간: 약 ${VERIFY_EXPIRE_MIN}분)`;
+    document.getElementById('btnHome').addEventListener('click', goToDashboard);
+  });
 </script>
 {% endblock %}

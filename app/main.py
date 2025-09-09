@@ -2,47 +2,50 @@
 import os
 from pathlib import Path
 from datetime import datetime
-
+from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.routing import APIRoute
 
-from app.core.database import SessionLocal
-from app.models import Tag
-from app.services.store import store
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse, PlainTextResponse
 
+# Moved to lifespan.py:
+# from app.core.database import SessionLocal
+# from app.models import Tag
+# from app.services.store import store
+
+# 설정 및 라이프사이클
 from .core.config import settings
 from .core.lifespan import lifespan
+
+# 로깅 설정
 from .utils.logging import logger
 
 # 라우터들
 from .routers import (
     users, health, system, challenges, auth, homepage, follow,
-    naver_maps, map, files, tags_categories, places, naver_local, pages,
-    tags,  # ✅ 추가: 태그 라우터
+    naver_maps, map, files, tags_categories, places, naver_local, pages, tags,
+    users_mypage, users_mypage_chat, users_mypage_more, point_management
 )
-from .routers import round_pictures
-# ⛳️ 중복 방지: 아래 한 줄은 제거합니다 (동일 라우터를 두 번 include 하던 원인)
-# from app.routers.tags_categories import router as tags_router
+
+# 메트릭 미들웨어
+from .core.metrics import MetricsMiddleware, get_metrics
+from .routers import auth_social
+from .routers import round_pictures, participations, payments, payment_reminders
 from app.routers.challengecreating import router as challengecreating_router
 from app.routers.challengedetail import router as challengedetail_router
 from app.routers.place_picker import router as place_picker_router
+from app.routers import chat as chat_router
 
-# ✅ users_mypage (API + Page)
-from app.routers.users_mypage import (
-    router as users_mypage_api_router,        # /api/v1/users/*
-    page_router as users_mypage_page_router,  # /mypage
-)
+# Admin routers
+from app.routers import admin_auth
+from app.routers import admin_pages
 
-# ── operationId 충돌 방지: 경로+메서드로 고유 ID 생성
-def generate_unique_id(route: APIRoute):
-    method = sorted(route.methods)[0] if route.methods else "GET"
-    return f"{method}_{route.path}".replace("/", "_").replace("{", "").replace("}", "")
-
-# ── 앱 생성
+# FastAPI 앱 생성
 app = FastAPI(
     title=settings.project_name,
     description=settings.project_description,
@@ -51,10 +54,15 @@ app = FastAPI(
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
-    generate_unique_id_function=generate_unique_id,  # ✅ 충돌 방지 적용
 )
 
-# ── CORS
+# 세션 미들웨어 (소셜 로그인용)
+app.add_middleware(SessionMiddleware, secret_key=settings.session_secret)
+
+# 메트릭 미들웨어 추가
+app.add_middleware(MetricsMiddleware)
+
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
@@ -63,17 +71,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── 정적 파일 (존재 확인 후 마운트)
-BASE_DIR = Path(__file__).resolve().parent          # /app/app
-STATIC_DIR = BASE_DIR / "static"                    # /app/app/static
-if STATIC_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-else:
-    logger.warning("Static dir not found: %s", STATIC_DIR)
+# 정적 파일 (한 번만)
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
-# ── 템플릿
-TEMPLATE_DIR = BASE_DIR / "templates"               # /app/app/templates
-templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
+BASE_DIR = Path(__file__).parent
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 # ---------------------------
 # HTML Pages
@@ -86,6 +88,39 @@ async def home_page(request: Request):
 async def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
 
+@app.get("/signup", response_class=HTMLResponse, tags=["Pages"])
+async def signup_page():
+    """기본 회원가입 페이지 - 1단계로 리다이렉트"""
+    return RedirectResponse(url="/signup/step1", status_code=303)
+
+@app.get("/signup-social", response_class=HTMLResponse, tags=["Pages"])
+async def signup_social_page():
+    with open("app/templates/signup_social.html", "r", encoding="utf-8") as f:
+        content = f.read()
+    return HTMLResponse(content=content)
+
+@app.get("/social/step1", response_class=HTMLResponse, tags=["Pages"])
+async def social_signup_step1(request: Request):
+    return templates.TemplateResponse("signup1forsocial.html", {"request": request})
+
+@app.get("/social/step2", response_class=HTMLResponse, tags=["Pages"])
+async def social_signup_step2(request: Request):
+    return templates.TemplateResponse("signup2forsocial.html", {"request": request})
+
+@app.get("/social/step3", response_class=HTMLResponse, tags=["Pages"])
+async def social_signup_step3(request: Request):
+    return templates.TemplateResponse("signup3forsocial.html", {"request": request})
+
+@app.get("/social/onboarding", response_class=HTMLResponse, tags=["Pages"])
+async def social_onboarding():
+    """소셜 로그인 후 신규 사용자 온보딩"""
+    return RedirectResponse(url="/social/step1", status_code=303)
+
+@app.get("/social/merge", response_class=HTMLResponse, tags=["Pages"])
+async def social_merge_page(request: Request):
+    """계정 연동 확인 페이지"""
+    return templates.TemplateResponse("social_merge.html", {"request": request})
+
 @app.get("/dashboard", response_class=HTMLResponse, tags=["Pages"])
 async def dashboard_page(request: Request):
     return templates.TemplateResponse("dashboard.html", {"request": request})
@@ -94,9 +129,35 @@ async def dashboard_page(request: Request):
 async def users_list_page(request: Request):
     return templates.TemplateResponse("users.html", {"request": request})
 
+# Public profile page for a specific user id
+@app.get("/users/{user_id}", response_class=HTMLResponse, tags=["Pages"])
+async def public_user_profile(request: Request, user_id: int):
+    return templates.TemplateResponse("mypage.html", {"request": request, "view_user_id": user_id})
+
+@app.get("/mypage", response_class=HTMLResponse, tags=["Pages"])
+async def mypage_page(request: Request):
+    return templates.TemplateResponse("mypage.html", {"request": request})
+
+@app.get("/account/edit", response_class=HTMLResponse, tags=["Pages"])
+async def account_edit_page(request: Request):
+    return templates.TemplateResponse("account_edit.html", {"request": request})
+
+@app.get("/account/email", response_class=HTMLResponse, tags=["Pages"])
+async def account_email_page(request: Request):
+    return templates.TemplateResponse("account_email.html", {"request": request})
+
 @app.get("/demo", response_class=HTMLResponse, tags=["Pages"])
 def get_demo(request: Request):
     return templates.TemplateResponse("demo.html", {"request": request})
+
+# Chat pages
+@app.get("/chat", response_class=HTMLResponse, tags=["Pages"])
+async def chat_list_page(request: Request):
+    return templates.TemplateResponse("chat_list.html", {"request": request})
+
+@app.get("/chat/rooms/{room_id}", response_class=HTMLResponse, tags=["Pages"])
+async def chat_room_page(request: Request, room_id: int):
+    return templates.TemplateResponse("chat_room.html", {"request": request, "room_id": room_id})
 
 # 생성/상세 페이지: /pages/* 로 고정, 이름 지정
 @app.get("/pages/challenges/new", name="page_challenge_create",
@@ -109,22 +170,65 @@ def page_challenge_create(request: Request):
 def page_challenge_detail(request: Request, challenge_id: int):
     return templates.TemplateResponse("challenge_detail.html", {"request": request, "challenge_id": challenge_id})
 
+# 결제 성공/실패 페이지 (Toss 리다이렉트용)
+@app.get("/payments/success", response_class=HTMLResponse, tags=["Payment Pages"])
+def payment_success_page(request: Request):
+    return templates.TemplateResponse("payments_success.html", {"request": request})
+
+@app.get("/payments/fail", response_class=HTMLResponse, tags=["Payment Pages"])  
+def payment_fail_page(request: Request):
+    return templates.TemplateResponse("payments_fail.html", {"request": request})
+
+# 이메일 인증 성공/실패 페이지
+@app.get("/verify/success", response_class=HTMLResponse, tags=["Email Verification"])
+def verify_success_page():
+    with open("app/templates/verify_success.html", "r", encoding="utf-8") as f:
+        content = f.read()
+    return HTMLResponse(content=content)
+
+@app.get("/verify/fail", response_class=HTMLResponse, tags=["Email Verification"])
+def verify_fail_page():
+    with open("app/templates/verify_fail.html", "r", encoding="utf-8") as f:
+        content = f.read()  
+    return HTMLResponse(content=content)
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(_: Request, exc: RequestValidationError):
+    def scrub(e: dict[str, Any]) -> dict[str, Any]:
+        ctx = e.get("ctx")
+        if isinstance(ctx, dict):
+            e = {**e, "ctx": {k: (str(v) if isinstance(v, BaseException) else v) for k, v in ctx.items()}}
+        return e
+    return JSONResponse(
+        status_code=422,
+        content={"detail": [scrub(e) for e in exc.errors()]}
+    )
+
 # 네이버 지도 데모들
 @app.get("/maps/dynamic", response_class=HTMLResponse, tags=["Pages"])
 async def maps_dynamic(request: Request):
-    return templates.TemplateResponse("map_dynamic.html", {"request": request, "NCP_KEY_ID": settings.naver_maps_key_id})
+    return templates.TemplateResponse(
+        "map_dynamic.html",
+        {"request": request, "NCP_KEY_ID": settings.naver_maps_client_id}
+    )
 
 @app.get("/maps/geocode", response_class=HTMLResponse, tags=["Pages"])
 async def maps_geocode(request: Request):
-    return templates.TemplateResponse("map_geocode.html", {"request": request, "NCP_KEY_ID": settings.naver_maps_key_id})
+    return templates.TemplateResponse(
+        "map_geocode.html",
+        {"request": request, "NCP_KEY_ID": settings.naver_maps_client_id}
+    )
 
 @app.get("/maps/static", response_class=HTMLResponse, tags=["Pages"])
 async def maps_static(request: Request):
-    return templates.TemplateResponse("map_static.html", {"request": request, "NCP_KEY_ID": settings.naver_maps_key_id})
+    return templates.TemplateResponse(
+        "map_static.html",
+        {"request": request, "NCP_KEY_ID": settings.naver_maps_client_id}
+    )
 
 @app.get("/map", response_class=HTMLResponse, tags=["Pages"])
 async def get_map(request: Request):
-    ncp_key_id = os.getenv("NAVER_MAPS_CLIENT_ID", "")
+    ncp_key_id = os.getenv("NAVER_MAPS_CLIENT_ID", "")  # 또는 settings.naver_maps_client_id
     return templates.TemplateResponse("map_dynamic.html", {"request": request, "ncpKeyId": ncp_key_id})
 
 # 루트 → 홈으로
@@ -143,9 +247,11 @@ async def api_info():
         "docs": "/docs",
         "redoc": "/redoc",
         "endpoints": {
-            "auth": "/api/v1/auth/*",          # 최종 경로 안내
+            "auth": "/api/v1/auth/*",
             "users": "/api/v1/users/*",
             "challenges": "/api/v1/challenges/*",
+            "participations": "/api/v1/participations/*",
+            "payments": "/api/v1/payments/*",
             "health": "/health/*",
             "system": "/system/*",
         },
@@ -153,13 +259,17 @@ async def api_info():
             "home": "/home",
             "signup": "/signup",
             "login": "/login",
-            "signin": "/signin",
             "dashboard": "/dashboard",
             "users": "/users-list",
             "challenge_create": "/pages/challenges/new",
         },
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now().isoformat()
     }
+
+@app.get("/metrics", response_class=PlainTextResponse, tags=["Monitoring"])
+async def metrics():
+    """Prometheus 메트릭 엔드포인트"""
+    return get_metrics()
 
 # ---------------------------
 # Router include (중복 제거, 한 번씩만)
@@ -167,73 +277,49 @@ async def api_info():
 app.include_router(health.router)
 app.include_router(system.router)
 
-# users/challenges는 /api/v1 프리픽스와 잘 결합되게 설계되어 있음
+app.include_router(auth.router, prefix="/api/v1")
+app.include_router(auth_social.router, prefix="/api/v1")
 app.include_router(users.router, prefix="/api/v1")
 app.include_router(challenges.router, prefix="/api/v1")
-
-# ✅ auth는 내부에 이미 /api/v1/auth 프리픽스가 있는 것으로 확인되어, 외부 prefix 제거
-app.include_router(auth.router)
+app.include_router(participations.router, prefix="/api/v1")
+app.include_router(payments.router, prefix="/api/v1")
+app.include_router(payment_reminders.router, prefix="/api/v1")
 
 app.include_router(places.router)
 app.include_router(round_pictures.router)
 app.include_router(naver_local.router)
 app.include_router(naver_maps.router)
 app.include_router(follow.router)
-app.include_router(homepage.router)    # 내부 prefix: /api/v1/home
+app.include_router(homepage.router)  # 내부 prefix: /api/v1/home
 app.include_router(map.router)
 app.include_router(files.router, prefix="/api/v1")
 app.include_router(pages.router)
-
-# ✅ tags_categories 한 번만 include (중복 제거)
 app.include_router(tags_categories.router, prefix="/api/v1")
-
-# ✅ NEW: 태그 라우터 등록 (/api/v1/tags/*)
-app.include_router(tags.router)  # ← tags.py가 prefix="/api/v1/tags" 이므로 추가 prefix 불필요
-
+app.include_router(tags.router, prefix="/api/v1")  # AI 태그 검색 기능
 app.include_router(challengecreating_router)
 app.include_router(challengedetail_router)
 app.include_router(place_picker_router)
+app.include_router(chat_router.router)
+app.include_router(users_mypage.router)
+app.include_router(users_mypage_chat.router)
+app.include_router(users_mypage_more.router)
+app.include_router(users_mypage.page_router)
 
-# ✅ users_mypage 라우터들 추가
-app.include_router(users_mypage_api_router)      # /api/v1/users/*
-app.include_router(users_mypage_page_router)     # /mypage
+# Admin routes
+app.include_router(admin_auth.router)
+app.include_router(admin_pages.router)
+app.include_router(point_management.router, prefix="/api/v1")
 
 # ---------------------------
-# Startup hooks
+# Seed default tags moved to lifespan.py
 # ---------------------------
-@app.on_event("startup")
-def seed_tags_if_empty():
-    db = SessionLocal()
-    try:
-        for name in store.centroid_labels:
-            name = (name or "").strip()
-            if not name:
-                continue
-            exists = db.query(Tag).filter(Tag.tag == name).first()
-            if not exists:
-                db.add(Tag(tag=name, is_active=True))
-        db.commit()
-    finally:
-        db.close()
-
-@app.on_event("startup")
-def _print_routes_on_start():
-    """디버그: 등록된 라우트 로그로 출력 + 마이페이지 템플릿 존재 확인"""
-    try:
-        paths = [r.path for r in app.routes if isinstance(r, APIRoute)]
-        logger.info("🔎 Registered routes: %s", ", ".join(paths))
-        mp = TEMPLATE_DIR / "mypage" / "index.html"
-        logger.info("🧩 TEMPLATE_DIR: %s", TEMPLATE_DIR)
-        logger.info("🧩 /mypage/index.html exists: %s", mp.exists())
-    except Exception as e:
-        logger.error("Route/template check failed: %s", e)
 
 # ---------------------------
 # Dev server entry (optional)
 # ---------------------------
 if __name__ == "__main__":
     import uvicorn
-    logger.info("🔧 개발 서버 실행…")
+    logger.info("🔧 개발 서버를 직접 실행합니다...")
     uvicorn.run(
         "app.main:app",
         host=settings.api_host,

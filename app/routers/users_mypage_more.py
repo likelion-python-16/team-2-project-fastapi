@@ -7,12 +7,15 @@ from sqlalchemy import select, and_, func, desc, true
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.dependencies.auth import get_current_user
-from app.deps.pagination import pagination_params
+from app.security import get_current_user
+# Simple pagination helper  
+def pagination_params(page: int = Query(1, ge=1), limit: int = Query(20, ge=1, le=100)):
+    skip = (page - 1) * limit
+    return {"page": page, "limit": limit, "skip": skip}
 
 from app.models.user import User
 from app.models.report import Report, ReportProof
-from app.models.finance import Payment, Refund, PointExchangeRequest
+from app.models.payment import Payment, Refund
 from app.models.pointhistory import PointHistory
 from app.models.participation import Participation
 from app.models.challenge import Challenge  # 프로젝트 경로에 맞게 유지
@@ -21,7 +24,6 @@ from app.schemas.mypage_more import (
     ReportListOut, ReportItem, ReportProofItem,
     PaymentListOut, PaymentItem,
     PointHistoryListOut, PointHistorySummary, PointHistoryItem,
-    PointExchangeListOut, PointExchangeItem,
 )
 
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
@@ -115,6 +117,76 @@ def my_payments(
 
 
 # -------------------------
+# F-1-15b: 환불 내역
+# -------------------------
+@router.get("/me/refunds", response_model=PaymentListOut)
+def my_refunds(
+    status: Optional[str] = Query(None, description="환불 상태: pending/success/completed/failed"),
+    date_from: Optional[datetime] = Query(None, description="ISO datetime (inclusive)"),
+    date_to: Optional[datetime] = Query(None, description="ISO datetime (inclusive)"),
+    db: Session = Depends(get_db),
+    me: User = Depends(get_current_user),
+    pg: dict = Depends(pagination_params),
+):
+    """사용자 환불 내역"""
+    from sqlalchemy import text
+    
+    # 조건 빌드
+    where_conditions = ["user_id = :user_id"]
+    params = {"user_id": me.id}
+    
+    if status:
+        where_conditions.append("status = :status")
+        params["status"] = status
+    
+    if date_from:
+        where_conditions.append("created_at >= :date_from")
+        params["date_from"] = date_from
+    if date_to:
+        where_conditions.append("created_at <= :date_to")
+        params["date_to"] = date_to
+    
+    where_clause = " AND ".join(where_conditions)
+    
+    # 총 개수 조회
+    count_query = f"SELECT COUNT(*) as total FROM refunds WHERE {where_clause}"
+    total_result = db.execute(text(count_query), params)
+    total = total_result.fetchone()[0]
+    
+    print(f"DEBUG: Refunds query - user_id={me.id}, status={status}, total={total}")  # 디버깅
+    
+    items = []
+    if total > 0:
+        # 데이터 조회
+        data_query = f"""
+        SELECT id, user_id, challenge_id, payment_id, refund_amount, status, 
+               refund_reason, processed_at, requested_at, created_at, updated_at
+        FROM refunds 
+        WHERE {where_clause}
+        ORDER BY created_at DESC, id DESC
+        LIMIT :limit OFFSET :offset
+        """
+        params.update({"limit": pg["limit"], "offset": pg["skip"]})
+        
+        rows = db.execute(text(data_query), params)
+        
+        # PaymentItem 형태로 변환
+        for row in rows:
+            item = PaymentItem(
+                id=row.id,
+                amount=int(row.refund_amount),
+                status=row.status,
+                payment_type="refund",
+                method="card",  # 기본값
+                created_at=row.created_at
+            )
+            items.append(item)
+
+    print(f"DEBUG: Refunds result - items={len(items)}")  # 디버깅
+    return PaymentListOut(items=items, total=total, skip=pg["skip"], limit=pg["limit"])
+
+
+# -------------------------
 # F-1-16: 포인트 내역
 # -------------------------
 @router.get("/me/points/history", response_model=PointHistoryListOut)
@@ -187,37 +259,6 @@ def my_point_history(
         kind=kind,
     )
 
-
-# -------------------------
-# F-1-17: 포인트 전환(환급) 내역
-# -------------------------
-@router.get("/me/points/exchanges", response_model=PointExchangeListOut)
-def my_point_exchanges(
-    status: Optional[str] = Query(None, description="requested/processing/succeeded/failed"),
-    db: Session = Depends(get_db),
-    me: User = Depends(get_current_user),
-    pg: dict = Depends(pagination_params),
-):
-    cond = [PointExchangeRequest.user_id == me.id]
-    if status:
-        cond.append(PointExchangeRequest.status == status)
-    where_clause = and_(*cond)
-
-    total = db.execute(
-        select(func.count()).select_from(PointExchangeRequest).where(where_clause)
-    ).scalar_one()
-
-    items: list[PointExchangeItem] = []
-    if total:
-        rows = db.execute(
-            select(PointExchangeRequest)
-            .where(where_clause)
-            .order_by(desc(PointExchangeRequest.requested_at), desc(PointExchangeRequest.id))
-            .offset(pg["skip"]).limit(pg["limit"])
-        ).scalars().all()
-        items = [PointExchangeItem.model_validate(r, from_attributes=True) for r in rows]
-
-    return PointExchangeListOut(items=items, total=total, skip=pg["skip"], limit=pg["limit"])
 
 
 # -------------------------

@@ -11,7 +11,8 @@ class ChatRoom(Base, TimestampMixin):
     __tablename__ = "chat_rooms"
     
     id = Column(Integer, primary_key=True, index=True)
-    challenge_id = Column(Integer, ForeignKey("challenges.id", ondelete="CASCADE"), nullable=False)
+    # DM 방 지원을 위해 NULL 허용 (챌린지 미연동 방)
+    challenge_id = Column(Integer, ForeignKey("challenges.id", ondelete="CASCADE"), nullable=True)
     creator_id   = Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
     
     # 관계

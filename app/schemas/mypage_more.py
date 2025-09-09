@@ -49,7 +49,7 @@ class PaymentItem(BaseModel):
     amount: int
     status: str
     payment_type: Optional[str] = None
-    method: Optional[str] = None
+    method: Optional[str] = Field(default="unknown")
     created_at: datetime
 
 

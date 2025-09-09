@@ -1,0 +1,38 @@
+[mysqld]
+# Performance optimization
+innodb_buffer_pool_size = 1G
+innodb_log_file_size = 256M
+innodb_flush_log_at_trx_commit = 2
+innodb_flush_method = O_DIRECT
+
+# Connection settings
+max_connections = 200
+max_connect_errors = 10000
+
+# Query cache (MySQL 8.0에서 제거되었으나 호환성을 위해)
+# query_cache_size = 64M
+# query_cache_type = 1
+
+# Slow query log
+slow_query_log = 1
+slow_query_log_file = /var/log/mysql/mysql-slow.log
+long_query_time = 1
+
+# Error log
+log_error = /var/log/mysql/error.log
+
+# General log (운영시에는 비활성화 권장)
+# general_log = 1
+# general_log_file = /var/log/mysql/general.log
+
+# Binary logging
+log_bin = /var/log/mysql/mysql-bin.log
+expire_logs_days = 7
+max_binlog_size = 100M
+
+# Character set
+character_set_server = utf8mb4
+collation_server = utf8mb4_unicode_ci
+
+# Timezone
+default_time_zone = '+09:00'

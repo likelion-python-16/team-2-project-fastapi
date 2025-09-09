@@ -1,39 +1,30 @@
-# app/models/user.py
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
-
-from sqlalchemy import (
-    Column, Enum, Integer, String, Boolean, Float, Text, DateTime, Index, JSON
-)
+from sqlalchemy import Column, Enum, Integer, String, Boolean, Float, Text, DateTime, Index, UniqueConstraint
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
-from sqlalchemy.ext.associationproxy import association_proxy  # ★ 추가
-
-from .base import Base, TimestampMixin
+from .base import Base
 from ..security import hash_password, verify_password, encrypt_str, decrypt_str
 from app.models.round_manager import RoundManager
+from sqlalchemy.orm import relationship
 
-
-class User(Base, TimestampMixin):
+class User(Base):
     __tablename__ = "users"
-
-    # PK
+    
     id = Column(Integer, primary_key=True, index=True)
 
-    # 필수/고유
     username = Column(String(50), unique=True, index=True, nullable=False)
     email = Column(String(120), unique=True, index=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
     name = Column(String(100), nullable=False)
 
-    # 타임스탬프
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
 
-    # 선택 필드들
+    # (레거시) 평문 정규화 저장 컬럼 — 가급적 비워두길 권장
     phone = Column(String(20), unique=True, index=True, nullable=True)
 
-    # 암호화/지문
+    # 신규: 암호화 + 지문
     phone_encrypted = Column(String(255), nullable=True)
     phone_fingerprint = Column(String(64), unique=True, nullable=True, index=True)
 
@@ -43,50 +34,47 @@ class User(Base, TimestampMixin):
     gender = Column(
         Enum("male", "female", "other", name="gender_enum"),
         nullable=False,
-        server_default="other",
+        server_default="other"
     )
 
     region_living = Column(String(50), nullable=False, server_default='')
     region_active = Column(String(50), nullable=False, server_default='', index=True)
     profile_image = Column(String(255), nullable=False, server_default='')
+    
+    # 소셜 로그인 식별자
+    provider = Column(String(20), nullable=True, index=True)  # 'google' | 'naver'
+    provider_id = Column(String(128), nullable=True, index=True)
+
+    # 선택: 출생연도(네이버 제공)
+    birth_year = Column(String(10), nullable=True)
     introduction = Column(Text, nullable=False)
 
-    # 기본값이 있는 필드들
     manner_score = Column(Float, default=0.0, nullable=False, index=True)
     total_points = Column(Integer, default=0, nullable=False, index=True)
     penalty_total = Column(Integer, default=0, nullable=False)
     is_admin = Column(Boolean, default=False, nullable=False)
-    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    is_superadmin = Column(Boolean, default=False, nullable=False)
 
-    # 이메일 인증 & 토큰 버전
+    # ★ 엄격모드: 기본 비활성/미인증
+    is_active = Column(Boolean, default=False, nullable=False, index=True)
     email_verified = Column(Boolean, default=False, nullable=False, index=True)
+
+    # 소프트 삭제
+    is_deleted = Column(Boolean, default=False, nullable=False, server_default='0', index=True)
+    deleted_at = Column(DateTime, nullable=True)
+
     token_version = Column(Integer, nullable=False, server_default='0')
 
-    # ▶ 사용자 환경설정(JSON)
-    preferences = Column(JSON, nullable=True)  # MySQL 5.7+면 JSON으로 저장
-
-    # ─────────────────────────────
-    # 관계 설정
-    # ─────────────────────────────
-    notifications = relationship("Notification", back_populates="user", foreign_keys="Notification.user_id")
-    payments = relationship("Payment", back_populates="user", foreign_keys="Payment.user_id")
-    refunds = relationship("Refund", back_populates="user", foreign_keys="Refund.user_id")
-    point_exchange_requests = relationship("PointExchangeRequest", back_populates="user", foreign_keys="PointExchangeRequest.user_id")
-    uploaded_round_pictures = relationship("RoundPicture", back_populates="uploader", foreign_keys="RoundPicture.uploaded_by")
+    notifications = relationship("Notification", back_populates="user", foreign_keys="Notification.user_id", overlaps="notifications")
+    payments = relationship("Payment", back_populates="user", foreign_keys="Payment.user_id", overlaps="payments")
+    refunds = relationship("Refund", back_populates="user", foreign_keys="Refund.user_id", overlaps="refunds")
+    uploaded_round_pictures = relationship("RoundPicture", back_populates="uploader", foreign_keys="RoundPicture.uploaded_by", overlaps="uploader")
     created_challenges = relationship("Challenge", back_populates="creator", foreign_keys="Challenge.creator_id", overlaps="creator")
-    participations = relationship("Participation",  back_populates="user")
+    participations = relationship("Participation", back_populates="user", foreign_keys="Participation.user_id")
+    kicked_participations = relationship("Participation", foreign_keys="Participation.kicked_by")
     managed_rounds = relationship("RoundManager", back_populates="user", cascade="all, delete-orphan")
 
-    # ▼ 관심태그(N:N) – 현재 프로젝트의 UserTag 중간모델을 그대로 사용
-    user_tags = relationship(
-        "UserTag",
-        back_populates="user",
-        cascade="all, delete-orphan",
-    )
-    # ★ 편의 접근자: user.tags -> [Tag, Tag, ...]
-    #    UserTag(tag=Tag) 형태로 연결되어 있다는 전제 (UserTag에 tag relationship 있어야 함)
-    tags = association_proxy("user_tags", "tag")
-
+    user_tags = relationship("UserTag", back_populates="user")
     following_relations = relationship("Following", foreign_keys="Following.follower_id", back_populates="follower")
     follower_relations = relationship("Following", foreign_keys="Following.following_id", back_populates="following")
     invitations_sent = relationship("Invitation", foreign_keys="Invitation.inviter_id", back_populates="inviter")
@@ -107,25 +95,54 @@ class User(Base, TimestampMixin):
     chat_messages_sent = relationship("ChatMessage", back_populates="sender", foreign_keys="ChatMessage.sender_id")
     chat_participations = relationship("ChatParticipant", back_populates="user")
 
-    # ─────────────────────────────
-    # 비밀번호 & 개인정보 유틸
-    # ─────────────────────────────
     def set_password(self, plain_password: str) -> None:
         if not plain_password or len(plain_password.strip()) == 0:
             raise ValueError("비밀번호는 비어있을 수 없습니다")
         self.password_hash = hash_password(plain_password)
-
+    
     def verify_password(self, plain_password: str) -> bool:
         if not plain_password:
             return False
         return verify_password(plain_password, self.password_hash)
 
     def set_identification_number(self, plain_number: Optional[str]) -> None:
-        if plain_number is None:
+        """주민등록번호(13자리) 저장: 형식 검증 후 암호화 + 지문 생성
+        - YYMMDD + (7번째: 1~8) 제약
+        - 월 십의 자리(3번째)는 0/1, 일 십의 자리(5번째)는 0/1/2/3
+        - 유효 월(1~12), 유효 일(1~31)
+        """
+        import re as _re
+        if plain_number is None or str(plain_number).strip() == "":
             self.identification_number = None
-        else:
-            self.identification_number = encrypt_str(plain_number)
+            self.identification_fingerprint = None
+            return
+        # 숫자만 추출 및 기본 형식 검증
+        n = _re.sub(r"\D+", "", str(plain_number))
+        if not _re.fullmatch(r"\d{13}", n):
+            raise ValueError("식별번호는 13자리 숫자여야 합니다")
+        # 월/일 자릿수 제약 (월 십의 자리: 0/1, 일 십의 자리: 0~3)
+        if n[2] not in ("0", "1"):
+            raise ValueError("월의 십의 자리는 0 또는 1이어야 합니다")
+        if n[4] not in ("0", "1", "2", "3"):
+            raise ValueError("일의 십의 자리는 0-3이어야 합니다")
+        # 유효 월/일
+        m = int(n[2:4]); d = int(n[4:6])
+        if not (1 <= m <= 12):
+            raise ValueError("월은 01-12여야 합니다")
+        if not (1 <= d <= 31):
+            raise ValueError("일은 01-31이어야 합니다")
+        # 7번째(성별/세기) 제약: 1~8
+        if n[6] not in "12345678":
+            raise ValueError("7번째 자리는 1-8이어야 합니다")
 
+        # 저장: 암호화 + fingerprint (정규화된 13자리 기준)
+        self.identification_number = encrypt_str(n)
+        try:
+            from ..security import id_fingerprint
+            self.identification_fingerprint = id_fingerprint(n)
+        except Exception:
+            self.identification_fingerprint = None
+    
     def get_identification_number(self) -> Optional[str]:
         if not self.identification_number:
             return None
@@ -156,27 +173,24 @@ class User(Base, TimestampMixin):
             return decrypt_str(self.phone_encrypted)
         except Exception:
             return None
-
-    # ─────────────────────────────
-    # 기타 유틸
-    # ─────────────────────────────
+    
     def is_email_verified(self) -> bool:
         return bool(self.email_verified)
-
+    
     def can_exchange_points(self) -> bool:
         return self.is_active and self.penalty_total < 3
-
+    
     def get_display_name(self) -> str:
         return self.name if self.name else self.username
-
+    
     def update_manner_score(self, score_change: float) -> None:
         new_score = self.manner_score + score_change
         self.manner_score = max(0.0, min(100.0, new_score))
-
+    
     def add_points(self, points: int) -> None:
         if points > 0:
             self.total_points += points
-
+    
     def deduct_points(self, points: int) -> bool:
         if points <= 0:
             return False
@@ -184,17 +198,23 @@ class User(Base, TimestampMixin):
             self.total_points -= points
             return True
         return False
-
+    
     def add_penalty(self) -> None:
         self.penalty_total += 1
         if self.penalty_total >= 5:
             self.is_active = False
-
+    
     def __repr__(self) -> str:
         return f"<User(id={self.id}, username='{self.username}', name='{self.name}')>"
 
+    # 이메일 인증 토큰들
+    email_verifications = relationship(
+        "EmailVerification",
+        back_populates="user",
+        passive_deletes=True,
+    )
 
-# 인덱스
 Index("idx_user_region_manner", User.region_active, User.manner_score)
 Index("idx_user_active_points", User.is_active, User.total_points)
 Index("idx_user_email_active", User.email, User.is_active)
+UniqueConstraint(User.provider, User.provider_id, name="uq_user_provider_pid")

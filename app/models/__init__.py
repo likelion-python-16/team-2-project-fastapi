@@ -3,25 +3,29 @@ from .base import Base
 
 # 모든 모델들을 import
 from .user import User
+from .email_verification import EmailVerification
 from .challenge import Challenge
 from .participation import Participation, ParticipationRole
 from .challenge_round import ChallengeRound
 from .round_picture import RoundPicture
 from .attendance import QRCode, RoundAttendance, Proof, Appeal
 from .attendance import QRStatus, CheckMethod, AutoDecision, InitialDecision, InitialDecisionCode, ProofStatus, AppealDecisionCode, AttendanceStatus
-from .finance import Payment, Refund, PointExchangeRequest
-from .finance import PaymentStatus, RefundStatus, PointExchangeStatus
+from .payment import Payment, Refund, PaymentMethodType, PaymentStatus, PaymentTransactionType
 from .tag import Tag, UserTag, ChallengeTag
 from .admin_notice import AdminNotice
+from .admin_request import AdminRequest
+from .admin_audit_log import AdminAuditLog
 from .notification import Notification, NotificationEvent
 from .following import Following
 from .invitation import Invitation, InvitationStatus
 from .pointhistory import PointHistory, PointHistoryType
+from .point_withdrawal import PointWithdrawal, WithdrawalStatus, WithdrawalMethod
 from .review import Review, ReviewHelpful, ReviewStatus
 from .challenge_embedding import ChallengeEmbedding
 from .report import Report, ReportProof, PenaltyHistory, ReportStatus, PenaltySource
 from .chat import ChatRoom, ChatMessage, ChatParticipant
 from .round_manager import RoundManager
+
 # __all__로 외부에서 import 가능한 것들 정의
 __all__ = [
     # Base
@@ -29,6 +33,7 @@ __all__ = [
     
     # Core Models
     "User",
+    "EmailVerification",
     "Challenge", 
     "Participation",
     "ChallengeRound",
@@ -43,8 +48,8 @@ __all__ = [
     # Finance
     "Payment",
     "Refund", 
-    "PointExchangeRequest",
     "PointHistory",
+    "PointWithdrawal",
     
     # Social Features
     "Tag",
@@ -57,6 +62,8 @@ __all__ = [
     
     # Admin & System
     "AdminNotice",
+    "AdminRequest",
+    "AdminAuditLog",
     "Notification",
     "ChallengeEmbedding",
     
@@ -70,10 +77,12 @@ __all__ = [
     "ProofStatus",
     "AppealDecisionCode", 
     "AttendanceStatus",
+    "PaymentMethodType",
     "PaymentStatus",
-    "RefundStatus",
-    "PointExchangeStatus",
+    "PaymentTransactionType",
     "PointHistoryType", 
+    "WithdrawalStatus",
+    "WithdrawalMethod",
     "NotificationEvent",
     "InvitationStatus",
     "ReviewStatus",

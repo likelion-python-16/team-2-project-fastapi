@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>채팅방</title>
+  <style>
+    body{margin:0; font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
+    a{text-decoration:none}
+    .container{max-width:840px; margin:0 auto; padding:16px}
+    .header{display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid #eee}
+    .header a{ text-decoration:none; color:inherit }
+    .room{display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border:1px solid #e5e7eb; border-radius:14px; margin:12px 0; background:#fff; transition:box-shadow .15s ease, border-color .15s ease}
+    .room:hover{box-shadow:0 8px 24px rgba(0,0,0,.06); border-color:#d1d5db}
+    .title{font-weight:800; font-size:16px}
+    .title a{color:#111827}
+    .muted{color:#6b7280; font-size:12px}
+    .badge{background:#ef4444; color:#fff; border-radius:999px; padding:2px 8px; font-size:12px}
+    .list{margin-top:12px}
+    .enter-btn{display:inline-flex; align-items:center; gap:6px; padding:8px 12px; background:#4338CA; color:#fff; border-radius:10px; border:1px solid #4338CA; font-weight:700}
+    .enter-btn:hover{background:#3730a3; border-color:#3730a3}
+  </style>
+  <script>
+    function token(){ try{ return localStorage.getItem('access_token') || sessionStorage.getItem('access_token') || null; }catch{ return null; } }
+    async function jget(url){ const h={}; const t=token(); if(t) h['Authorization']='Bearer '+t; const r=await fetch(url,{headers:h, credentials:'include'}); const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j?.detail||j?.message||('HTTP '+r.status)); return j; }
+    
+    let roomData = [];
+    let metas = [];
+    
+    async function loadRooms() {
+      const list = document.getElementById('list');
+      try{
+        const res = await jget('/api/v1/chat/rooms');
+        roomData = res.items || [];
+        if(roomData.length === 0){ 
+          list.innerHTML = '<div class="muted">채팅방이 없습니다.</div>'; 
+          return; 
+        }
+        // 상대 닉네임을 title로 사용 (필요 시 병렬 요청)
+        metas = await Promise.all(roomData.map(r=> jget(`/api/v1/chat/rooms/${r.id}/meta`).catch(()=>null)));
+        renderRooms();
+      }catch(e){ 
+        list.innerHTML = '<div class="muted">로드 실패: '+(e?.message||e)+'</div>'; 
+      }
+    }
+    
+    function renderRooms() {
+      const list = document.getElementById('list');
+      list.innerHTML = roomData.map((r,i)=>{
+        const last = r.last_message_at? new Date(r.last_message_at).toLocaleString('ko-KR'): '-';
+        const unread = r.unread||0;
+        const partner = metas[i]?.other;
+        const uname = partner?.username || '알 수 없음';
+        const uid = partner?.id;
+        const title = `<a class="title-link" href="${uid?('/users/'+uid):'#'}">${uname}</a>님과의 채팅`;
+        return `<div class="room" data-room-id="${r.id}"><div><div class="title">${title}</div><div class="muted">마지막: ${last}</div></div><div style="display:flex;align-items:center;gap:8px"><span class="unread-badge">${unread>0?`<span class=badge>${unread}</span>`:''}</span> <a class="enter-btn" href="/chat/rooms/${r.id}">채팅방 입장하기</a></div></div>`;
+      }).join('');
+    }
+    
+    // 페이지 가시성 변경 시 (채팅방에서 돌아온 경우) 미읽음 카운터 업데이트
+    document.addEventListener('visibilitychange', async () => {
+      if (!document.hidden) {
+        // 페이지가 다시 보이게 되면 미읽음 카운터 새로고침
+        await loadRooms();
+      }
+    });
+    
+    // 전역 WebSocket 연결 (모든 채팅방의 알림을 받기 위해)
+    let globalWebSocket = null;
+    
+    function connectGlobalWebSocket() {
+      const t = token();
+      if (!t) return;
+      
+      try {
+        // 전역 알림을 위한 WebSocket (room_id = 0을 특별한 값으로 사용)
+        globalWebSocket = new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/api/v1/chat/ws/global?token=${encodeURIComponent(t)}`);
+        
+        globalWebSocket.onopen = () => {
+          console.log('채팅 목록: 실시간 알림 연결됨');
+        };
+        
+        globalWebSocket.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'new_message') {
+              // 새 메시지 알림 받으면 해당 방의 미읽음 카운터 즉시 업데이트
+              updateRoomUnreadCount(data.room_id, data.unread_count);
+              
+              // 전체 미읽음 카운터도 업데이트 (홈페이지 도트용)
+              updateGlobalUnreadCount();
+            }
+          } catch (e) {
+            console.log('WebSocket 메시지 파싱 오류:', e);
+          }
+        };
+        
+        globalWebSocket.onclose = () => {
+          console.log('채팅 목록: 실시간 알림 연결 끊김');
+          // 연결이 끊어지면 5초 후 재연결 시도
+          setTimeout(connectGlobalWebSocket, 5000);
+        };
+        
+        globalWebSocket.onerror = (error) => {
+          console.log('채팅 목록: WebSocket 오류:', error);
+        };
+        
+      } catch (e) {
+        console.log('WebSocket 연결 실패:', e);
+        // 실패하면 10초 후 재시도
+        setTimeout(connectGlobalWebSocket, 10000);
+      }
+    }
+    
+    // 특정 채팅방의 미읽음 카운터만 업데이트
+    function updateRoomUnreadCount(roomId, newUnreadCount) {
+      const roomIndex = roomData.findIndex(r => r.id === roomId);
+      if (roomIndex !== -1) {
+        roomData[roomIndex].unread = newUnreadCount;
+        
+        // 해당 방의 UI만 업데이트
+        const roomElement = document.querySelector(`[data-room-id="${roomId}"] .unread-badge`);
+        if (roomElement) {
+          roomElement.innerHTML = newUnreadCount > 0 ? `<span class="badge">${newUnreadCount}</span>` : '';
+        }
+      }
+    }
+    
+    // 홈페이지 전체 미읽음 카운터 업데이트 (부모 창이 있는 경우)
+    function updateGlobalUnreadCount() {
+      if (window.opener && !window.opener.closed) {
+        // 새창으로 열린 경우 부모창에 메시지 전송
+        try {
+          window.opener.postMessage({ type: 'chat_unread_update' }, '*');
+        } catch (e) {}
+      }
+      
+      // 같은 탭 내에서 홈페이지로 돌아갈 경우를 위해 이벤트 발송
+      window.dispatchEvent(new CustomEvent('chatUnreadUpdate'));
+    }
+    
+    // 주기적으로 미읽음 카운터 업데이트 (30초마다 - 백업용)
+    setInterval(async () => {
+      if (!document.hidden) {
+        await loadRooms();
+      }
+    }, 30000);
+    
+    document.addEventListener('DOMContentLoaded', () => {
+      loadRooms();
+      connectGlobalWebSocket(); // WebSocket 연결 시작
+    });
+    
+    // 페이지 언로드 시 WebSocket 연결 해제
+    window.addEventListener('beforeunload', () => {
+      if (globalWebSocket) {
+        globalWebSocket.close();
+      }
+    });
+  </script>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <a href="/home">🏠</a>
+      <h2 style="margin:0">내 채팅</h2>
+      <div style="flex:1"></div>
+    </div>
+    <div id="list" class="list"></div>
+  </div>
+</body>
+</html>

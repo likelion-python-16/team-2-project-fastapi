@@ -1,7 +1,9 @@
 # app/routers/pages.py
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from app.core.deps import get_current_user_from_cookie
+from app.models.user import User
 import json
 from pathlib import Path
 
@@ -14,7 +16,7 @@ try:
 except Exception:
     INTERESTS = {}
 
-@router.get("/signup", response_class=HTMLResponse)
+@router.get("/signup/step1", response_class=HTMLResponse)
 def signup_step1(request: Request):
     return templates.TemplateResponse("signup_step1.html", {"request": request})
 
@@ -32,3 +34,11 @@ def signup_step3(request: Request):
 @router.get("/signup/complete", response_class=HTMLResponse)
 def signup_complete(request: Request):
     return templates.TemplateResponse("signup_complete.html", {"request": request})
+
+@router.get("/reset-password", response_class=HTMLResponse)
+def reset_password_page(request: Request):
+    return templates.TemplateResponse("reset_password.html", {"request": request})
+
+@router.get("/points", response_class=HTMLResponse)
+def points_page(request: Request, current_user: User = Depends(get_current_user_from_cookie)):
+    return templates.TemplateResponse("points.html", {"request": request, "current_user": current_user})

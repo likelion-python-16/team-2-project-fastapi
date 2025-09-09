@@ -1,0 +1,147 @@
+{% extends "final.html" %}
+{% block title %}관리자 로그인 - Team Project{% endblock %}
+{% block content %}
+<style> body { flex-direction: column; } </style>
+
+<div class="flex items-center justify-center grow">
+  <div class="kt-card max-w-[400px] w-full mt-10">
+    <form class="kt-card-content flex flex-col gap-5 p-10" action="/admin/login" method="post">
+      
+      <!-- 제목 + 안내문 -->
+      <div class="text-center mb-4">
+        <h3 class="text-lg font-medium leading-none mb-2">관리자 로그인</h3>
+        {% if admin_signup_enabled %}
+        <div class="mt-2 text-xs text-muted-foreground">
+          관리자가 아니신가요?
+          <a href="/admin/signup" class="text-xs text-muted-foreground hover:text-foreground">
+            관리자 회원가입
+          </a>
+        </div>
+        {% endif %}
+      </div>
+
+
+      {% if error %}
+      <div class="text-center mb-2">
+        <div class="text-red-600 text-sm font-medium">{{ error }}</div>
+      </div>
+      {% endif %}
+
+      {% set info = request.query_params.get('info') if request and request.query_params else None %}
+      {% if info == 'exists' %}
+        <div class="kt-alert kt-alert-info p-3 rounded-lg text-sm">이미 계정이 있어요. 로그인 후 관리자 권한을 부여받으세요.</div>
+      {% elif info == 'signup_disabled' %}
+        <div class="kt-alert kt-alert-info p-3 rounded-lg text-sm">관리자 계정은 관리자 승격으로만 생성됩니다. 로그인 후 관리자에게 권한을 요청하세요.</div>
+      {% endif %}
+
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label font-normal">아이디 또는 이메일</label>
+        <input class="kt-input" name="login" placeholder="아이디 또는 이메일" autocomplete="username" required />
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="kt-form-label font-normal">비밀번호</label>
+        <div class="kt-input">
+          <input name="password" id="pw" type="password" placeholder="비밀번호" autocomplete="current-password" required />
+        </div>
+      </div>
+
+      <!-- 로그인 버튼 위 중앙 안내 -->
+      <div class="text-center mt-1 -mb-1">
+        <a href="/admin/choice" class="text-blue-600 hover:text-blue-800 text-sm font-medium">
+          관리자가 아니신가요?
+        </a>
+      </div>
+
+      <!-- 로그인 버튼만 남김 -->
+      <button id="primaryAction" class="kt-btn kt-btn-primary flex justify-center" type="submit">로그인</button>
+
+      <!-- 아래 추가 버튼/링크 전부 제거 -->
+      <input type="hidden" name="ident" value="" />
+      <input type="hidden" name="phone" value="" />
+    </form>
+  </div>
+</div>
+
+{% set modal_back_href = '/admin/login' %}
+{% include "includes/welcome_modal_partial.html" %}
+{% set modal_back_href = none %}
+
+<script>
+// Admin welcome modal용으로 localStorage 키 변경
+(function() {
+  const originalKey = 'kt_welcome_modal_skipped';
+  const adminKey = 'kt_admin_welcome_modal_skipped';
+  
+  // 기존 함수들을 admin용으로 재정의
+  const modal = document.getElementById('modal_welcome_message');
+  if (!modal) return;
+  
+  const shouldShow = (function() {
+    try {
+      return localStorage.getItem(adminKey) !== '1';
+    } catch(_) {
+      return true;
+    }
+  })();
+  
+  function skipAndGo() {
+    try {
+      localStorage.setItem(adminKey, '1');
+    } catch(_) {}
+    const back = modal.getAttribute('data-backhref') || '/admin';
+    window.location.href = back;
+  }
+  
+  // 버튼 이벤트 재설정
+  const gs = document.getElementById('wm_get_started');
+  const sk = document.getElementById('wm_skip');
+  
+  if (gs) {
+    gs.replaceWith(gs.cloneNode(true)); // 기존 이벤트 제거
+    const newGs = document.getElementById('wm_get_started');
+    newGs.addEventListener('click', function(e) {
+      e.preventDefault();
+      skipAndGo();
+    });
+  }
+  
+  if (sk) {
+    sk.replaceWith(sk.cloneNode(true)); // 기존 이벤트 제거
+    const newSk = document.getElementById('wm_skip');
+    newSk.addEventListener('click', function(e) {
+      e.preventDefault();
+      closeWelcomeModal();
+    });
+  }
+  
+  // admin 로그인 페이지에서는 항상 표시하도록 (테스트용)
+  if (shouldShow && window.showWelcomeModal) {
+    setTimeout(() => {
+      window.showWelcomeModal();
+    }, 100);
+  }
+})();
+</script>
+
+<script>
+// 제출 직전에 관리자 계정 여부 확인: 일반/미존재 계정이면 안내 페이지로 이동
+document.querySelector('form').addEventListener('submit', async function(e) {
+  const loginField = document.querySelector('input[name="login"]');
+  const passwordField = document.querySelector('input[name="password"]');
+  const login = (loginField?.value || '').trim();
+  const pw = (passwordField?.value || '').trim();
+  if (!login || !pw) return; // 서버측 검증 그대로 진행
+
+  try {
+    const res = await fetch(`/admin/check-admin?login=${encodeURIComponent(login)}`);
+    const j = await res.json();
+    if (!j.exists || (j.exists && !j.is_admin)) {
+      e.preventDefault();
+      window.location.href = '/admin/choice';
+      return;
+    }
+  } catch (_) { /* 네트워크 오류 시 서버 검증으로 진행 */ }
+});
+</script>
+{% endblock %}

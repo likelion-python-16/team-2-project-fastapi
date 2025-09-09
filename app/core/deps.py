@@ -1,41 +1,70 @@
-# app/core/deps.py
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from typing import Optional
+
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.security import decode_token as decode_access_token  # ✅ payload 디코더 (함수 호출용)
+from app.security import verify_token
 from app.models.user import User
 
-# =========================================
-# ### [추가부분] OAuth2 스킴: 클라이언트가 보내는 Bearer 토큰을 문자열로 뽑아줌
-#   - tokenUrl은 네 로그인 엔드포인트로 맞춰라.
-#     예) "/api/v1/auth/login" 또는 "/auth/login"
-# =========================================
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")  # ← 너네 라우트에 맞춰 수정
-
-def get_current_user(
+def get_current_user_from_cookie(
+    request: Request,
     db: Session = Depends(get_db),
-    token: str = Depends(oauth2_scheme),   # ✅ [수정] 여기서 '문자열' 토큰을 받는다
-) -> User:
-    # ✅ [수정] 문자열 토큰을 디코드해 payload(dict) 획득
-    payload = decode_access_token(token)
-    if payload is None or "sub" not in payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="인증이 필요합니다",
-        )
+) -> Optional["User"]:
+    """Parses JWT from HttpOnly cookie 'access_token' and returns the user if valid.
 
-    user_id = payload["sub"]
-    user = db.query(User).filter(User.id == user_id).first()
+    Returns None if missing/invalid without raising, so callers can choose behavior.
+    """
+    # local import to avoid circular
+
+    token = request.cookies.get("access_token")
+    if not token:
+        return None
+    payload = verify_token(token)
+    if not payload:
+        return None
+
+    sub = payload.get("sub")
+    user: Optional[User] = None
+    try:
+        user_id = int(sub)
+        user = db.query(User).filter(User.id == user_id).first()
+    except Exception:
+        # fallback by username/email if non-int sub
+        if sub and hasattr(User, "username"):
+            user = db.query(User).filter(User.username == str(sub)).first()
+        elif sub and hasattr(User, "email"):
+            user = db.query(User).filter(User.email == str(sub)).first()
+
+    return user
+
+
+def require_admin(request: Request, user = Depends(get_current_user_from_cookie)):
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="사용자를 찾을 수 없습니다",
-        )
-    if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="비활성화된 계정입니다",
-        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="로그인이 필요합니다")
+    token = request.cookies.get("access_token")
+    payload = verify_token(token) if token else None
+    admin_mode = bool(payload.get("admin_mode")) if payload else False
+    if not getattr(user, "is_admin", False) or not admin_mode:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="관리자 권한이 필요합니다")
+    return user
+
+
+def require_master_admin(user = Depends(require_admin)):
+    # is_superadmin 필드가 있으면 우선 체크
+    if hasattr(user, 'is_superadmin') and getattr(user, 'is_superadmin', False):
+        return user
+    
+    # 기존 설정 기반 체크 (호환성)
+    from app.core.config import settings
+    master_ok = False
+    if settings.admin_master_username:
+        master_ok = (user.username == settings.admin_master_username)
+    if not master_ok and settings.admin_master_email:
+        try:
+            master_ok = (user.email == settings.admin_master_email)
+        except Exception:
+            master_ok = False
+    if not master_ok:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="슈퍼관리자 권한이 필요합니다")
     return user

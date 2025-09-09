@@ -22,8 +22,9 @@
     .spacer{flex:1}
     .search-wrap{display:flex; align-items:center; gap:8px; min-width:420px; flex:0 1 560px}
     .search-input{flex:1; height:38px; border:1px solid var(--line); border-radius:10px; padding:0 12px; font-size:14px; outline:none}
-    .btn{height:38px; padding:0 14px; border-radius:10px; border:1px solid var(--line); background:#fff; color:var(--text); font-weight:600; cursor:pointer; display:inline-flex; align-items:center}
+    .btn{height:38px; padding:0 14px; border-radius:10px; border:1px solid var(--line); background:#fff; color:var(--text); font-weight:600; cursor:pointer; display:inline-flex; align-items:center; text-decoration:none}
     .btn.primary{background:var(--primary); color:#fff; border-color:var(--primary)}
+    .btn.small{height:30px; padding:0 10px; font-size:13px}
     .avatar{width:36px; height:36px; border-radius:50%; overflow:hidden; border:1px solid var(--line); cursor:pointer; display:flex; align-items:center; justify-content:center; background:#f8fafc; font-size:12px; color:#475569}
     .dropdown{position:relative}
     .dropdown-menu{position:absolute; right:0; top:44px; width:200px; background:#fff; border:1px solid var(--line); border-radius:12px; padding:8px; box-shadow:0 10px 30px rgba(0,0,0,.08); display:none; z-index:20}
@@ -31,6 +32,8 @@
     .dropdown-item{display:flex; align-items:center; gap:8px; padding:10px 10px; border-radius:10px; color:var(--text)}
     .dropdown-item:hover{background:#F9FAFB}
     .divider{height:1px; background:var(--line); margin:6px 0}
+    .bell{position:relative; width:36px; height:36px; display:flex; align-items:center; justify-content:center; border:1px solid var(--line); border-radius:50%; cursor:pointer}
+    .dot-badge{position:absolute; right:4px; top:4px; width:8px; height:8px; background:#ef4444; border-radius:50%; display:none}
 
     .filters-bar{border-bottom:1px solid var(--line); background:#fff}
     .filters-inner{display:flex; align-items:center; gap:10px; padding:8px 0}
@@ -48,14 +51,21 @@
     .section h3{font-size:18px; margin:0 0 12px; color:#0f172a; letter-spacing:.2px}
     .notice{background:#FFF7ED; color:#9A3412; border:1px solid #FED7AA; padding:10px 12px; border-radius:12px; font-size:13px; margin-bottom:12px}
     .grid{display:grid; gap:14px}
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    @keyframes slideOut { from { transform: translateX(0); opacity: 1; } to { transform: translateX(100%); opacity: 0; } }
     .grid.cols-3{grid-template-columns:repeat(3,1fr)}
     .grid.cols-4{grid-template-columns:repeat(4,1fr)}
-    .card{border:1px solid var(--line); border-radius:14px; overflow:hidden; background:#fff; transition:transform .12s ease, box-shadow .12s ease}
+    .card{border:1px solid var(--line); border-radius:14px; overflow:hidden; background:#fff; transition:transform .12s ease, box-shadow .12s ease; position:relative}
     .card:hover{transform:translateY(-2px); box-shadow:0 8px 24px rgba(0,0,0,.06)}
+    .card.mine{border-color:#8b5cf6; box-shadow:0 6px 20px rgba(139,92,246,.18)}
+    .sticky-badge{position:absolute; top:8px; left:-8px; background:#8b5cf6; color:#fff; padding:4px 10px; font-size:11px; font-weight:700; border-radius:6px; box-shadow:0 4px 10px rgba(0,0,0,.12); transform:rotate(-3deg)}
     .thumb{aspect-ratio:16/9; background:#F3F4F6; display:block; width:100%; object-fit:cover}
     .card-body{padding:10px 12px}
     .title{font-weight:700; font-size:15px; color:#111827; margin:2px 0 8px}
-    .meta{display:flex; flex-wrap:wrap; gap:8px; color:var(--muted); font-size:12px}
+    .meta{display:flex; flex-wrap:wrap; gap:8px; color:var(--muted); font-size:12px; align-items:center}
+    .meta-badges{display:flex; flex-wrap:wrap; gap:8px; margin:6px 0}
+    .info-pill{display:flex; align-items:center; gap:8px; background:#F3F4F6; color:#374151; border:1px solid var(--line); padding:6px 10px; border-radius:9999px; font-size:12px; margin-top:6px}
     .badge{font-size:11px; padding:3px 8px; border-radius:999px; border:1px solid var(--line); background:#fff; color:#374151}
     .badge.ok{background:#ECFDF5; color:#065F46; border-color:#D1FAE5}
     .badge.warn{background:#FEF3C7; color:#92400E; border-color:#FDE68A}
@@ -90,17 +100,16 @@
         <div class="spacer"></div>
 
         <form id="search-form" class="search-wrap" autocomplete="off">
-          <input id="search-input" class="search-input" type="text" placeholder="검색어를 입력하세요 (선택)"/>
+          <input id="search-input" class="search-input" type="text" placeholder="챌린지 제목, 내용, 장소로 검색"/>
           <button id="search-reset" type="button" class="btn" title="초기화">초기화</button>
           <button id="search-btn" type="submit" class="btn primary">검색</button>
         </form>
 
         <div class="spacer"></div>
 
-        <!-- ✅ 새로 추가된 챌린지 생성 버튼 -->
-        <a id="create-challenge-btn"
-           class="btn primary"
-           href="{{ url_for('page_challenge_create') }}">챌린지 생성</a>
+        <a href="/chat" class="bell" title="채팅" style="margin-left:10px">
+          🔔<span id="chat-dot" class="dot-badge"></span>
+        </a>
 
         <!-- 프로필 드롭다운 -->
         <div class="dropdown" id="profile-dd">
@@ -118,6 +127,9 @@
         <button id="filters-toggle" class="toggle-chip" type="button" aria-expanded="false" aria-controls="filters-panel">
           <span>필터</span><i>▾</i>
         </button>
+        <button id="refresh-btn" class="btn" type="button" title="챌린지 목록 새로고침">
+          🔄
+        </button>
         <div class="spacer"></div>
       </div>
       <div id="filters-panel" class="filters-panel">
@@ -129,6 +141,8 @@
             <option value="completed">완료</option>
             <option value="cancelled">취소</option>
           </select>
+          <span class="label">장소</span>
+          <input id="f-location" class="compact-control" type="text" placeholder="지역, 장소명"/>
           <span class="label">시작</span>
           <input id="f-sf" class="compact-control" type="date"/>
           <span class="label">~</span>
@@ -157,15 +171,19 @@
   <main class="container">
     <!-- 검색 결과 -->
     <section id="search-area" class="section" style="display:none">
-      <h3>검색 결과</h3>
-      <div id="search-empty" class="empty" style="display:none"></div>
-      <div id="search-grid" class="grid cols-4"></div>
+      <div class="section">
+        <h3>🔍 검색 결과</h3>
+        <div id="search-empty" class="empty" style="display:none"></div>
+        <div id="search-grid" class="grid cols-4"></div>
+      </div>
 
       <div class="block-gap"></div>
 
-      <h3>이런 챌린지는 어떠세요?</h3>
-      <div id="rec-empty" class="empty" style="display:none">추천할 항목이 없습니다.</div>
-      <div id="rec-grid" class="grid cols-4"></div>
+      <div class="section">
+        <h3>🎯 이런 챌린지는 어떠세요? <span style="font-size:12px;color:#6b7280;font-weight:400;">(태그 기반 추천)</span></h3>
+        <div id="rec-empty" class="empty" style="display:none">관련 태그가 설정된 챌린지가 없습니다.</div>
+        <div id="rec-grid" class="grid cols-4"></div>
+      </div>
 
       <div id="search-pagination" class="pagination"></div>
     </section>
@@ -173,24 +191,29 @@
     <!-- 홈 섹션 -->
     <section id="home-sections" class="section">
       <div class="section">
-        <h3>추천 챌린지</h3>
+        <h3>🎯 추천 챌린지 <span style="font-size:12px;color:#6b7280;font-weight:400;">(선호 태그 기반)</span></h3>
         <div id="rec-login-required" class="notice" style="display:none">추천 기능은 로그인이 필요합니다.</div>
         <div id="rec-notice" class="notice" style="display:none"></div>
-        <div id="rec-list" class="grid cols-3"></div>
+        <div id="rec-list" class="grid cols-4"></div>
       </div>
 
       <div class="block-gap"></div>
 
       <div class="section">
-        <h3>팔로우한 사람이 만든 챌린지</h3>
-        <div id="follow-login-required" class="notice" style="display:none">팔로우 기반 추천은 로그인이 필요합니다.</div>
-        <div id="follow-list" class="grid cols-3"></div>
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+          <h3 style="margin:0;">👥 팔로우한 사람이 만든 챌린지</h3>
+          <a href="/users-list" class="btn small">사용자 찾기</a>
+        </div>
+        <div id="follow-login-required" class="notice" style="display:none">
+          팔로우 기능은 로그인이 필요합니다. <a href="/users-list" style="color:#4338CA;">다른 사용자 보기</a>
+        </div>
+        <div id="follow-list" class="grid cols-4"></div>
       </div>
 
       <div class="block-gap"></div>
 
       <div class="section">
-        <h3>최신 챌린지</h3>
+        <h3>📅 최신 챌린지</h3>
         <div id="latest-list" class="grid cols-4"></div>
         <div id="latest-pagination" class="pagination"></div>
       </div>
@@ -210,7 +233,61 @@
           location.href = '/login';
         }
       });
+
+      // 프로필 드롭다운에 포인트 관리 링크 추가
+      addPointsLinkToDropdown();
     });
+
+    function addPointsLinkToDropdown() {
+      // 프로필 메뉴가 동적으로 생성되므로 MutationObserver 사용
+      const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+          if (mutation.type === 'childList') {
+            const profileMenu = document.getElementById('profile-menu');
+            if (profileMenu && profileMenu.children.length > 0) {
+              // 이미 포인트 링크가 추가되었는지 확인
+              if (!profileMenu.querySelector('.points-link')) {
+                // 첫 번째 링크 다음에 포인트 관리 링크 추가
+                const firstItem = profileMenu.querySelector('.dropdown-item');
+                if (firstItem) {
+                  const pointsLink = document.createElement('a');
+                  pointsLink.href = '/points';
+                  pointsLink.className = 'dropdown-item points-link';
+                  pointsLink.style.fontWeight = '600';
+                  pointsLink.style.color = '#2563eb';
+                  pointsLink.innerHTML = '💰 포인트 관리';
+                  
+                  firstItem.parentNode.insertBefore(pointsLink, firstItem.nextSibling);
+                }
+              }
+            }
+          }
+        });
+      });
+
+      // 프로필 메뉴 관찰 시작
+      const profileMenu = document.getElementById('profile-menu');
+      if (profileMenu) {
+        observer.observe(profileMenu, { childList: true, subtree: true });
+      }
+    }
+  </script>
+  <script>
+    // Unread chat indicator
+    function getChatToken(){ try{ return localStorage.getItem('access_token')||sessionStorage.getItem('access_token')||null; }catch{ return null; } }
+    async function updateChatDot(){
+      const t = getChatToken(); if(!t) return;
+      try{
+        const r = await fetch('/api/v1/chat/unread-count', { headers:{ 'Authorization': 'Bearer '+t }, credentials:'include' });
+        if(!r.ok) return; const j = await r.json();
+        const n = (j?.unread)||0; const dot = document.getElementById('chat-dot');
+        if(dot) dot.style.display = n>0? 'block':'none';
+      }catch{}
+    }
+    document.addEventListener('DOMContentLoaded', ()=>{ updateChatDot(); setInterval(updateChatDot, 30000); });
+    // 로그인 직후 토큰이 저장되는 경우를 대비
+    window.addEventListener('storage', (e)=>{ if(e.key==='access_token'){ setTimeout(updateChatDot, 300); } });
+    document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) updateChatDot(); });
   </script>
 
   <script src="{{ url_for('static', path='js/home.js') }}"></script>

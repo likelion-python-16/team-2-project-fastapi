@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+# core.authz.py
+from typing import Optional
 from sqlalchemy.orm import Session
 from app.models.challenge import Challenge
 from app.models.participation import Participation, ParticipationRole
@@ -13,7 +17,7 @@ def is_challenge_manager(db: Session, challenge_id: int, user_id: int) -> bool:
          .filter(Participation.challenge_id == challenge_id,
                  Participation.user_id == user_id,
                  Participation.role == ParticipationRole.manager,
-                 Participation.is_active == True)
+                 Participation.is_active.is_(True))
          .first())
     return p is not None
 
@@ -25,7 +29,7 @@ def is_round_manager(db: Session, challenge_id: int, round_id: int, user_id: int
           .first())
     return rm is not None
 
-def can_edit_round(db: Session, challenge_id: int, round_id: int | None, user_id: int) -> bool:
+def can_edit_round(db: Session, challenge_id: int, round_id: Optional[int], user_id: int) -> bool:
     # ✅ creator는 항상 허용
     if is_challenge_owner(db, challenge_id, user_id):
         return True

@@ -4,9 +4,12 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select, func, and_, desc
 from typing import Optional
 
-from app.db import get_db
-from app.routers.auth import get_current_user
-from app.deps.pagination import pagination_params  # {skip, limit} 반환(네가 쓰는 util)
+from app.core.database import get_db
+from app.security import get_current_user
+# Simple pagination helper
+def pagination_params(page: int = Query(1, ge=1), limit: int = Query(20, ge=1, le=100)):
+    skip = (page - 1) * limit
+    return {"page": page, "limit": limit, "skip": skip}
 from app.models.user import User
 from app.models.chat import ChatParticipant
 from app.models.chat import ChatRoom

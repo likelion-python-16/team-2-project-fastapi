@@ -8,29 +8,13 @@ import sys
 # 🔧 프로젝트 루트를 sys.path에 추가
 sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
-# 🔧 우리 모델들 import
+# 🔧 우리 설정과 모델들 import
 from app.core.config import settings
 from app.models.base import Base
 
-# 🔧 모든 모델들을 명시적으로 import (Alembic이 감지할 수 있도록)
-from app.models.user import User
-from app.models.challenge import Challenge
-from app.models.participation import Participation
-from app.models.challenge_round import ChallengeRound
-from app.models.round_picture import RoundPicture
-from app.models.attendance import QRCode, RoundAttendance, Proof, Appeal
-from app.models.finance import Payment, Refund, PointExchangeRequest
-from app.models.tag import Tag, UserTag, ChallengeTag
-from app.models.admin_notice import AdminNotice
-from app.models.notification import Notification
-from app.models.following import Following
-from app.models.invitation import Invitation
-from app.models.pointhistory import PointHistory
-from app.models.review import Review, ReviewHelpful
-from app.models.challenge_embedding import ChallengeEmbedding
-from app.models.report import Report, ReportProof, PenaltyHistory
-from app.models.chat import ChatRoom, ChatMessage, ChatParticipant
-from app.models.round_manager  import RoundManager
+# ✅ __init__.py 활용해서 모든 모델 한 번에 import (Alembic이 감지할 수 있도록)
+from app.models import *
+
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
