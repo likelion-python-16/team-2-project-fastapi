@@ -23,6 +23,7 @@ services:
   api:
     build: 
       context: .
+      dockerfile: Dockerfile.prod
       args:
         - ENV=production
     container_name: fastteam-api
