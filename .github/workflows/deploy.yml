@@ -74,7 +74,7 @@ jobs:
         timeout: 30s
         command_timeout: 15m
         script: |
-          cd /home/ec2-user/myapp/team-project
+          cd /home/ubuntu/team-2-project-fastapi
           
           # 브랜치별 배포
           if [ "${{ github.ref }}" == "refs/heads/develop" ]; then
@@ -112,7 +112,7 @@ jobs:
         timeout: 30s
         command_timeout: 20m
         script: |
-          cd /home/deploy/fastteam
+          cd /home/ubuntu/team-2-project-fastapi
           
           echo "🚀 프로덕션 배포 중..."
           git pull origin main
@@ -121,5 +121,5 @@ jobs:
           ./deploy.sh prod
           
           echo "✅ 프로덕션 배포 완료!"
-          echo "🌐 확인: https://your-domain.com"
-          echo "📊 모니터링: https://monitoring.your-domain.com"
+          echo "🌐 확인: https://challengers.today/"
+          echo "📊 모니터링: http://13.209.147.11:3000"
