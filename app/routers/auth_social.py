@@ -140,6 +140,17 @@ async def callback_google(request: Request, db: Session = Depends(get_db)):
     ).first()
     
     if existing_user:
+        # 최근 소셜 식별 정보는 항상 세션에 남겨, 프론트의 /social/step1 프리필이 안정적으로 동작하도록 함
+        try:
+            request.session['last_social_identity'] = {
+                'provider': 'google',
+                'provider_id': google_id,
+                'email': email,
+                'name': name,
+                'picture': picture,
+            }
+        except Exception:
+            pass
         # 기존 연동 계정으로 로그인
         existing_user.token_version = (existing_user.token_version or 0) + 1
         db.commit()
@@ -156,6 +167,17 @@ async def callback_google(request: Request, db: Session = Depends(get_db)):
     existing_email_user = db.query(User).filter(User.email == email).first()
     
     if existing_email_user:
+        # 최근 소셜 식별 정보 저장 (항상)
+        try:
+            request.session['last_social_identity'] = {
+                'provider': 'google',
+                'provider_id': google_id,
+                'email': email,
+                'name': name,
+                'picture': picture,
+            }
+        except Exception:
+            pass
         # 기존 계정이 있는 경우 Google 정보 업데이트하고 로그인
         existing_email_user.provider = 'google'
         existing_email_user.provider_id = google_id
@@ -173,6 +195,17 @@ async def callback_google(request: Request, db: Session = Depends(get_db)):
         return RedirectResponse(url=frontend_url, status_code=303)
     
     # 새 계정 생성 필요 - 소셜 회원가입 페이지로 이동
+    try:
+        # 신규 생성 플로우에서도 최근 식별정보를 남겨둔다
+        request.session['last_social_identity'] = {
+            'provider': 'google',
+            'provider_id': google_id,
+            'email': email,
+            'name': name,
+            'picture': picture,
+        }
+    except Exception:
+        pass
     request.session['pending_social'] = {
         'provider': 'google',
         'provider_id': google_id,
@@ -244,6 +277,17 @@ async def callback_naver(request: Request, db: Session = Depends(get_db)):
     ).first()
     
     if existing_user:
+        # 최근 소셜 식별 정보 저장 (항상)
+        try:
+            request.session['last_social_identity'] = {
+                'provider': 'naver',
+                'provider_id': naver_id,
+                'email': email,
+                'name': name,
+                'profile_image': profile_image,
+            }
+        except Exception:
+            pass
         # 기존 연동 계정으로 로그인
         existing_user.token_version = (existing_user.token_version or 0) + 1
         db.commit()
@@ -259,6 +303,17 @@ async def callback_naver(request: Request, db: Session = Depends(get_db)):
     existing_email_user = db.query(User).filter(User.email == email).first()
     
     if existing_email_user and not existing_email_user.provider:
+        # 최근 소셜 식별 정보 저장 (항상)
+        try:
+            request.session['last_social_identity'] = {
+                'provider': 'naver',
+                'provider_id': naver_id,
+                'email': email,
+                'name': name,
+                'profile_image': profile_image,
+            }
+        except Exception:
+            pass
         # 기존 일반 회원가입 계정에 네이버 연동
         existing_email_user.provider = 'naver'
         existing_email_user.provider_id = naver_id
@@ -277,6 +332,16 @@ async def callback_naver(request: Request, db: Session = Depends(get_db)):
         return RedirectResponse(url=frontend_url, status_code=303)
     
     # 새 계정 생성 필요
+    try:
+        request.session['last_social_identity'] = {
+            'provider': 'naver',
+            'provider_id': naver_id,
+            'email': email,
+            'name': name,
+            'profile_image': profile_image,
+        }
+    except Exception:
+        pass
     request.session['pending_social'] = {
         'provider': 'naver',
         'provider_id': naver_id,
