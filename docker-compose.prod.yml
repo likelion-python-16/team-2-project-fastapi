@@ -13,6 +13,7 @@ services:
       - ./nginx/conf.d:/etc/nginx/conf.d
       - ./ssl:/etc/nginx/ssl
       - ./logs/nginx:/var/log/nginx
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
       - api
     networks:
